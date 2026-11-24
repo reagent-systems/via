@@ -3,7 +3,7 @@
 #
 #   jobs:
 #     gates:
-#       uses: ThyFriendlyFox/via/.github/workflows/board-gates.yml@<sha>
+#       uses: reagent-systems/via/.github/workflows/board-gates.yml@<sha>
 #       with:
 #         workcenter-ref: <sha>
 #
@@ -43,7 +43,7 @@ on:
       workcenter-repository:
         description: The workcenter's repository; its owner also owns the image.
         type: string
-        default: ThyFriendlyFox/via
+        default: reagent-systems/via
       workcenter-ref:
         description: The workcenter's branch, tag or commit whose gates run.
         type: string

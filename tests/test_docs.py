@@ -337,6 +337,36 @@ def test_no_file_names_the_repository_by_its_old_name():
     assert holders == []
 
 
+def test_no_file_read_today_links_the_repository_at_its_old_home():
+    """The repository moved from `ThyFriendlyFox/via` to `reagent-systems/via` on 2026-11-24. A link,
+    a clone, the reusable workflow's address and the image's name point to the new home. History keeps
+    the old one where an entry tells what happened then: the changelog's released sections, the
+    devlog, the mistakes log, the landed change notes and the roadmap's status lines. The owner's own
+    project board and other repositories stay under the owner's name, and this test names the old
+    home to look for it."""
+    old = re.compile(
+        rb"github\.com/ThyFriendlyFox/via(?![\w-])|ThyFriendlyFox/via/\.github|default: ThyFriendlyFox/via"
+    )
+    history = {
+        "ee-agent-kit/CHANGELOG.md",
+        "ee-agent-kit/DEVLOG.md",
+        "ee-agent-kit/MISTAKES.md",
+        "tests/test_docs.py",
+    }
+    tracked = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files"], capture_output=True, text=True, check=True
+    ).stdout.split()
+    holders = []
+    for rel in tracked:
+        if rel.startswith(("third_party/", "ee-agent-kit/changes/")) or rel in history:
+            continue
+        path = ROOT / rel
+        if path.is_file() and old.search(path.read_bytes()):
+            holders.append(rel)
+    assert holders == []
+    assert "https://github.com/reagent-systems/via" in (SITE / "frame.py").read_text(encoding="utf-8")
+
+
 def test_the_root_instruction_files_are_one_text():
     assert (ROOT / "AGENTS.md").read_bytes() == (ROOT / "CLAUDE.md").read_bytes()
     text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
@@ -553,7 +583,7 @@ def test_every_page_a_reader_opens_loads_the_hosts_analytics_script_once():
 def test_every_link_on_the_site_names_what_exists():
     """A link to the repository names a path on `main`: a path the tree does not hold is a 404 after
     the merge. A link into the page names an id, and a link beside the page names a file."""
-    blob = "https://github.com/ThyFriendlyFox/via/blob/main/"
+    blob = "https://github.com/reagent-systems/via/blob/main/"
     missing, to_repo, into_page, beside = [], 0, 0, 0
     for page in (
         SITE / "index.html",

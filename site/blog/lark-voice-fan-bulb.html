@@ -66,7 +66,7 @@
             <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 14.6A8.4 8.4 0 1 1 9.4 3.8a6.6 6.6 0 0 0 10.8 10.8Z"/></svg>
             <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
           </button>
-          <a class="gh-pill" href="https://github.com/ThyFriendlyFox/via" aria-label="Via on GitHub">
+          <a class="gh-pill" href="https://github.com/reagent-systems/via" aria-label="Via on GitHub">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
             <span>GitHub</span>
           </a>
@@ -89,8 +89,8 @@
 <h2 id="two-led-strings-on-a-165-v-bus">Two LED strings on a 165 V bus</h2>
 <p>Lark's LEDs drop anywhere from 8.8 V to 9.6 V at 100 mA, depending on which voltage bin they come from, and they drop less as they warm up. A fixed voltage would set a different current in each one, so the driver sets the current.</p>
 <p>The driver board rectifies the mains into a bus near 165 V. Its two LED strings, warm white and cool white, need about 73 V each, and each string gets a buck converter. A buck's output is its input times the duty cycle. Erickson and Maksimović derive this in their book <em>Fundamentals of Power Electronics</em>, and the 2nd edition came out from Kluwer in 2001.</p>
-<p>Each string has a Microchip HV9961 controller. It senses the current in a 2.74 ohm resistor, then holds the switch off for 2.5 µs. <a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/examples/fan-bulb/library/microchip/HV9961-DS20005588B.pdf">Its datasheet</a> says it regulates the average current, while the older HV9910B regulates the peak. The current is 0.185 times the LD pin's voltage, divided by the sense resistor, so 1.48 V on LD gives 100 mA.</p>
-<p>A third buck converter makes 3.3 V from the same bus. Its chip, a Power Integrations <a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/examples/fan-bulb/library/power-integrations/linkswitch-tn2_family_datasheet.pdf">LinkSwitch-TN2</a>, holds a 725 V switch and its controller.</p>
+<p>Each string has a Microchip HV9961 controller. It senses the current in a 2.74 ohm resistor, then holds the switch off for 2.5 µs. <a class="link" href="https://github.com/reagent-systems/via/blob/main/examples/fan-bulb/library/microchip/HV9961-DS20005588B.pdf">Its datasheet</a> says it regulates the average current, while the older HV9910B regulates the peak. The current is 0.185 times the LD pin's voltage, divided by the sense resistor, so 1.48 V on LD gives 100 mA.</p>
+<p>A third buck converter makes 3.3 V from the same bus. Its chip, a Power Integrations <a class="link" href="https://github.com/reagent-systems/via/blob/main/examples/fan-bulb/library/power-integrations/linkswitch-tn2_family_datasheet.pdf">LinkSwitch-TN2</a>, holds a 725 V switch and its controller.</p>
 <h2 id="steady-light-under-turning-blades">Steady light under turning blades</h2>
 <p>A fan makes flicker easy to see. If a light pulses, the eye catches a passing blade at only a few places, and the blades seem to stand still or to move in steps. Brad Lehman and Arnold Wilkins describe this stroboscopic effect in "Designing to Mitigate Effects of Flicker in LED Lighting". Their paper came out in IEEE Power Electronics Magazine in 2014.</p>
 <p>IEEE Std 1789-2015 measures flicker as percent modulation, which is the highest light minus the lowest, divided by their sum. At 120 Hz, its low-risk level is 9.6 percent.</p>
@@ -98,7 +98,7 @@
 <p>A common way to dim LEDs is PWM, and under a fan those pulses strobe too. Lark dims by lowering the steady current instead. A resistor-capacitor filter turns the brain board's 20 kHz PWM into a steady voltage on the LD pin.</p>
 <h2 id="a-bulb-with-no-isolation">A bulb with no isolation</h2>
 <p>Lark has no isolation. Every node sits at mains potential, the 3.3 V logic included, and the plastic housing insulates all of it from a hand. Inside the bulb, the logic can differ from the mains nets by up to 198 V.</p>
-<p>IPC-2221B, the <em>Generic Standard on Printed Board Design</em>, gives copper gaps by voltage in Table 6-1. For 151 to 250 V, it sets 0.8 mm on an outer layer beside a part's lead. On an inner layer, in solid glass-epoxy, it allows 0.2 mm. The agent wrote both into the <a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/examples/fan-bulb/v0.1/rules/lark.kicad_dru">rule file</a>, and the design rule check holds every gap to them.</p>
+<p>IPC-2221B, the <em>Generic Standard on Printed Board Design</em>, gives copper gaps by voltage in Table 6-1. For 151 to 250 V, it sets 0.8 mm on an outer layer beside a part's lead. On an inner layer, in solid glass-epoxy, it allows 0.2 mm. The agent wrote both into the <a class="link" href="https://github.com/reagent-systems/via/blob/main/examples/fan-bulb/v0.1/rules/lark.kicad_dru">rule file</a>, and the design rule check holds every gap to them.</p>
 <p>We asked for a DIP switch on the side to choose between Alexa and Apple Home. Its contacts would sit at mains potential under a finger. The agent chose a magnet in a slider outside the sealed housing instead, sitting over two Hall switches inside. That was the agent's idea, and it means nothing a finger touches is at mains potential.</p>
 <h2 id="where-the-microphones-go">Where the microphones go</h2>
 <p>Lark hangs base-up, so the dome's tip faces the room. Since warm air rises, the tip is also the coolest place, and the agent put the two microphones there, on a 15 mm disc named the ear.</p>
@@ -107,11 +107,11 @@
 <h2 id="how-the-design-went">How the design went</h2>
 <p>The agent tried an A15 bulb first, 47.6 mm across. Each of the driver's 56 parts fit on its own, but they didn't all fit together. We answered, "expand the design as well if it cannot fit, or use multiple dimensions of stacked boards". The housing grew to an A19, 60 mm across and 108 mm long, and its inside is a cone, a sphere and a 20 mm tube.</p>
 <p>So Lark is four boards in two directions, and we think the stack is the cleverest thing about it. The driver stands in the neck, and the aluminum light disc lies across its top. The brain board stands in the dome at 90 degrees to the driver, reaching up to the ear. Tongues on the standing boards pass through slots in the lying boards, and solder fillets join them.</p>
-<p>The driver was the hard board to route. With two layers, FreeRouting left 26 connections open. After the move to four layers, the router's file left out the new ground plane, and 37 stayed open. Our <a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/ee-agent-kit/MISTAKES.md">list of mistakes</a> records that and the spacing errors in the next fix as M207 and M208. The agent wrote code for the links the router left open, 94 track segments and 23 vias, and FreeRouting routed the rest.</p>
+<p>The driver was the hard board to route. With two layers, FreeRouting left 26 connections open. After the move to four layers, the router's file left out the new ground plane, and 37 stayed open. Our <a class="link" href="https://github.com/reagent-systems/via/blob/main/ee-agent-kit/MISTAKES.md">list of mistakes</a> records that and the spacing errors in the next fix as M207 and M208. The agent wrote code for the links the router left open, 94 track segments and 23 vias, and FreeRouting routed the rest.</p>
 <p>The simulation check also failed once, in M210. The bus deck's 9.1 W load was meant to be both strings at full current, but it was one string's worth. At the corners, one bulk capacitor carried more ripple current than its 47 mA rating. The agent added a firmware rule that warm and cool together draw at most 90 percent of one string. Now the deck's load is 8.3 W, and at the worst corner the capacitor carries 44.7 mA.</p>
 <p>All four boards pass Via's checks, with 12 warnings between them.</p>
 <h2 id="what-is-open">What is open</h2>
-<p>No firmware has run on a board. With the light off, the logic stays on and would draw about 0.9 W from the mains. California's Title 20 holds a state-regulated LED lamp's standby to 0.2 W. Version 0.1 doesn't handle a fan's triac dimmer, which cuts away part of each mains half-cycle. A lamp sold in the US is listed to UL 1993, and its driver to UL 8750, but neither listing has been started. <a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/examples/fan-bulb/v0.1/README.md">The Lark README</a> lists every open item, and <a class="link" href="../examples/lark.html">the Lark page</a> shows the assembly.</p>
+<p>No firmware has run on a board. With the light off, the logic stays on and would draw about 0.9 W from the mains. California's Title 20 holds a state-regulated LED lamp's standby to 0.2 W. Version 0.1 doesn't handle a fan's triac dimmer, which cuts away part of each mains half-cycle. A lamp sold in the US is listed to UL 1993, and its driver to UL 8750, but neither listing has been started. <a class="link" href="https://github.com/reagent-systems/via/blob/main/examples/fan-bulb/v0.1/README.md">The Lark README</a> lists every open item, and <a class="link" href="../examples/lark.html">the Lark page</a> shows the assembly.</p>
 <p>Next, we want to try a wake-word chip that draws a few milliwatts and wakes the voice chip. We also want to settle the microphones' spacing, then build a bulb and measure it.</p>
           </div>
         </div>
@@ -154,11 +154,11 @@
               <li><a href="../blog.html">Blog</a></li>
               <li><a href="../feedback.html">Feedback</a></li>
               <li><a href="https://discord.reagent-systems.com">Community</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via">GitHub</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/WORKCENTER.md">Contract</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/ee-agent-kit/STATUS.md">Status</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/ee-agent-kit/ROADMAP.md">Roadmap</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/LICENSE">MIT License</a></li>
+              <li><a href="https://github.com/reagent-systems/via">GitHub</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/WORKCENTER.md">Contract</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/ee-agent-kit/STATUS.md">Status</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/ee-agent-kit/ROADMAP.md">Roadmap</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/LICENSE">MIT License</a></li>
             </ul>
           </nav>
         </div>

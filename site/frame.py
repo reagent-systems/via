@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import html
 
-REPO = "https://github.com/ThyFriendlyFox/via"
+REPO = "https://github.com/reagent-systems/via"
 
 
 GH_PATH = (

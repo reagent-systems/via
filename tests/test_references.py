@@ -38,7 +38,7 @@ BEFORE = b"%PDF-1.4 Acme AN-18 Input filters, Rev. A\n"
 AFTER = b"%PDF-1.4 Acme AN-18 Input filters, Rev. B\n"
 WALLED = b"%PDF-1.4 Acme AN-19 Thermal vias, Rev. A\n"
 # The same name `fetch` sends (tools/workcenter FETCH_AGENT).
-AGENT = "EE-Workcenter/1 (+https://github.com/ThyFriendlyFox/via)"
+AGENT = "EE-Workcenter/1 (+https://github.com/reagent-systems/via)"
 
 
 def sha(data: bytes) -> str:

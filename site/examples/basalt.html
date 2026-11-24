@@ -66,7 +66,7 @@
             <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 14.6A8.4 8.4 0 1 1 9.4 3.8a6.6 6.6 0 0 0 10.8 10.8Z"/></svg>
             <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
           </button>
-          <a class="gh-pill" href="https://github.com/ThyFriendlyFox/via" aria-label="Via on GitHub">
+          <a class="gh-pill" href="https://github.com/reagent-systems/via" aria-label="Via on GitHub">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
             <span>GitHub</span>
           </a>
@@ -134,7 +134,7 @@
           <div class="head" data-reveal data-stagger>
             <p class="eyebrow">Checks</p>
             <h2 class="title" id="checks-title">The four checks on Basalt v0.3</h2>
-            <p class="lede">The verdict of the last run, as <a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/examples/threadripper-matx/v0.3/docs/gates.md">its gates report</a> records it: <b>GREEN (nothing to run for: sim)</b>.</p>
+            <p class="lede">The verdict of the last run, as <a class="link" href="https://github.com/reagent-systems/via/blob/main/examples/threadripper-matx/v0.3/docs/gates.md">its gates report</a> records it: <b>GREEN (nothing to run for: sim)</b>.</p>
           </div>
           <div class="checks-run" data-reveal><ul class="checks"><li><span>Electrical rules (ERC)</span><b>0 errors, 0 warnings</b></li><li><span>Design rules (DRC)</span><b>0 errors, 0 warnings (0 unconnected, 0 parity)</b></li><li><span>Simulation (SIM)</span><b>no sim/*.cir in project</b></li><li><span>Fabrication files (EXPORT)</span><b>4/4 outputs, 30 gerber files</b></li></ul></div>
         </div>
@@ -145,7 +145,7 @@
           <div class="head" data-reveal data-stagger>
             <p class="eyebrow">How it was built</p>
             <h2 class="title" id="timeline-title">Every step of the design, with what it changed</h2>
-            <p class="lede">Each step as the README's "What changed" sections (<a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/examples/threadripper-matx/v0.3/README.md">v0.3/README.md</a>) records it, oldest first.</p>
+            <p class="lede">Each step as the README's "What changed" sections (<a class="link" href="https://github.com/reagent-systems/via/blob/main/examples/threadripper-matx/v0.3/README.md">v0.3/README.md</a>) records it, oldest first.</p>
           </div>
           <ol class="timeline">
             <li data-reveal><div class="tl-meta"><time datetime="2026-11-11">2026-11-11</time><span class="stage">v0.1</span></div><div class="tl-body"><h3>The floor plan and the power</h3><p>The first version places every part whose position the form factor or another part fixes and joins what carries power, so that each later version adds one bus to a board that is already GREEN.</p></div></li>
@@ -161,10 +161,10 @@
             <p class="eyebrow">What is open</p>
             <h2 class="title" id="open-title">What's still left to do on this board</h2>
           </div>
-          <ul class="open" data-reveal data-stagger><li>The PCI Express and M.2 lanes, with the host transmitters' AC capacitors. Tried on a copy of v0.3 (<code>../LOOP.md</code>, pass 12): the grid router joins 151 of the 234; the M.2 lanes need a trunk beside the slots drawn by rule, as the memory's combs are, before the slots' lanes fill the way.</li><li>The processor's slow signals: the SATA pairs (lanes in SATA mode), USB 2.0 to the headers and the board controller, SPI to the flash and the TPM, the buttons, VBAT and RTC_RST, the drive LED.</li><li>The rear I/O's controllers, on the processor's remaining lanes.</li><li>The board controller's firmware.</li><li>Length tuning inside each memory byte lane (12.3 mm at most).</li><li>The sheet: the ports' parts sit in the shelves one by one, and their wires run long; each port's parts belong in a block of their own, as each phase's are (P24 step 4).</li><li>The socket's housing, frame and cooler holes, and the land pitch, against a socket drawing (Lotes, Foxconn; NDA).</li><li>AMD's pin map in place of the stand-in.</li></ul><p class="after">Two more in <a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/examples/threadripper-matx/v0.3/README.md">its README</a>.</p>
+          <ul class="open" data-reveal data-stagger><li>The PCI Express and M.2 lanes, with the host transmitters' AC capacitors. Tried on a copy of v0.3 (<code>../LOOP.md</code>, pass 12): the grid router joins 151 of the 234; the M.2 lanes need a trunk beside the slots drawn by rule, as the memory's combs are, before the slots' lanes fill the way.</li><li>The processor's slow signals: the SATA pairs (lanes in SATA mode), USB 2.0 to the headers and the board controller, SPI to the flash and the TPM, the buttons, VBAT and RTC_RST, the drive LED.</li><li>The rear I/O's controllers, on the processor's remaining lanes.</li><li>The board controller's firmware.</li><li>Length tuning inside each memory byte lane (12.3 mm at most).</li><li>The sheet: the ports' parts sit in the shelves one by one, and their wires run long; each port's parts belong in a block of their own, as each phase's are (P24 step 4).</li><li>The socket's housing, frame and cooler holes, and the land pitch, against a socket drawing (Lotes, Foxconn; NDA).</li><li>AMD's pin map in place of the stand-in.</li></ul><p class="after">Two more in <a class="link" href="https://github.com/reagent-systems/via/blob/main/examples/threadripper-matx/v0.3/README.md">its README</a>.</p>
           <div class="actions">
-            <a class="btn btn-primary" href="https://github.com/ThyFriendlyFox/via/tree/main/examples/threadripper-matx/v0.3"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>Browse the project's files</a>
-            <a class="btn btn-fill" href="https://github.com/ThyFriendlyFox/via/blob/main/examples/threadripper-matx/v0.3/README.md">Read its README</a>
+            <a class="btn btn-primary" href="https://github.com/reagent-systems/via/tree/main/examples/threadripper-matx/v0.3"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>Browse the project's files</a>
+            <a class="btn btn-fill" href="https://github.com/reagent-systems/via/blob/main/examples/threadripper-matx/v0.3/README.md">Read its README</a>
           </div>
         </div>
       </section>
@@ -179,11 +179,11 @@
               <li><a href="../blog.html">Blog</a></li>
               <li><a href="../feedback.html">Feedback</a></li>
               <li><a href="https://discord.reagent-systems.com">Community</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via">GitHub</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/WORKCENTER.md">Contract</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/ee-agent-kit/STATUS.md">Status</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/ee-agent-kit/ROADMAP.md">Roadmap</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/LICENSE">MIT License</a></li>
+              <li><a href="https://github.com/reagent-systems/via">GitHub</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/WORKCENTER.md">Contract</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/ee-agent-kit/STATUS.md">Status</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/ee-agent-kit/ROADMAP.md">Roadmap</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/LICENSE">MIT License</a></li>
             </ul>
           </nav>
         </div>

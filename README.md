@@ -1,6 +1,6 @@
 # Via
 
-[![CI](https://github.com/ThyFriendlyFox/via/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ThyFriendlyFox/via/actions/workflows/ci.yml)
+[![CI](https://github.com/reagent-systems/via/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/reagent-systems/via/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-1e49b7)](LICENSE)
 
 [Website](https://via.computer) · [Contract](WORKCENTER.md) · [Status](ee-agent-kit/STATUS.md) · [Roadmap](ee-agent-kit/ROADMAP.md)
@@ -317,47 +317,47 @@ command. `workcenter next <project>` gives the step, and `make verify`
 the repository's health.
 
 **A Docker image.** With Docker instead of installing (amd64 or arm64; no openEMS on arm64):
-`docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work ghcr.io/thyfriendlyfox/via:main workcenter gates .`.
-The files the gates write belong to you. The image holds the toolchain install.sh installs and Via, without the example boards and the site; `.github/workflows/image.yml` builds it on Ubuntu 24.04 and publishes it from `main`, a release's tag, each Monday and by hand. Pin a toolchain by its digest from the `Image` workflow's summary. The package is named `via`. Its first image is pushed by the release's tag or the next push to `main`; the images built before the first release went to an older package, `ee-workcenter`, which is no longer updated.
+`docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work ghcr.io/reagent-systems/via:main workcenter gates .`.
+The files the gates write belong to you. The image holds the toolchain install.sh installs and Via, without the example boards and the site; `.github/workflows/image.yml` builds it on Ubuntu 24.04 and publishes it from `main`, a release's tag, each Monday and by hand. Pin a toolchain by its digest from the `Image` workflow's summary. The package is named `via`. The repository moved to `reagent-systems` on 2026-11-24, and the image moves with it: `ghcr.io/reagent-systems/via` is made by the first image build from the moved repository, and is public once the owner makes it so (`ee-agent-kit/CI.md`). Until then, `ghcr.io/thyfriendlyfox/via:main` holds the last image built before the move. The images built before the first release went to an older package, `ee-workcenter`, which is no longer updated.
 
 ### Run Via from its container
 
-The image of the release v0.1.0 has the tag `v0.1.0`.
+The image of the release v0.1.0 has the tag `v0.1.0`, built when the tag `v0.1.0` is pushed; no tag has been pushed yet.
 It mounts your project on `/work`, its working folder.
 
 Pull the image:
 
 ```sh
-docker pull ghcr.io/thyfriendlyfox/via:v0.1.0
+docker pull ghcr.io/reagent-systems/via:v0.1.0
 ```
 
 Run the gates on the project in the current folder, on Linux or macOS in a POSIX shell:
 
 ```sh
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work ghcr.io/thyfriendlyfox/via:v0.1.0 workcenter gates .
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work ghcr.io/reagent-systems/via:v0.1.0 workcenter gates .
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-docker run --rm -v "${PWD}:/work" ghcr.io/thyfriendlyfox/via:v0.1.0 workcenter gates .
+docker run --rm -v "${PWD}:/work" ghcr.io/reagent-systems/via:v0.1.0 workcenter gates .
 ```
 
 On Windows, in cmd.exe:
 
 ```bat
-docker run --rm -v "%cd%:/work" ghcr.io/thyfriendlyfox/via:v0.1.0 workcenter gates .
+docker run --rm -v "%cd%:/work" ghcr.io/reagent-systems/via:v0.1.0 workcenter gates .
 ```
 
 - On Linux, `--user` makes the files the gates write yours; the image's build checks this with the same command.
 - With no command, the image runs `workcenter doctor`.
-- The package is public: a pull needs no login.
+- Once the owner makes the package public, a pull needs no login.
 - On arm64 (an Apple Silicon Mac, a Windows on Arm PC) the image has no openEMS; `--platform linux/amd64` runs the amd64 image, with openEMS, under emulation.
 - Docker Desktop on Windows and macOS runs Linux containers, and this image is a Linux image (Ubuntu 24.04).
 - The chip engines are not in the image; `sudo ./install.sh --chip` installs them on Ubuntu 24.04.
 - The image build runs the Linux command on Linux; nobody has run these commands on Windows or macOS yet.
 
-A board repository gets the gates on every pull request from 1 workflow that calls `ThyFriendlyFox/via/.github/workflows/board-gates.yml@main`: 1 job per project folder, the gates table in the job's summary, a red check on RED, SKIPPED, or a project with no board to judge. It runs in Via's public image, and installs with install.sh where the registry holds no image of that toolchain. The `board-ci` skill holds the caller.
+A board repository gets the gates on every pull request from 1 workflow that calls `reagent-systems/via/.github/workflows/board-gates.yml@main`: 1 job per project folder, the gates table in the job's summary, a red check on RED, SKIPPED, or a project with no board to judge. It runs in Via's public image, and installs with install.sh where the registry holds no image of that toolchain. The `board-ci` skill holds the caller.
 
 ## The website
 

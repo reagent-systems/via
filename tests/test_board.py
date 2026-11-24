@@ -27,7 +27,7 @@ TOOL = ROOT / "tools" / "board.py"
 STAND_IN = ROOT / "tests" / "board" / "gh.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "board.yml"
 BOARD = "https://github.com/users/ThyFriendlyFox/projects/2"
-REPO = "ThyFriendlyFox/via"
+REPO = "reagent-systems/via"
 
 PROJECT_ID = "PVT_stand-in-project"
 FIELD_ID = "PVTSSF_lADOANN5s84ACbL0zgBZrZg"
@@ -52,9 +52,9 @@ def event(
             "body": body,
             "state": state,
             "author_association": association,
-            "html_url": "https://github.com/ThyFriendlyFox/via/issues/1347",
+            "html_url": "https://github.com/reagent-systems/via/issues/1347",
         },
-        "repository": {"full_name": "ThyFriendlyFox/via"},
+        "repository": {"full_name": "reagent-systems/via"},
         "sender": {"login": "octocat"},
     }
 
@@ -466,7 +466,7 @@ def test_an_organization_board_is_found_under_organization(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "url", ["https://github.com/ThyFriendlyFox/via", "https://github.com/users/x/projects/two", ""]
+    "url", ["https://github.com/reagent-systems/via", "https://github.com/users/x/projects/two", ""]
 )
 def test_a_board_that_is_no_project_url_fails_before_any_call(tmp_path, url):
     proc, found = run(tmp_path, event(), board=url)
@@ -710,7 +710,7 @@ def test_all_moves_a_card_that_stands_in_the_wrong_column(tmp_path):
     proc, found = run_all(tmp_path, [card(82, "**Status:** In progress")], [item(82, "Todo")])
     assert proc.returncode == 0, proc.stderr
     assert [kind(c) for c in found] == ["find", "issues", "items", "set"]
-    assert found[1]["owner"] == ("-f", "ThyFriendlyFox") and found[1]["name"] == ("-f", "via")
+    assert found[1]["owner"] == ("-f", "reagent-systems") and found[1]["name"] == ("-f", "via")
     assert "cursor" not in found[1] and "cursor" not in found[2]
     assert found[2]["project"] == ("-f", PROJECT_ID)
     assert writes(found) == [("set", "PVTI_stand-in-82", OPTION["In Progress"])]
@@ -1024,7 +1024,7 @@ def test_on_a_schedule_or_by_hand_the_step_runs_all_cards(tmp_path):
         proc = run_step(here, "stand-in-token", name, BOARD_GH_ISSUES=str(issues), BOARD_GH_ITEMS=str(items))
         assert proc.returncode == 0, proc.stderr
         found = calls(here)
-        assert found[1]["owner"] == ("-f", "ThyFriendlyFox") and found[1]["name"] == ("-f", "via")
+        assert found[1]["owner"] == ("-f", "reagent-systems") and found[1]["name"] == ("-f", "via")
         assert lines(proc) == ["#82 In Progress: moved from Todo", summary(moved=1)]
 
 

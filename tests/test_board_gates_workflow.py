@@ -33,7 +33,7 @@ FLOWS = ROOT / ".github" / "workflows"
 FLOW = FLOWS / "board-gates.yml"
 FIXTURE_FLOW = FLOWS / "board-fixture.yml"
 SKILL = ROOT / ".claude" / "skills" / "board-ci" / "SKILL.md"
-USES = "ThyFriendlyFox/via/.github/workflows/board-gates.yml"
+USES = "reagent-systems/via/.github/workflows/board-gates.yml"
 PIN = "<sha>"
 INSTALL = "./install.sh"
 ARCHIVE = "sudo env APT_ARCHIVE_CI=1 bash tools/ci/apt_archive.sh /etc/apt"
@@ -73,7 +73,7 @@ def test_a_caller_names_its_projects_and_every_input_has_its_default():
     assert defaults == {
         "projects": '["."]',
         "strict": False,
-        "workcenter-repository": "ThyFriendlyFox/via",
+        "workcenter-repository": "reagent-systems/via",
         "workcenter-ref": "main",
         "use-image": True,
         "apt-ubuntu-archive": True,
@@ -773,7 +773,7 @@ def whole_job(tmp_path: Path, pull: int, gates: int) -> tuple[list[tuple[str, in
     ctx = {
         "inputs.projects": '["."]',
         "inputs.strict": "false",
-        "inputs.workcenter-repository": "ThyFriendlyFox/via",
+        "inputs.workcenter-repository": "reagent-systems/via",
         "inputs.workcenter-ref": "main",
         "inputs.use-image": "true",
         "inputs.apt-ubuntu-archive": "true",
@@ -809,14 +809,13 @@ def test_the_whole_job_falls_back_to_install_sh_when_the_image_is_refused(tmp_pa
         "The gates table into the job's summary",
     ]
     assert calls == [
-        f"docker pull ghcr.io/thyfriendlyfox/via:{tag}",
+        f"docker pull ghcr.io/reagent-systems/via:{tag}",
         ARCHIVE,
         f"sudo env APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570 {INSTALL}",
         "python3 .via/tools/workcenter gates .",
     ]
-    assert summary == (
-        GREEN_TABLE + f"\nWhere: install.sh: the registry gave no ghcr.io/thyfriendlyfox/via:{tag}: denied.\n"
-    )
+    denied = f"\nWhere: install.sh: the registry gave no ghcr.io/reagent-systems/via:{tag}: denied.\n"
+    assert summary == GREEN_TABLE + denied
 
 
 def test_the_whole_job_runs_in_the_image_when_it_is_pulled_and_installs_nothing(tmp_path):
@@ -825,9 +824,9 @@ def test_the_whole_job_runs_in_the_image_when_it_is_pulled_and_installs_nothing(
     tag = image.content_tag(image.from_git(ROOT, "HEAD"))
     ran, ok, calls, summary = whole_job(tmp_path, pull=0, gates=0)
     assert ok and len(ran) == 4
-    ref = f"ghcr.io/thyfriendlyfox/via:{tag}"
+    ref = f"ghcr.io/reagent-systems/via:{tag}"
     assert calls == [f"docker pull {ref}", f"docker run {ref}"]
-    assert summary == GREEN_TABLE + f"\nWhere: the image ghcr.io/thyfriendlyfox/via:{tag}.\n"
+    assert summary == GREEN_TABLE + f"\nWhere: the image ghcr.io/reagent-systems/via:{tag}.\n"
 
 
 @pytest.mark.parametrize("pull", [0, 1])

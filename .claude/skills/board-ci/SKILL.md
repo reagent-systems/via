@@ -39,12 +39,12 @@ permissions:
   contents: read
 jobs:
   gates:
-    uses: ThyFriendlyFox/via/.github/workflows/board-gates.yml@<sha>
+    uses: reagent-systems/via/.github/workflows/board-gates.yml@<sha>
     with:
       projects: '["v1"]'
       workcenter-ref: <sha>
   gates-strict:
-    uses: ThyFriendlyFox/via/.github/workflows/board-gates.yml@<sha>
+    uses: reagent-systems/via/.github/workflows/board-gates.yml@<sha>
     with:
       projects: '["v1/display"]'
       strict: true
@@ -72,7 +72,7 @@ job pulls it with no login and holds no token of the job.
 |---|---|---|
 | `projects` | `["."]` | The project folders, as a JSON list. 1 job each. |
 | `strict` | `false` | `true` passes `--strict`: a warning fails the gate. |
-| `workcenter-repository` | `ThyFriendlyFox/via` | The repository of Via to run. Its owner also owns the image. |
+| `workcenter-repository` | `reagent-systems/via` | The repository of Via to run. Its owner also owns the image. |
 | `workcenter-ref` | `main` | The commit, branch or tag of Via whose tools run. It does not follow the `uses:` ref: pass the same SHA. |
 | `use-image` | `true` | `false` never asks the registry: always install.sh. |
 | `apt-ubuntu-archive` | `true` | `false` leaves the runner's apt mirror as it is on the install path. |
@@ -92,7 +92,7 @@ job pulls it with no login and holds no token of the job.
    1 min 29 s on Ubuntu's own archive in CI run 44444183056 (the same
    section). No run of this workflow has timed it yet.
 
-The image path is the normal path. The package `ghcr.io/thyfriendlyfox/via`
+The image path is the normal path. The package `ghcr.io/reagent-systems/via`
 is public: on 2026-11-19 the registry gave its tag list and the manifest
 of `tc-ad6cb1705e532dcc`, the tag of `main`'s toolchain, to a pull with no
 login. The install path is taken when the registry holds no image of the

@@ -52,7 +52,7 @@ STEPS = (
         "install",
         "Installing the tools",
         f"""<p>One script installs the tools Via uses, including KiCad 10, ngspice, Java 21 and FreeRouting. It adds system packages, so it asks for sudo.</p>
-            {commands("git clone https://github.com/ThyFriendlyFox/via.git && cd via", "sudo ./install.sh")}
+            {commands("git clone https://github.com/reagent-systems/via.git && cd via", "sudo ./install.sh")}
             <p>On a cloud environment, the setup script does this step for you.</p>""",
     ),
     (

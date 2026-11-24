@@ -66,7 +66,7 @@
             <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 14.6A8.4 8.4 0 1 1 9.4 3.8a6.6 6.6 0 0 0 10.8 10.8Z"/></svg>
             <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
           </button>
-          <a class="gh-pill" href="https://github.com/ThyFriendlyFox/via" aria-label="Via on GitHub">
+          <a class="gh-pill" href="https://github.com/reagent-systems/via" aria-label="Via on GitHub">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
             <span>GitHub</span>
           </a>
@@ -97,7 +97,7 @@
 <h2 id="how-the-firmware-hears-one-tone">How the firmware hears one tone</h2>
 <p>The tone detector is the part of Herald we like best. It uses a method Gerald Goertzel published in 1958, in The American Mathematical Monthly. His paper is "An Algorithm for the Evaluation of Finite Trigonometric Series", and it's at <a class="link" href="https://doi.org/10.2307/2310304">doi:10.2307/2310304</a>. The method works as a filter tuned to one frequency.</p>
 <p>The filter keeps two running numbers. Each new sample updates them with one multiply, by a constant set from the target frequency, so the filter can sit exactly on a DTMF tone. The numbers stay small unless the signal holds that frequency. When it does, each sample adds in step with the last one, and they grow. At the end, one formula turns the two numbers into the power at that frequency.</p>
-<p>So Herald gets by without a DTMF chip. Its decoder, <a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/examples/fire-alarm-communicator/v0.1/firmware/src/dtmf.c"><code>dtmf.c</code></a>, runs eight of these filters, one for each tone. Each window is 205 samples at 8 kHz, or 25.6 ms. A window that long separates tones about 39 Hz apart, and the two closest DTMF tones are 73 Hz apart.</p>
+<p>So Herald gets by without a DTMF chip. Its decoder, <a class="link" href="https://github.com/reagent-systems/via/blob/main/examples/fire-alarm-communicator/v0.1/firmware/src/dtmf.c"><code>dtmf.c</code></a>, runs eight of these filters, one for each tone. Each window is 205 samples at 8 kHz, or 25.6 ms. A window that long separates tones about 39 Hz apart, and the two closest DTMF tones are 73 Hz apart.</p>
 <p>An FFT is the usual tool, but it measures every frequency in the window, and Herald only needs eight. Goertzel costs one multiply per sample per tone, so 205 samples times eight tones is 1640 multiplies. A 256-point FFT takes 1024 steps, each with a complex multiply worth four ordinary ones. Its answers also fall on a 31.25 Hz grid that misses every DTMF tone.</p>
 <p>On a computer, the tests play all 16 keys through the decoder along with tones it has to refuse, and they pass.</p>
 <h2 id="telling-an-alarm-from-a-cut-wire">Telling an alarm from a cut wire</h2>
@@ -106,16 +106,16 @@
 <p>Four simulations try these cases at 0 and 50 °C and at each part's tolerance limits. The worst readings are 0.151 V closed, 1.555 to 1.798 V whole and 3.186 V cut. Each one stays at least 0.2 V from the firmware's thresholds.</p>
 <p>Supervision runs the other way too. Herald holds a relay on while it's healthy, so if the supply is lost or the board resets, the relay opens and warns the panel.</p>
 <h2 id="how-the-design-went">How the design went</h2>
-<p>The agent wrote the whole board as one Python file, <a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/examples/fire-alarm-communicator/v0.1/design.py"><code>design.py</code></a>. Via turns that file into a KiCad project and routes it, then checks the electrical rules, the design rules, the simulation and the fabrication files.</p>
+<p>The agent wrote the whole board as one Python file, <a class="link" href="https://github.com/reagent-systems/via/blob/main/examples/fire-alarm-communicator/v0.1/design.py"><code>design.py</code></a>. Via turns that file into a KiCad project and routes it, then checks the electrical rules, the design rules, the simulation and the fabrication files.</p>
 <pre data-language="sh"><code>workcenter design design.py --route
 workcenter gates .</code></pre>
 <p>Herald's simulation has eight decks, and together they made 573 runs across temperature and tolerance. On the last run all four checks passed, with seven warnings for white printing at the board's edge.</p>
 <p>In six of the eight design rounds, a reviewer who was new to the board read its pictures against one fixed prompt, and the reviewer's list became the next round's work. Over the rounds the board shrank from 96 to 84.4 mm wide, and its terminals changed to black.</p>
 <p>The simulation's best catch was in the tone output. The ESP32 makes its tones as fast pulses, and two resistor-capacitor filters smooth them into a sine wave. The first version used 10 kilohm resistors and 10 nF capacitors. In simulation it put 28 mV on the line, where the deck asks for 62 mV, about -25 dBm. With 10 kilohms in front of it, the line's 600 ohm load got only a small part of the tone. The agent changed the filter to 1 kilohm and 68 nF. Now the deck reads 191 to 204 mV peak at 350 Hz at every corner of temperature and tolerance.</p>
-<p>FreeRouting, the open-source router, connected all but three nets, and the agent wrote the tracks for those three into <code>design.py</code>. The keep-outs were the fiddly part, and two mistakes with them cost extra router runs. In M137, a keep-out drawn after placement covered a surge diode's pad, so the route left one net open. M138 is the subtler one. The keep-outs banned vias, and a via goes through every layer, but the agent had checked only the back of the board for pads. Our <a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/ee-agent-kit/MISTAKES.md">list of mistakes</a> records both, with the process step each one broke.</p>
+<p>FreeRouting, the open-source router, connected all but three nets, and the agent wrote the tracks for those three into <code>design.py</code>. The keep-outs were the fiddly part, and two mistakes with them cost extra router runs. In M137, a keep-out drawn after placement covered a surge diode's pad, so the route left one net open. M138 is the subtler one. The keep-outs banned vias, and a via goes through every layer, but the agent had checked only the back of the board for pads. Our <a class="link" href="https://github.com/reagent-systems/via/blob/main/ee-agent-kit/MISTAKES.md">list of mistakes</a> records both, with the process step each one broke.</p>
 <h2 id="what-is-open">What is open</h2>
 <p>Nobody has built a Herald board or priced its parts yet. Its firmware has only run in tests on a computer, and the agent hasn't written the tone player, the modem's commands or the relay's watchdog. We also haven't chosen a protocol to the station.</p>
-<p>A communicator that a fire alarm system relies on carries a listing to UL 864 or a local equivalent. UL 864 is the standard for control units and accessories for fire alarm systems, and a listing means an approved lab has tested the product to it. Herald has no listing. It hasn't had a surge test or a check of its supervision timing either. <a class="link" href="https://github.com/ThyFriendlyFox/via/blob/main/examples/fire-alarm-communicator/v0.1/README.md">The README</a> lists every open item.</p>
+<p>A communicator that a fire alarm system relies on carries a listing to UL 864 or a local equivalent. UL 864 is the standard for control units and accessories for fire alarm systems, and a listing means an approved lab has tested the product to it. Herald has no listing. It hasn't had a surge test or a check of its supervision timing either. <a class="link" href="https://github.com/reagent-systems/via/blob/main/examples/fire-alarm-communicator/v0.1/README.md">The README</a> lists every open item.</p>
 <p>For v0.2, we'd like to win back the 3 mm of height the last review found. If a panel needs more than about 23 V on the line, we'd add a 48 V converter.</p>
           </div>
         </div>
@@ -158,11 +158,11 @@ workcenter gates .</code></pre>
               <li><a href="../blog.html">Blog</a></li>
               <li><a href="../feedback.html">Feedback</a></li>
               <li><a href="https://discord.reagent-systems.com">Community</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via">GitHub</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/WORKCENTER.md">Contract</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/ee-agent-kit/STATUS.md">Status</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/ee-agent-kit/ROADMAP.md">Roadmap</a></li>
-              <li><a href="https://github.com/ThyFriendlyFox/via/blob/main/LICENSE">MIT License</a></li>
+              <li><a href="https://github.com/reagent-systems/via">GitHub</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/WORKCENTER.md">Contract</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/ee-agent-kit/STATUS.md">Status</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/ee-agent-kit/ROADMAP.md">Roadmap</a></li>
+              <li><a href="https://github.com/reagent-systems/via/blob/main/LICENSE">MIT License</a></li>
             </ul>
           </nav>
         </div>

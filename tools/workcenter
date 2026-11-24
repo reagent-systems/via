@@ -3193,7 +3193,7 @@ def needs_model(ref: str) -> bool:
 
 
 # Who asks, said plainly; a refused fetch is the supplier's answer and is never retried disguised.
-FETCH_AGENT = "EE-Workcenter/1 (+https://github.com/ThyFriendlyFox/via)"
+FETCH_AGENT = "EE-Workcenter/1 (+https://github.com/reagent-systems/via)"
 SUBCKT_RE = re.compile(r"^\s*\.subckt\s+(\S+)(.*)$", re.IGNORECASE | re.MULTILINE)
 # An include line and the file it names: in quotes, where the path may hold a space, or bare.
 INCLUDE_RE = re.compile(
