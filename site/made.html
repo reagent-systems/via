@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Made with Via</title>
-    <meta name="description" content="Boards made with Via that pass its checks, each with its board in 3D, every track and how it came together.">
+    <meta name="description" content="Boards made with Via that pass its checks: search them, sort them by parts, layers and size, and open each one in 3D.">
     <link rel="canonical" href="%MADE%/">
     <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -33,9 +33,8 @@
         }
       })();
     </script>
-    <script src="vendor/motion-14.6.0.js" defer></script>
     <script src="site.js" defer></script>
-    <script src="effects.js" defer></script>
+    <script src="made.js" defer></script>
     <script>
       window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
     </script>
@@ -44,56 +43,211 @@
   <body>
     <a class="skip" href="#main">Skip to content</a>
 
-    <header class="site-header">
-      <div class="progress" data-progress aria-hidden="true"></div>
-      <div class="wrap">
-        <a class="brand" href="https://via.computer/" aria-label="Via, home">
-          <svg class="logo" data-logo viewBox="283 202 394 136" fill="currentColor" stroke="currentColor" stroke-width="12" stroke-linejoin="round" aria-hidden="true"><path class="lg-letter" d="m378.4252 269.28348-44.566925-60.472458h-44.566925l89.13385 120.9449z"/><path class="lg-pad" d="M389.88452 208.81102h39.46457v33.10237h-39.46457z"/><path class="lg-letter" d="M464.09186 210.2441h39.46457v120.94487h-39.46457z"/><path class="lg-letter" d="m581.5748 269.28348 44.566895 60.472443h44.566956l-89.13385-120.9449z"/><path class="lg-pad" d="M570.1155 329.75592h-39.46454v-33.102386h39.46454z"/><g fill="none"><path class="lg-trace" d="M409.6168 241.91339v57.606293h-31.181091"/><path class="lg-trace" d="M503.55643 270.71652h46.834625v25.952759"/><path class="lg-trace" d="M570.1155 313.2047h18.233643v-13.669281h15.498657"/><path class="lg-trace" d="M429.3491 225.3622h17.37146v45.354324h17.368683"/></g></svg>
+    <header class="made-bar">
+      <div class="made-bar-in">
+        <a class="made-brand" href="https://made.via.computer/" aria-label="Made with Via, all the boards">
+          <svg class="logo" viewBox="283 202 394 136" fill="currentColor" stroke="currentColor" stroke-width="12" stroke-linejoin="round" aria-hidden="true"><path class="lg-letter" d="m378.4252 269.28348-44.566925-60.472458h-44.566925l89.13385 120.9449z"/><path class="lg-pad" d="M389.88452 208.81102h39.46457v33.10237h-39.46457z"/><path class="lg-letter" d="M464.09186 210.2441h39.46457v120.94487h-39.46457z"/><path class="lg-letter" d="m581.5748 269.28348 44.566895 60.472443h44.566956l-89.13385-120.9449z"/><path class="lg-pad" d="M570.1155 329.75592h-39.46454v-33.102386h39.46454z"/><g fill="none"><path class="lg-trace" d="M409.6168 241.91339v57.606293h-31.181091"/><path class="lg-trace" d="M503.55643 270.71652h46.834625v25.952759"/><path class="lg-trace" d="M570.1155 313.2047h18.233643v-13.669281h15.498657"/><path class="lg-trace" d="M429.3491 225.3622h17.37146v45.354324h17.368683"/></g></svg>
         </a>
-        <nav class="site-nav" aria-label="Site">
-          <ul>
-            <li><a href="https://via.computer/index.html#herald">Example</a></li>
-            <li><a href="https://via.computer/examples.html">Boards</a></li>
-            <li><a href="https://via.computer/index.html#gates">Checks</a></li>
-            <li><a href="https://via.computer/index.html#run">Get started</a></li>
-            <li><a href="https://via.computer/blog.html">Blog</a></li>
-            <li><a href="https://discord.reagent-systems.com">Community</a></li>
-          </ul>
+        <nav class="made-nav" aria-label="Made with Via">
+          <details class="made-drop">
+            <summary>Community<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+            <ul>
+              <li><a href="https://discord.reagent-systems.com">Our Discord</a></li>
+              <li><a href="https://via.computer/blog">Blog</a></li>
+              <li><a href="https://via.computer/feedback">Feedback</a></li>
+              <li><a href="https://github.com/reagent-systems/via">GitHub</a></li>
+            </ul>
+          </details>
+          <details class="made-drop">
+            <summary>Categories<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+            <ul>
+                <li><button type="button" data-category="" aria-pressed="true">Every category <span>5</span></button></li>
+                <li><button type="button" data-category="Audio" aria-pressed="false">Audio <span>1</span></button></li>
+                <li><button type="button" data-category="Dev boards" aria-pressed="false">Dev boards <span>1</span></button></li>
+                <li><button type="button" data-category="Lighting" aria-pressed="false">Lighting <span>1</span></button></li>
+                <li><button type="button" data-category="Motherboards" aria-pressed="false">Motherboards <span>1</span></button></li>
+                <li><button type="button" data-category="Wearables" aria-pressed="false">Wearables <span>1</span></button></li>
+            </ul>
+          </details>
+          <button class="made-pill" type="button" data-multi aria-pressed="false">Multi-board <span class="made-new">New</span></button>
+          <a class="made-cta" href="#add">Add your board</a>
         </nav>
-        <div class="header-end">
+        <form class="made-search" role="search" data-search>
+          <input type="search" name="q" placeholder="Search" aria-label="Search the boards" autocomplete="off">
+          <button type="submit" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+        </form>
+        <div class="made-end">
+          <a class="made-out" href="https://via.computer/guide">Get Via</a>
+          <a class="made-home" href="https://via.computer/">via.computer</a>
           <button class="icon-btn" type="button" data-theme-toggle aria-pressed="false" aria-label="Dark theme">
-            <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 14.6A8.4 8.4 0 1 1 9.4 3.8a6.6 6.6 0 0 0 10.8 10.8Z"/></svg>
-            <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
+            <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 14.6A8.4 8.4 0 1 1 9.4 3.8a6.6 6.6 0 0 0 10.8 10.8Z"/></svg>
+            <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
           </button>
-          <a class="gh-pill" href="https://github.com/reagent-systems/via" aria-label="Via on GitHub">
-            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
-            <span>GitHub</span>
-          </a>
         </div>
       </div>
     </header>
 
     <main id="main" tabindex="-1">
-      <section class="section" aria-labelledby="made-title">
-        <div class="wrap">
-          <div class="head" data-reveal data-stagger>
-            <p class="eyebrow">Gallery</p>
-            <h1 class="title" id="made-title">Made with Via</h1>
-            <p class="lede">Here are the boards made with Via! Each one passes Via's checks, and its page lets you turn it in 3D, follow every track and read how it came together. The first boards are our own. Herald and Rosetta aren't here yet, because we haven't seen them pass every check. They'll show up when they do.</p>
+      <h1 class="sr-only">Made with Via</h1>
+      <div class="made-tabs">
+        <div class="made-tabs-in">
+          <div class="made-sorts" role="group" aria-label="Order">
+            <button type="button" data-sort="all" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>All Boards</button>
+            <button type="button" data-sort="parts" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3"/></svg>Most Parts</button>
+            <button type="button" data-sort="layers" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l8 4-8 4-8-4 8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 16l8 4 8-4"/></svg>Most Layers</button>
+            <button type="button" data-sort="area" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>Biggest</button>
+            <button type="button" data-sort="boards" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="13" height="12" rx="2"/><path d="M8 8V6a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3"/></svg>Most Boards</button>
           </div>
-          <div class="built" data-reveal data-stagger>
-            <a class="proj" href="https://via.computer/examples/hush"><div class="shot3d"><img src="examples/hush/card.png" width="760" height="476" loading="lazy" alt="Hush in 3D"></div><div><h3>Hush</h3><p>Hush is a speaker that listens to the room and plays the inverse wave.</p><p class="spec">v0.1 · By Team Reagent · MIT License · GREEN with 6 warnings</p></div></a><a class="proj" href="https://via.computer/examples/lark"><div class="shot3d"><img src="examples/lark/card.png" width="760" height="603" loading="lazy" alt="Lark in 3D"></div><div><h3>Lark</h3><p>A ceiling-fan bulb you talk to.</p><p class="spec">v0.1 · By Team Reagent · MIT License · GREEN on all 4 boards</p></div></a><a class="proj" href="https://via.computer/examples/signet"><div class="shot3d"><img src="examples/signet/card.png" width="760" height="558" loading="lazy" alt="Signet in 3D"></div><div><h3>Signet</h3><p>A mouse you wear as a ring.</p><p class="spec">v0.5 · By Team Reagent · MIT License · GREEN on all 8 boards</p></div></a><a class="proj" href="https://via.computer/examples/wyvern"><div class="shot3d"><img src="examples/wyvern/card.png" width="760" height="522" loading="lazy" alt="Wyvern in 3D"></div><div><h3>Wyvern</h3><p>A development board with a Snapdragon on it, on one flat board.</p><p class="spec">v0.2 · By Team Reagent · MIT License · GREEN with 16 warnings</p></div></a><a class="proj" href="https://via.computer/examples/basalt"><div class="shot3d"><img src="examples/basalt/card.png" width="760" height="493" loading="lazy" alt="Basalt in 3D"></div><div><h3>Basalt</h3><p>Basalt is a microATX motherboard for an AMD Threadripper 7000 or 9000 on the sTR5 socket (the TRX50 platform).</p><p class="spec">v0.3 · By Team Reagent · MIT License · GREEN (nothing to run for: sim)</p></div></a>
+          <span class="made-rule" aria-hidden="true"></span>
+          <label class="made-select">
+            <span class="sr-only">Layers</span>
+            <select data-layers><option value="">Any layers</option><option value="4">4 layers</option><option value="6">6 layers</option><option value="10">10 layers</option></select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </label>
+          <button class="made-filters" type="button" aria-expanded="false" aria-controls="made-panel">Filters<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16l-6 7.5V19l-4-2v-4.5L4 5z"/></svg></button>
+        </div>
+        <div class="made-panel" id="made-panel" hidden>
+          <div class="made-panel-in" role="group" aria-label="Categories">
+            <button type="button" data-category="" aria-pressed="true">Every category</button><button type="button" data-category="Audio" aria-pressed="false">Audio</button><button type="button" data-category="Dev boards" aria-pressed="false">Dev boards</button><button type="button" data-category="Lighting" aria-pressed="false">Lighting</button><button type="button" data-category="Motherboards" aria-pressed="false">Motherboards</button><button type="button" data-category="Wearables" aria-pressed="false">Wearables</button>
+            <button type="button" data-multi aria-pressed="false">Multi-board</button>
           </div>
         </div>
-      </section>
+      </div>
 
-      <section class="section" aria-labelledby="yours-title">
-        <div class="wrap">
-          <div class="head" data-reveal data-stagger>
-            <h2 class="title" id="yours-title">Your board here</h2>
-            <p class="lede">We're working on opening this page to everyone's boards. The plan is that you'll add one with a pull request that names your repository, Via's checks run on it, and it shows up here once it passes. It's item 18 on <a class="link" href="https://github.com/reagent-systems/via/blob/main/ee-agent-kit/ROADMAP.md">our roadmap</a>. Until then, we'd like to see what you're making in <a class="link" href="https://discord.reagent-systems.com">our Discord</a>.</p>
-            <p class="lede">A board here passed Via's checks on its design files. That doesn't mean anyone has built it or tested it.</p>
-          </div>
+      <div class="made-wrap">
+        <div class="made-grid" data-grid>
+            <article class="thing" data-order="0" data-text="hush hush is a speaker that listens to the room and plays the inverse wave audio team reagent" data-category="Audio" data-parts="62" data-layers="4" data-area="3844.0" data-boards="1">
+              <div class="thing-pic">
+                <a href="https://via.computer/examples/hush" tabindex="-1" aria-hidden="true"><img src="examples/hush/card.png" width="760" height="476" alt=""><img src="examples/hush/top.png" width="1098" height="984" alt="" loading="lazy" hidden><img src="examples/hush/bottom.png" width="1092" height="984" alt="" loading="lazy" hidden></a>
+                <span class="thing-ok" title="GREEN with 6 warnings"></span>
+                <div class="thing-dots" role="group" aria-label="Pictures of Hush"><button type="button" aria-pressed="true" aria-label="In 3D"></button><button type="button" aria-pressed="false" aria-label="The front"></button><button type="button" aria-pressed="false" aria-label="The back"></button></div>
+              </div>
+              <div class="thing-head">
+                <h2><a href="https://via.computer/examples/hush">Hush</a></h2>
+                <span class="thing-count" title="62 parts">62<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3"/></svg></span>
+                <details class="thing-more">
+                  <summary aria-label="More about Hush"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg></summary>
+                  <ul>
+                    <li><a href="https://via.computer/examples/hush">Its page</a></li>
+                    <li><a href="https://github.com/reagent-systems/via/tree/main/examples/anc-speaker/v0.1">Its files on GitHub</a></li>
+                    <li><button type="button" data-copy-link="https://via.computer/examples/hush">Copy its link</button></li>
+                  </ul>
+                </details>
+              </div>
+              <div class="thing-by">
+                <span class="thing-face" aria-hidden="true">TR</span>
+                <span class="thing-maker">Team Reagent</span>
+                <span class="thing-state" title="GREEN with 6 warnings">v0.1 · <b>GREEN</b></span>
+              </div>
+            </article>
+            <article class="thing" data-order="1" data-text="lark a ceiling-fan bulb you talk to lighting team reagent" data-category="Lighting" data-parts="132" data-layers="4" data-area="5599.2" data-boards="4">
+              <div class="thing-pic">
+                <a href="https://via.computer/examples/lark" tabindex="-1" aria-hidden="true"><img src="examples/lark/card.png" width="760" height="603" alt=""><img src="examples/lark/top.png" width="1100" height="752" alt="" loading="lazy" hidden></a>
+                <span class="thing-ok" title="GREEN on all 4 boards"></span>
+                <div class="thing-dots" role="group" aria-label="Pictures of Lark"><button type="button" aria-pressed="true" aria-label="In 3D"></button><button type="button" aria-pressed="false" aria-label="The front"></button></div>
+              </div>
+              <div class="thing-head">
+                <h2><a href="https://via.computer/examples/lark">Lark</a></h2>
+                <span class="thing-count" title="132 parts on 4 boards">132<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3"/></svg></span>
+                <details class="thing-more">
+                  <summary aria-label="More about Lark"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg></summary>
+                  <ul>
+                    <li><a href="https://via.computer/examples/lark">Its page</a></li>
+                    <li><a href="https://github.com/reagent-systems/via/tree/main/examples/fan-bulb/v0.1">Its files on GitHub</a></li>
+                    <li><button type="button" data-copy-link="https://via.computer/examples/lark">Copy its link</button></li>
+                  </ul>
+                </details>
+              </div>
+              <div class="thing-by">
+                <span class="thing-face" aria-hidden="true">TR</span>
+                <span class="thing-maker">Team Reagent</span>
+                <span class="thing-state" title="GREEN on all 4 boards">v0.1 · <b>GREEN</b></span>
+              </div>
+            </article>
+            <article class="thing" data-order="2" data-text="signet a mouse you wear as a ring wearables team reagent" data-category="Wearables" data-parts="61" data-layers="4" data-area="808.7" data-boards="8">
+              <div class="thing-pic">
+                <a href="https://via.computer/examples/signet" tabindex="-1" aria-hidden="true"><img src="examples/signet/card.png" width="760" height="558" alt=""><img src="examples/signet/top.png" width="1100" height="818" alt="" loading="lazy" hidden><img src="examples/signet/bottom.png" width="1100" height="794" alt="" loading="lazy" hidden></a>
+                <span class="thing-ok" title="GREEN on all 8 boards"></span>
+                <div class="thing-dots" role="group" aria-label="Pictures of Signet"><button type="button" aria-pressed="true" aria-label="In 3D"></button><button type="button" aria-pressed="false" aria-label="The front"></button><button type="button" aria-pressed="false" aria-label="The back"></button></div>
+              </div>
+              <div class="thing-head">
+                <h2><a href="https://via.computer/examples/signet">Signet</a></h2>
+                <span class="thing-count" title="61 parts on 8 boards">61<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3"/></svg></span>
+                <details class="thing-more">
+                  <summary aria-label="More about Signet"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg></summary>
+                  <ul>
+                    <li><a href="https://via.computer/examples/signet">Its page</a></li>
+                    <li><a href="https://github.com/reagent-systems/via/tree/main/examples/ring-mouse/v0.5">Its files on GitHub</a></li>
+                    <li><button type="button" data-copy-link="https://via.computer/examples/signet">Copy its link</button></li>
+                  </ul>
+                </details>
+              </div>
+              <div class="thing-by">
+                <span class="thing-face" aria-hidden="true">TR</span>
+                <span class="thing-maker">Team Reagent</span>
+                <span class="thing-state" title="GREEN on all 8 boards">v0.5 · <b>GREEN</b></span>
+              </div>
+            </article>
+            <article class="thing" data-order="3" data-text="wyvern a development board with a snapdragon on it, on one flat board dev boards team reagent" data-category="Dev boards" data-parts="94" data-layers="6" data-area="4064.5" data-boards="1">
+              <div class="thing-pic">
+                <a href="https://via.computer/examples/wyvern" tabindex="-1" aria-hidden="true"><img src="examples/wyvern/card.png" width="760" height="522" alt=""><img src="examples/wyvern/top.png" width="1100" height="785" alt="" loading="lazy" hidden><img src="examples/wyvern/bottom.png" width="1100" height="814" alt="" loading="lazy" hidden></a>
+                <span class="thing-ok" title="GREEN with 16 warnings"></span>
+                <div class="thing-dots" role="group" aria-label="Pictures of Wyvern"><button type="button" aria-pressed="true" aria-label="In 3D"></button><button type="button" aria-pressed="false" aria-label="The front"></button><button type="button" aria-pressed="false" aria-label="The back"></button></div>
+              </div>
+              <div class="thing-head">
+                <h2><a href="https://via.computer/examples/wyvern">Wyvern</a></h2>
+                <span class="thing-count" title="94 parts">94<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3"/></svg></span>
+                <details class="thing-more">
+                  <summary aria-label="More about Wyvern"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg></summary>
+                  <ul>
+                    <li><a href="https://via.computer/examples/wyvern">Its page</a></li>
+                    <li><a href="https://github.com/reagent-systems/via/tree/main/examples/snapdragon-dev-board/v0.2">Its files on GitHub</a></li>
+                    <li><button type="button" data-copy-link="https://via.computer/examples/wyvern">Copy its link</button></li>
+                  </ul>
+                </details>
+              </div>
+              <div class="thing-by">
+                <span class="thing-face" aria-hidden="true">TR</span>
+                <span class="thing-maker">Team Reagent</span>
+                <span class="thing-state" title="GREEN with 16 warnings">v0.2 · <b>GREEN</b></span>
+              </div>
+            </article>
+            <article class="thing" data-order="4" data-text="basalt basalt is a microatx motherboard for an amd threadripper 7000 or 9000 on the str5 socket (the trx50 platform) motherboards team reagent" data-category="Motherboards" data-parts="179" data-layers="10" data-area="59457.9" data-boards="1">
+              <div class="thing-pic">
+                <a href="https://via.computer/examples/basalt" tabindex="-1" aria-hidden="true"><img src="examples/basalt/card.png" width="760" height="493" alt=""><img src="examples/basalt/top.png" width="1099" height="984" alt="" loading="lazy" hidden><img src="examples/basalt/bottom.png" width="1100" height="938" alt="" loading="lazy" hidden></a>
+                <span class="thing-ok" title="GREEN (nothing to run for: sim)"></span>
+                <div class="thing-dots" role="group" aria-label="Pictures of Basalt"><button type="button" aria-pressed="true" aria-label="In 3D"></button><button type="button" aria-pressed="false" aria-label="The front"></button><button type="button" aria-pressed="false" aria-label="The back"></button></div>
+              </div>
+              <div class="thing-head">
+                <h2><a href="https://via.computer/examples/basalt">Basalt</a></h2>
+                <span class="thing-count" title="179 parts">179<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3"/></svg></span>
+                <details class="thing-more">
+                  <summary aria-label="More about Basalt"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg></summary>
+                  <ul>
+                    <li><a href="https://via.computer/examples/basalt">Its page</a></li>
+                    <li><a href="https://github.com/reagent-systems/via/tree/main/examples/threadripper-matx/v0.3">Its files on GitHub</a></li>
+                    <li><button type="button" data-copy-link="https://via.computer/examples/basalt">Copy its link</button></li>
+                  </ul>
+                </details>
+              </div>
+              <div class="thing-by">
+                <span class="thing-face" aria-hidden="true">TR</span>
+                <span class="thing-maker">Team Reagent</span>
+                <span class="thing-state" title="GREEN (nothing to run for: sim)">v0.3 · <b>GREEN</b></span>
+              </div>
+            </article>
+        </div>
+        <div class="made-none" data-none hidden>
+          <p>No board here matches that.</p>
+          <button type="button" data-reset>Show every board</button>
+        </div>
+      </div>
+
+      <section class="made-add" id="add" aria-labelledby="add-title">
+        <div class="made-wrap">
+          <h2 id="add-title">Adding your board</h2>
+          <p>We're working on opening this page to everyone's boards. The plan is that you'll add one with a pull request that names your repository, Via's checks run on it, and it shows up here once it passes. It's item 18 on <a class="link" href="https://github.com/reagent-systems/via/blob/main/ee-agent-kit/ROADMAP.md">our roadmap</a>. Until then, we'd like to see what you're making in <a class="link" href="https://discord.reagent-systems.com">our Discord</a>.</p>
+          <p>Every board here so far is one of ours. Herald and Rosetta aren't here yet, because we haven't seen them pass every check. They'll show up when they do.</p>
+          <p>A board here passed Via's checks on its design files. That doesn't mean anyone has built it or tested it.</p>
         </div>
       </section>
     </main>

@@ -646,22 +646,40 @@ def test_the_guide_is_what_site_guide_writes_and_names_what_exists():
 
 
 def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
-    """The gallery of boards made with Via is served at made.via.computer (the owner's ask,
-    2026-11-26; roadmap item 18). `site/made.py` writes it. It lists a board only when its gates say
-    GREEN, and each card leads to that board's page on via.computer. The host serves the page at the
-    gallery's root, sends via.computer/made there, and the build names the gallery's address."""
+    """The boards made with Via are served at made.via.computer (the owner's ask, 2026-11-26; roadmap
+    item 18), in Thingiverse's layout and the site's styling, at the owner's word. `site/made.py`
+    writes it. It lists a board only when its gates say GREEN, and each card leads to that board's
+    page on via.computer. Each order, filter and number a card carries is a fact of its board, which
+    `site/made.js` orders and picks by. The host serves the page at the gallery's root, sends
+    via.computer/made there, and the build names the gallery's address."""
     run = subprocess.run(
         [sys.executable, str(SITE / "made.py"), "--check"], capture_output=True, text=True, check=False
     )
     assert run.returncode == 0, run.stderr
     text = (SITE / "made.html").read_text(encoding="utf-8")
-    led = re.findall(r'<a class="proj" href="https://via\.computer/examples/([a-z0-9-]+)">', text)
+    led = re.findall(r'<h2><a href="https://via\.computer/examples/([a-z0-9-]+)">', text)
     assert len(led) >= 3
     assert all((SITE / "examples" / f"{slug}.html").is_file() for slug in led), led
-    spec = re.findall(r'<p class="spec">([^<]*)</p>', text)
-    assert len(spec) == len(led) and all(s.split(" · ")[-1].startswith("GREEN") for s in spec), spec
+    state = re.findall(r'<span class="thing-state" title="([^"]*)">v[\d.]+ · <b>(\w+)</b></span>', text)
+    assert len(state) == len(led) and all(full.startswith("GREEN") and b == "GREEN" for full, b in state), (
+        state
+    )
+    cards = re.findall(r'<article class="thing" ([^>]*)>', text)
+    assert len(cards) == len(led)
+    for attrs in cards:
+        data = dict(re.findall(r'data-(\w+)="([^"]*)"', attrs))
+        assert set(data) == {"order", "text", "category", "parts", "layers", "area", "boards"}, data
+        assert int(data["parts"]) > 0 and int(data["layers"]) >= 2 and int(data["boards"]) >= 1, data
+        assert data["category"] != "Other", data
+    for key in ("all", "parts", "layers", "area", "boards"):
+        assert f'data-sort="{key}"' in text, key
+        assert key == "all" or f'"{key}"' in json.dumps(re.findall(r"data-(\w+)=", " ".join(cards)))
+    for word in ("likes", "Log In", "Sign in", "Upload"):
+        assert word not in text, f"the gallery draws {word}, which it does not have"
     assert '<link rel="canonical" href="%MADE%/">' in text
-    assert '<a class="brand" href="https://via.computer/"' in text
+    assert '<a class="made-brand" href="https://made.via.computer/"' in text
+    assert '<p class="brand"><a href="https://via.computer/"' in text
+    assert 'src="made.js"' in text and (SITE / "made.js").is_file()
     host = json.loads((SITE / "vercel.json").read_text(encoding="utf-8"))
     assert host["buildCommand"] == "sh build.sh dist https://via.computer https://made.via.computer"
     # Vercel serves a file before a rewrite of vercel.json, so `/` served index.html at the gallery's

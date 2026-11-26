@@ -3354,3 +3354,698 @@ html[data-shot] .ticker {
 html[data-shot] .sticker {
   display: none;
 }
+
+/* ------------------------------------------------- Made with Via, made.via.computer */
+
+/* The page at made.via.computer (site/made.py) takes Thingiverse's layout, at the owner's ask
+   (2026-11-26), in the site's own colours and type: a full-width bar with the brand, 2 menus, a pill,
+   an orange button, the search and the way out; a row of orders with a dropdown and filters; and a
+   grid of 3 cards across, each a picture with its dots, the name, a count, a menu, the maker and a
+   state. The bar is the site's blue in the light theme and a deep blue in the dark one. */
+
+:root {
+  --made-bar: var(--primary);
+  --made-ink: oklch(0.985 0.004 85);
+  --made-cta: oklch(0.8 0.15 65);
+  --made-cta-ink: oklch(0.22 0.03 55);
+  --made-field: var(--card);
+}
+
+html.dark {
+  --made-bar: oklch(0.33 0.06 237);
+  --made-ink: oklch(0.96 0.006 85);
+  --made-cta: oklch(0.78 0.15 65);
+  --made-field: oklch(0.25 0.008 60);
+}
+
+.made-bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--made-bar);
+  color: var(--made-ink);
+}
+
+.made-bar-in {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding: 0.75rem 1rem;
+}
+
+.made-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.5rem;
+}
+
+.made-brand .logo {
+  width: auto;
+  height: 1.75rem;
+}
+
+.made-nav {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.made-drop {
+  position: relative;
+}
+
+.made-drop summary,
+.made-pill,
+.made-cta,
+.made-out {
+  display: flex;
+  height: 2.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  padding-inline: 0.875rem;
+  border-radius: 0.625rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--ease),
+    opacity 150ms var(--ease);
+}
+
+.made-drop summary {
+  list-style: none;
+}
+
+.made-drop summary::-webkit-details-marker {
+  display: none;
+}
+
+.made-drop summary:hover,
+.made-drop[open] summary {
+  background: oklch(1 0 0 / 12%);
+}
+
+.made-drop summary svg {
+  width: 1.125rem;
+  height: 1.125rem;
+  transition: transform 150ms var(--ease);
+}
+
+.made-drop[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.made-drop ul,
+.thing-more ul {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 0.375rem);
+  left: 0;
+  display: grid;
+  min-width: 13rem;
+  padding: 0.375rem;
+  border-radius: 0.75rem;
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow:
+    0 0 0 1px var(--edge),
+    var(--shadow);
+}
+
+.made-drop li a,
+.made-drop li button,
+.thing-more li a,
+.thing-more li button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  text-align: left;
+}
+
+.made-drop li a:hover,
+.made-drop li button:hover,
+.thing-more li a:hover,
+.thing-more li button:hover,
+.made-drop li button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.made-drop li span {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.made-pill {
+  box-shadow: inset 0 0 0 1.5px oklch(1 0 0 / 70%);
+}
+
+.made-pill:hover,
+.made-pill[aria-pressed="true"] {
+  background: oklch(1 0 0 / 14%);
+}
+
+.made-new {
+  padding: 0.125rem 0.375rem;
+  border-radius: 999px;
+  background: var(--made-ink);
+  color: var(--made-bar);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.made-cta {
+  background: var(--made-cta);
+  color: var(--made-cta-ink);
+  font-weight: 600;
+}
+
+.made-cta:hover {
+  opacity: 0.9;
+}
+
+.made-search {
+  display: flex;
+  flex: 1 1 100%;
+  order: 3;
+  height: 2.75rem;
+  align-items: center;
+  border-radius: 0.625rem;
+  background: var(--made-field);
+  color: var(--foreground);
+}
+
+.made-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding-inline: 1rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9375rem;
+  outline: none;
+}
+
+.made-search input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.made-search:focus-within {
+  box-shadow: 0 0 0 3px oklch(1 0 0 / 45%);
+}
+
+.made-search button {
+  display: grid;
+  width: 2.75rem;
+  height: 100%;
+  place-items: center;
+  color: var(--foreground);
+}
+
+.made-search button svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.made-end {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.made-out {
+  box-shadow: inset 0 0 0 1.5px oklch(1 0 0 / 80%);
+}
+
+.made-out:hover {
+  background: oklch(1 0 0 / 14%);
+}
+
+.made-home {
+  display: none;
+  padding: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.made-home:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.made-bar .icon-btn {
+  color: inherit;
+}
+
+.made-bar .icon-btn:hover {
+  background: oklch(1 0 0 / 14%);
+  color: inherit;
+}
+
+/* The row of orders: a box for each, the pressed one in the accent, then a rule, the layers'
+   dropdown and the filters. On a phone the row scrolls sideways. */
+.made-tabs {
+  position: relative;
+  z-index: 30;
+  background: var(--card);
+  box-shadow: 0 1px 0 var(--edge);
+}
+
+.made-tabs-in {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding: 0.875rem 1rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.made-sorts {
+  display: flex;
+  gap: 0.625rem;
+}
+
+.made-sorts button,
+.made-select,
+.made-panel-in button {
+  display: flex;
+  height: 2.75rem;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline: 1rem;
+  border-radius: 0.625rem;
+  box-shadow: inset 0 0 0 1px var(--dot);
+  font-size: 0.9375rem;
+  white-space: nowrap;
+  transition:
+    background-color 150ms var(--ease),
+    color 150ms var(--ease),
+    box-shadow 150ms var(--ease);
+}
+
+.made-sorts button:hover,
+.made-panel-in button:hover {
+  background: var(--secondary);
+}
+
+.made-sorts button[aria-pressed="true"],
+.made-panel-in button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  box-shadow: inset 0 0 0 1.5px var(--ring);
+}
+
+.made-sorts svg,
+.made-filters svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.made-rule {
+  width: 1px;
+  height: 2.5rem;
+  flex: none;
+  margin-inline: 0.5rem;
+  background: var(--dot);
+}
+
+.made-select {
+  position: relative;
+  padding: 0;
+}
+
+.made-select select {
+  height: 100%;
+  padding: 0 2.5rem 0 1rem;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  appearance: none;
+  cursor: pointer;
+}
+
+.made-select select option {
+  background: var(--card);
+  color: var(--foreground);
+}
+
+.made-select svg {
+  position: absolute;
+  right: 0.875rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  pointer-events: none;
+}
+
+.made-filters {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.625rem;
+  color: var(--primary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.made-filters:hover,
+.made-filters[aria-expanded="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.made-panel {
+  box-shadow: 0 -1px 0 var(--edge);
+}
+
+.made-panel-in {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding: 0.875rem 1rem;
+}
+
+.made-panel-in button {
+  height: 2.25rem;
+  padding-inline: 0.875rem;
+  font-size: 0.875rem;
+}
+
+/* The grid: a card's picture in a box of its own, its words under it on the page. */
+main:has(.made-grid) {
+  background: var(--secondary);
+}
+
+.made-wrap {
+  max-width: 1440px;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+.made-grid {
+  display: grid;
+  gap: 2rem 1.75rem;
+  padding-block: 1.75rem 3rem;
+}
+
+.thing[hidden] {
+  display: none;
+}
+
+.thing-pic {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border-radius: 0.75rem;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 60%, color-mix(in oklch, var(--primary) 9%, transparent), transparent 70%),
+    var(--card);
+  box-shadow:
+    0 0 0 1px var(--edge),
+    0 6px 18px -14px oklch(0 0 0 / 35%);
+  transition: box-shadow 0.3s var(--ease);
+}
+
+.thing:hover .thing-pic {
+  box-shadow:
+    0 0 0 1px var(--edge),
+    var(--shadow);
+}
+
+.thing-pic a {
+  position: absolute;
+  inset: 2.25rem 0.75rem 1rem;
+}
+
+.thing-pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 14px 14px oklch(0 0 0 / 20%));
+  transition: transform 0.4s var(--ease);
+}
+
+.thing-pic img[hidden] {
+  display: none;
+}
+
+.thing:hover .thing-pic img {
+  transform: scale(1.04);
+}
+
+.thing-ok {
+  position: absolute;
+  top: 0.875rem;
+  left: 0.875rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--status-ok);
+}
+
+.thing-dots {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+}
+
+.thing-dots button {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  place-items: center;
+}
+
+.thing-dots button::before {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--dot);
+  content: "";
+  transition: background-color 150ms var(--ease);
+}
+
+.thing-dots button:hover::before {
+  background: var(--muted-foreground);
+}
+
+.thing-dots button[aria-pressed="true"]::before {
+  background: var(--primary);
+}
+
+.thing-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.thing-head h2 {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 1.125rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thing-head h2 a:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.thing-count {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.thing-count svg {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.thing-more {
+  position: relative;
+}
+
+.thing-more summary {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border-radius: 999px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.thing-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.thing-more summary:hover,
+.thing-more[open] summary {
+  background: var(--card);
+}
+
+.thing-more summary svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.thing-more ul {
+  right: 0;
+  left: auto;
+}
+
+.thing-by {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.thing-face {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  box-shadow: inset 0 0 0 2px var(--ring);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.thing-maker {
+  font-size: 0.9375rem;
+  color: var(--muted-foreground);
+}
+
+.thing-state {
+  margin-left: auto;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.thing-state b {
+  font-weight: 600;
+  color: var(--status-ok);
+}
+
+.made-none {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  padding-block: 4rem;
+  color: var(--muted-foreground);
+}
+
+.made-none[hidden] {
+  display: none;
+}
+
+.made-none button {
+  height: 2.5rem;
+  padding-inline: 1.25rem;
+  border-radius: 0.625rem;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 500;
+}
+
+.made-add {
+  padding-block: 3.5rem 4.5rem;
+  background: var(--background);
+  box-shadow: 0 -1px 0 var(--edge);
+}
+
+.made-add .made-wrap > * {
+  max-width: 46rem;
+}
+
+.made-add h2 {
+  font-size: var(--text-title);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.made-add p {
+  margin-top: 1rem;
+  font-size: var(--text-lede);
+  color: var(--muted-foreground);
+}
+
+@media (min-width: 640px) {
+  .made-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1000px) {
+  .made-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .made-bar-in {
+    flex-wrap: nowrap;
+    padding-inline: 1.5rem;
+  }
+
+  .made-nav {
+    display: flex;
+  }
+
+  .made-search {
+    flex: 0 1 22rem;
+    order: 0;
+    margin-left: auto;
+  }
+
+  .made-end {
+    margin-left: 0;
+  }
+
+  .made-tabs-in,
+  .made-panel-in,
+  .made-wrap {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .made-home {
+    display: block;
+  }
+}

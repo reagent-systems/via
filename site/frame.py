@@ -41,17 +41,48 @@ def shell(
     head: str = "",
     home: str | None = None,
     address: str | None = None,
+    header: str | None = None,
 ) -> str:
     """A page in the site's frame: its head, its header and its footer. `up` leads back to the site's root.
     `head` is more of the head, after the canonical link: a post's share tags. A line of it that names
     %ORIGIN% goes from a build without an address (build.sh), so it holds all such tags on 1 line.
     `home` leads the menu, the logo and the footer to the site's pages where `up` does not: a page served
     at another address of the same site (made.via.computer) loads its files from where it is and links
-    the rest of the site at via.computer. `address` is the page's own whole address, its canonical link."""
+    the rest of the site at via.computer. `address` is the page's own whole address, its canonical link.
+    `header` takes the place of the site's header: the gallery has a bar of its own."""
     link = up if home is None else home
     canonical_href = address if address is not None else f"%ORIGIN%/{canonical}"
     script_tags = "\n".join(f'    <script src="{up}{s}" defer></script>' for s in scripts)
     more = "".join(f"\n    {line}" for line in head.splitlines() if line)
+    top = header if header is not None else f"""    <header class="site-header">
+      <div class="progress" data-progress aria-hidden="true"></div>
+      <div class="wrap">
+        <a class="brand" href="{link or "./"}" aria-label="Via, home">
+          {LOGO}
+        </a>
+        <nav class="site-nav" aria-label="Site">
+          <ul>
+            <li><a href="{link}index.html#herald">Example</a></li>
+            <li><a href="{link}examples.html">Boards</a></li>
+            <li><a href="{link}index.html#gates">Checks</a></li>
+            <li><a href="{link}index.html#run">Get started</a></li>
+            <li><a href="{link}blog.html">Blog</a></li>
+            <li><a href="https://discord.reagent-systems.com">Community</a></li>
+          </ul>
+        </nav>
+        <div class="header-end">
+          <button class="icon-btn" type="button" data-theme-toggle aria-pressed="false" aria-label="Dark theme">
+            <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 14.6A8.4 8.4 0 1 1 9.4 3.8a6.6 6.6 0 0 0 10.8 10.8Z"/></svg>
+            <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
+          </button>
+          <a class="gh-pill" href="{REPO}" aria-label="Via on GitHub">
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="{GH_PATH}"/></svg>
+            <span>GitHub</span>
+          </a>
+        </div>
+      </div>
+    </header>
+"""
     return f"""<!doctype html>
 <html lang="en">
   <head>
@@ -96,35 +127,7 @@ def shell(
   <body>
     <a class="skip" href="#main">Skip to content</a>
 
-    <header class="site-header">
-      <div class="progress" data-progress aria-hidden="true"></div>
-      <div class="wrap">
-        <a class="brand" href="{link or "./"}" aria-label="Via, home">
-          {LOGO}
-        </a>
-        <nav class="site-nav" aria-label="Site">
-          <ul>
-            <li><a href="{link}index.html#herald">Example</a></li>
-            <li><a href="{link}examples.html">Boards</a></li>
-            <li><a href="{link}index.html#gates">Checks</a></li>
-            <li><a href="{link}index.html#run">Get started</a></li>
-            <li><a href="{link}blog.html">Blog</a></li>
-            <li><a href="https://discord.reagent-systems.com">Community</a></li>
-          </ul>
-        </nav>
-        <div class="header-end">
-          <button class="icon-btn" type="button" data-theme-toggle aria-pressed="false" aria-label="Dark theme">
-            <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 14.6A8.4 8.4 0 1 1 9.4 3.8a6.6 6.6 0 0 0 10.8 10.8Z"/></svg>
-            <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
-          </button>
-          <a class="gh-pill" href="{REPO}" aria-label="Via on GitHub">
-            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="{GH_PATH}"/></svg>
-            <span>GitHub</span>
-          </a>
-        </div>
-      </div>
-    </header>
-
+{top}
     <main id="main" tabindex="-1">
 {body}
     </main>
