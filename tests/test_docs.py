@@ -556,19 +556,20 @@ def beside_page(page: Path, link: str) -> bool:
 def test_every_page_a_reader_opens_loads_the_hosts_analytics_script_once():
     """The owner turned Vercel's Web Analytics on (pull request 62): each page a reader opens loads
     the host's script, 1 time, and queues its events until the script is there. The pages that
-    `site/examples.py`, `site/blog.py`, `site/forms.py` and `site/guide.py` write get these lines from
-    `site/frame.py`. A line edited into a written page by hand is gone at the next run of its
-    generator, so the frame holds them."""
+    `site/examples.py`, `site/blog.py`, `site/forms.py`, `site/guide.py` and `site/made.py` write get
+    these lines from `site/frame.py`. A line edited into a written page by hand is gone at the next
+    run of its generator, so the frame holds them."""
     queue = "window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };"
     pages = (
         SITE / "index.html",
         SITE / "404.html",
         SITE / "feedback.html",
         SITE / "guide.html",
+        SITE / "made.html",
         *example_pages(),
         *blog_pages(),
     )
-    assert len(pages) >= 11
+    assert len(pages) >= 12
     for page in pages:
         text = page.read_text(encoding="utf-8")
         assert links_of(page).count(HOSTED) == 1, page.name
@@ -576,7 +577,7 @@ def test_every_page_a_reader_opens_loads_the_hosts_analytics_script_once():
         assert text.count(queue) == 1, page.name
     tag = f'<script defer src="{HOSTED}"></script>'
     assert (SITE / "frame.py").read_text(encoding="utf-8").count(tag) == 1
-    for generator in ("examples.py", "blog.py", "forms.py", "guide.py"):
+    for generator in ("examples.py", "blog.py", "forms.py", "guide.py", "made.py"):
         assert "from frame import" in (SITE / generator).read_text(encoding="utf-8"), generator
 
 
@@ -591,6 +592,7 @@ def test_every_link_on_the_site_names_what_exists():
         SITE / "og.html",
         SITE / "feedback.html",
         SITE / "guide.html",
+        SITE / "made.html",
         *example_pages(),
         *blog_pages(),
     ):
@@ -602,7 +604,7 @@ def test_every_link_on_the_site_names_what_exists():
             elif link.startswith("#"):
                 into_page += 1
                 found = f'id="{link[1:]}"' in text
-            elif re.match(r"https?://|\./$|%ORIGIN%", link):
+            elif re.match(r"https?://|\./$|%ORIGIN%|%MADE%", link):
                 continue
             else:
                 beside += 1
@@ -643,6 +645,38 @@ def test_the_guide_is_what_site_guide_writes_and_names_what_exists():
     assert used == {"doctor", "gates", "next", "new"}
 
 
+def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
+    """The gallery of boards made with Via is served at made.via.computer (the owner's ask,
+    2026-11-26; roadmap item 18). `site/made.py` writes it. It lists a board only when its gates say
+    GREEN, and each card leads to that board's page on via.computer. The host serves the page at the
+    gallery's root, sends via.computer/made there, and the build names the gallery's address."""
+    run = subprocess.run(
+        [sys.executable, str(SITE / "made.py"), "--check"], capture_output=True, text=True, check=False
+    )
+    assert run.returncode == 0, run.stderr
+    text = (SITE / "made.html").read_text(encoding="utf-8")
+    led = re.findall(r'<a class="proj" href="https://via\.computer/examples/([a-z0-9-]+)">', text)
+    assert len(led) >= 3
+    assert all((SITE / "examples" / f"{slug}.html").is_file() for slug in led), led
+    spec = re.findall(r'<p class="spec">([^<]*)</p>', text)
+    assert len(spec) == len(led) and all(s.split(" · ")[-1].startswith("GREEN") for s in spec), spec
+    assert '<link rel="canonical" href="%MADE%/">' in text
+    assert '<a class="brand" href="https://via.computer/"' in text
+    host = json.loads((SITE / "vercel.json").read_text(encoding="utf-8"))
+    assert host["buildCommand"] == "sh build.sh dist https://via.computer https://made.via.computer"
+    assert {
+        "source": "/",
+        "has": [{"type": "host", "value": "made.via.computer"}],
+        "destination": "/made",
+    } in host["rewrites"]
+    assert {
+        "source": "/made",
+        "has": [{"type": "host", "value": "via.computer"}],
+        "destination": "https://made.via.computer/",
+        "permanent": False,
+    } in host["redirects"]
+
+
 def test_the_site_builds_for_an_address_and_without_one(tmp_path):
     """`site/build.sh` writes what a host serves. A page that names a file the script does not copy
     breaks only after the deploy, so each link of a built page is looked up in the built folder."""
@@ -652,9 +686,12 @@ def test_the_site_builds_for_an_address_and_without_one(tmp_path):
         return subprocess.run(command, capture_output=True, text=True, check=False)
 
     served = tmp_path / "served"
-    assert build(served, "https://example.org/via/").returncode == 0
+    assert build(served, "https://example.org/via/", "https://made.example.org/").returncode == 0
     page = (served / "index.html").read_text(encoding="utf-8")
     assert '<link rel="canonical" href="https://example.org/via/">' in page
+    # The gallery is served at an address of its own, which the third argument names.
+    gallery = (served / "made.html").read_text(encoding="utf-8")
+    assert '<link rel="canonical" href="https://made.example.org/">' in gallery
     # X and Discord keep a link's picture by its address: the image is named with its checksum, and X
     # is given it and its words as well as the Open Graph tags.
     og = subprocess.run(["cksum"], input=(SITE / "og.png").read_bytes(), capture_output=True, check=True)
@@ -671,6 +708,7 @@ def test_the_site_builds_for_an_address_and_without_one(tmp_path):
         "404.html",
         "feedback.html",
         "guide.html",
+        "made.html",
         *(str(p.relative_to(SITE)) for p in (*example_pages(), *blog_pages())),
     ]
     # A post is served at /blog/<slug> with its share card, and the feed with whole addresses.
@@ -700,6 +738,7 @@ def test_the_site_builds_for_an_address_and_without_one(tmp_path):
     looked_up = 0
     for name in pages:
         assert "%ORIGIN%" not in (served / name).read_text(encoding="utf-8")
+        assert "%MADE%" not in (served / name).read_text(encoding="utf-8")
         for link in links_of(served / name):
             if not re.match(r"https?://|#|\./$", link):
                 looked_up += 1
@@ -718,14 +757,22 @@ def test_the_site_builds_for_an_address_and_without_one(tmp_path):
     assert build(plain).returncode == 0
     for name in pages:
         text = (plain / name).read_text(encoding="utf-8")
-        for absent in ("%ORIGIN%", "og:image", "og:url", 'rel="canonical"', "<base"):
+        for absent in ("%ORIGIN%", "%MADE%", "og:image", "og:url", 'rel="canonical"', "<base"):
             assert absent not in text, f"{name} keeps {absent} with no address to write into it"
+    # A build for the site's address with no gallery address leaves out only the gallery's own line.
+    alone = tmp_path / "alone"
+    assert build(alone, "https://example.org").returncode == 0
+    text = (alone / "made.html").read_text(encoding="utf-8")
+    assert "%MADE%" not in text and 'rel="canonical"' not in text
 
     again = build(plain)
     assert again.returncode == 2 and "is not empty" in again.stderr
     for bad in ("ftp://example.org", "https://", "example.org", "https://example.org/a|b"):
         refused = build(tmp_path / "refused", bad)
         assert refused.returncode == 2 and bad in refused.stderr, bad
+        assert not (tmp_path / "refused").exists(), bad
+        refused = build(tmp_path / "refused", "https://example.org", bad)
+        assert refused.returncode == 2 and "GALLERY" in refused.stderr and bad in refused.stderr, bad
         assert not (tmp_path / "refused").exists(), bad
 
 

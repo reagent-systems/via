@@ -33,15 +33,18 @@ python3 site/forms.py                            # the feedback page
 python3 site/forms.py --check                    # exit 1 when the feedback page is not what the script writes
 python3 site/guide.py                            # the guide
 python3 site/guide.py --check                    # exit 1 when the guide is not what the script writes
+python3 site/made.py                             # the gallery, made.via.computer
+python3 site/made.py --check                     # exit 1 when the gallery is not what the script writes
 sh site/build.sh out https://example.org         # the files a host serves, in out/
 ```
 
-`site/build.sh OUT [ORIGIN]` copies what the site serves into `OUT`. `ORIGIN`
-is the address the site is served at. The canonical links, the Open Graph
-tags and the 404 page's base need an absolute address, and the script
+`site/build.sh OUT [ORIGIN [GALLERY]]` copies what the site serves into `OUT`.
+`ORIGIN` is the address the site is served at. The canonical links, the Open
+Graph tags and the 404 page's base need an absolute address, and the script
 writes it into them. Without `ORIGIN` it leaves those lines out, so no
-deploy ships a made-up address. The script refuses a folder that is not
-empty.
+deploy ships a made-up address. `GALLERY` is the address the gallery,
+`made.html`, is served at; its canonical link is `%MADE%`, left out without
+it. The script refuses a folder that is not empty.
 
 ## What is where
 
@@ -56,6 +59,7 @@ empty.
 | `feedback.html` | The feedback page at `/feedback`. `forms.py` writes it; do not edit it by hand. |
 | `forms.py` | Writes the feedback page, and gives `blog.py` the subscribe form. "The forms" below says where each form goes. |
 | `guide.html`, `guide.py` | The guide at `/guide`: how to use Via, step by step, in plain English, from where Via runs to the files a board maker takes. `guide.py` writes it from the commands of the root README's "Quick start" and "Where it runs"; do not edit the page by hand. A test holds each `workcenter` command it shows to the tool's commands, and each path to the tree. |
+| `made.html`, `made.py` | The gallery at <https://made.via.computer>, the start of roadmap item 18 at the owner's ask (2026-11-26): a card for each example whose gates say GREEN, with its version, its maker, its licence and its verdict, each leading to its page on `via.computer`; a line that names the examples not listed yet; and how a board from another repository will get there, which is not built. `made.py` writes it from what `site/examples.py` reads; do not edit the page by hand. It loads its files from where it is served and links the rest of the site at `https://via.computer/` (`shell(..., home=...)` in `frame.py`). |
 | `api/` | The 2 functions the forms post to, and `_forms.js`, their rules. |
 | `package.json`, `package-lock.json` | The functions' only dependency, `@vercel/blob`, at 1 version. |
 | `frame.py` | The head, header and footer every page `examples.py` and `blog.py` write shares: the menu (with the blog and Community, the Discord server at `discord.reagent-systems.com`), the footer (with the blog, the feedback page and Community, and the line "Made by Team Reagent for Builders" to `reagent-systems.com`), the theme before the first paint and the analytics' 2 script tags. |
@@ -75,7 +79,7 @@ empty.
 | `media/` | The pictures of the root `README.md`, with the page its first picture is a capture of. `media/README.md` shows each and the command that draws it. The site serves none of them: they show a fixture board, and the site shows Herald. |
 | `fonts/` | Inter, the latin file, with its license. |
 | `build.sh` | Makes the folder a host serves. It names `site.css`, `site.js` and `effects.js` with their checksum (`site.css?v=...`): the custom domain's cache keeps them 4 hours and asks again for each page, so a page and its stylesheet always come from 1 build. It names `og.png` with its checksum too: X and Discord keep a shared link's picture by its address for days, so a new picture is fetched anew. |
-| `vercel.json` | The Vercel project's build command, output folder and headers. |
+| `vercel.json` | The Vercel project's build command, output folder and headers, and the gallery's 2 host rules: `made.via.computer/` serves `/made`, and `via.computer/made` sends the reader to `https://made.via.computer/` (302). |
 
 ## The runs on the pages
 
@@ -335,6 +339,13 @@ count each one.
 | `circuitboards.dev`, `www.circuitboards.dev` | 302 to `https://via.computer/?ref=circuitboards` | Cloudflare |
 | `texttopcb.com`, `www.texttopcb.com` | 302 to `https://via.computer/?ref=texttopcb` | Cloudflare |
 | `via-kappa-five.vercel.app` | the site, with its canonical link on `via.computer` | Vercel |
+
+The gallery has an address of its own, `made.via.computer`, added to the
+Vercel project on 2026-11-26. Cloudflare holds a CNAME record `made` to
+Vercel's target for the project, not proxied, as the apex's records are.
+The project serves the gallery's page at that address's root and every
+other path of it as it serves `via.computer`'s. A preview serves the
+gallery at `/made`.
 
 Vercel makes a new project's first deployment its production deployment,
 whatever branch it comes from. That is how this site went live from a

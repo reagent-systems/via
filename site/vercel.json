@@ -1,10 +1,35 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "sh build.sh dist https://via.computer",
+  "buildCommand": "sh build.sh dist https://via.computer https://made.via.computer",
   "outputDirectory": "dist",
   "cleanUrls": true,
   "trailingSlash": false,
+  "redirects": [
+    {
+      "source": "/made",
+      "has": [
+        {
+          "type": "host",
+          "value": "via.computer"
+        }
+      ],
+      "destination": "https://made.via.computer/",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "made.via.computer"
+        }
+      ],
+      "destination": "/made"
+    }
+  ],
   "headers": [
     {
       "source": "/fonts/(.*)",

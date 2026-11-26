@@ -32,11 +32,24 @@ LOGO = (
 
 
 def shell(
-    title: str, description: str, canonical: str, up: str, body: str, scripts: list[str], head: str = ""
+    title: str,
+    description: str,
+    canonical: str,
+    up: str,
+    body: str,
+    scripts: list[str],
+    head: str = "",
+    home: str | None = None,
+    address: str | None = None,
 ) -> str:
     """A page in the site's frame: its head, its header and its footer. `up` leads back to the site's root.
     `head` is more of the head, after the canonical link: a post's share tags. A line of it that names
-    %ORIGIN% goes from a build without an address (build.sh), so it holds all such tags on 1 line."""
+    %ORIGIN% goes from a build without an address (build.sh), so it holds all such tags on 1 line.
+    `home` leads the menu, the logo and the footer to the site's pages where `up` does not: a page served
+    at another address of the same site (made.via.computer) loads its files from where it is and links
+    the rest of the site at via.computer. `address` is the page's own whole address, its canonical link."""
+    link = up if home is None else home
+    canonical_href = address if address is not None else f"%ORIGIN%/{canonical}"
     script_tags = "\n".join(f'    <script src="{up}{s}" defer></script>' for s in scripts)
     more = "".join(f"\n    {line}" for line in head.splitlines() if line)
     return f"""<!doctype html>
@@ -46,7 +59,7 @@ def shell(
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{html.escape(title)}</title>
     <meta name="description" content="{html.escape(description)}">
-    <link rel="canonical" href="%ORIGIN%/{canonical}">{more}
+    <link rel="canonical" href="{canonical_href}">{more}
     <link rel="icon" href="{up}favicon-32.png" sizes="32x32" type="image/png">
     <link rel="icon" href="{up}favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="{up}apple-touch-icon.png">
@@ -86,16 +99,16 @@ def shell(
     <header class="site-header">
       <div class="progress" data-progress aria-hidden="true"></div>
       <div class="wrap">
-        <a class="brand" href="{up or "./"}" aria-label="Via, home">
+        <a class="brand" href="{link or "./"}" aria-label="Via, home">
           {LOGO}
         </a>
         <nav class="site-nav" aria-label="Site">
           <ul>
-            <li><a href="{up}index.html#herald">Example</a></li>
-            <li><a href="{up}examples.html">Boards</a></li>
-            <li><a href="{up}index.html#gates">Checks</a></li>
-            <li><a href="{up}index.html#run">Get started</a></li>
-            <li><a href="{up}blog.html">Blog</a></li>
+            <li><a href="{link}index.html#herald">Example</a></li>
+            <li><a href="{link}examples.html">Boards</a></li>
+            <li><a href="{link}index.html#gates">Checks</a></li>
+            <li><a href="{link}index.html#run">Get started</a></li>
+            <li><a href="{link}blog.html">Blog</a></li>
             <li><a href="https://discord.reagent-systems.com">Community</a></li>
           </ul>
         </nav>
@@ -119,11 +132,11 @@ def shell(
     <footer class="site-footer">
       <div class="wrap">
         <div class="row">
-          <p class="brand"><a href="{up or "./"}" aria-label="Via, home">{LOGO.replace(" data-logo", "")}</a></p>
+          <p class="brand"><a href="{link or "./"}" aria-label="Via, home">{LOGO.replace(" data-logo", "")}</a></p>
           <nav aria-label="Footer">
             <ul>
-              <li><a href="{up}blog.html">Blog</a></li>
-              <li><a href="{up}feedback.html">Feedback</a></li>
+              <li><a href="{link}blog.html">Blog</a></li>
+              <li><a href="{link}feedback.html">Feedback</a></li>
               <li><a href="https://discord.reagent-systems.com">Community</a></li>
               <li><a href="{REPO}">GitHub</a></li>
               <li><a href="{REPO}/blob/main/WORKCENTER.md">Contract</a></li>

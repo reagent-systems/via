@@ -1,30 +1,39 @@
 #!/bin/sh
-# site/build.sh OUT [ORIGIN]
+# site/build.sh OUT [ORIGIN [GALLERY]]
 #
 # Copies the files the site serves into OUT. ORIGIN is the address the site
 # is served at, for example https://example.org or https://owner.github.io/via.
 # The canonical link, the Open Graph tags and the 404 page's base need an
 # absolute address. Without ORIGIN those lines are left out, so no deploy
-# ships a made-up address.
+# ships a made-up address. GALLERY is the address the host serves made.html
+# at, for example https://made.via.computer: the gallery's canonical link.
+# Without it that line is left out.
 set -eu
 
-usage="usage: site/build.sh OUT [ORIGIN]"
+usage="usage: site/build.sh OUT [ORIGIN [GALLERY]]"
 out=${1:?$usage}
 given=${2:-}
 origin=${given%/}
+given_gallery=${3:-}
+gallery=${given_gallery%/}
 
-case "$origin" in
-  "") ;;
-  *[!A-Za-z0-9.:/_~-]*)
-    echo "site/build.sh: ORIGIN holds a character an address does not need: $given" >&2
-    exit 2
-    ;;
-  http://?* | https://?*) ;;
-  *)
-    echo "site/build.sh: ORIGIN starts with http:// or https://, then a host. It is: $given" >&2
-    exit 2
-    ;;
-esac
+# An address: http:// or https://, a host, and no character an address does not need.
+address() {
+  case "$2" in
+    "") ;;
+    *[!A-Za-z0-9.:/_~-]*)
+      echo "site/build.sh: $1 holds a character an address does not need: $3" >&2
+      exit 2
+      ;;
+    http://?* | https://?*) ;;
+    *)
+      echo "site/build.sh: $1 starts with http:// or https://, then a host. It is: $3" >&2
+      exit 2
+      ;;
+  esac
+}
+address ORIGIN "$origin" "$given"
+address GALLERY "$gallery" "$given_gallery"
 
 if [ -e "$out" ] && [ -n "$(ls -A "$out" 2>/dev/null)" ]; then
   echo "site/build.sh: $out is not empty. Name a new folder, or empty this one first." >&2
@@ -86,8 +95,15 @@ if [ -n "$origin" ] && [ -f "$here/blog/feed.xml" ]; then
   sed "s|%ORIGIN%|$origin|g" "$here/blog/feed.xml" >"$out/blog/feed.xml"
 fi
 
+# The gallery's page, made.html, names its own address as %MADE%.
+if [ -n "$gallery" ]; then
+  version="s|%MADE%|$gallery|g; $version"
+else
+  version="/%MADE%/d; $version"
+fi
+
 for path in "$here/index.html" "$here/404.html" "$here/examples.html" "$here"/examples/*.html "$here/blog.html" "$here"/blog/*.html \
-  "$here/feedback.html" "$here/guide.html"; do
+  "$here/feedback.html" "$here/guide.html" "$here/made.html"; do
   [ -f "$path" ] || continue
   page=${path#"$here"/}
   if [ -n "$origin" ]; then
