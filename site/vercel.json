@@ -29,18 +29,6 @@
       "permanent": false
     }
   ],
-  "rewrites": [
-    {
-      "source": "/",
-      "has": [
-        {
-          "type": "host",
-          "value": "made.via.computer"
-        }
-      ],
-      "destination": "/made"
-    }
-  ],
   "headers": [
     {
       "source": "/fonts/(.*)",

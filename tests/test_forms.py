@@ -111,12 +111,17 @@ def test_each_form_posts_the_fields_its_function_reads():
         assert f'receive(request, {rule}, keep, "{done}")' in code and 'access: "private"' in code
 
 
-def test_the_functions_pin_their_one_dependency():
+def test_the_functions_pin_their_dependencies():
+    """The forms' functions take `@vercel/blob`, and the gallery's middleware `@vercel/functions`
+    (site/middleware.js): each at 1 version, the one the lock file holds."""
     package = json.loads((SITE / "package.json").read_text(encoding="utf-8"))
     lock = json.loads((SITE / "package-lock.json").read_text(encoding="utf-8"))
-    (version,) = package["dependencies"].values()
-    assert re.fullmatch(r"\d+\.\d+\.\d+", version), "a range lets a build take a version no test ran"
-    assert lock["packages"]["node_modules/@vercel/blob"]["version"] == version
+    assert set(package["dependencies"]) == {"@vercel/blob", "@vercel/functions"}
+    for name, version in package["dependencies"].items():
+        assert re.fullmatch(r"\d+\.\d+\.\d+", version), (
+            f"{name}: a range lets a build take a version no test ran"
+        )
+        assert lock["packages"][f"node_modules/{name}"]["version"] == version, name
 
 
 @needs_node

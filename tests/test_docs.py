@@ -664,11 +664,31 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
     assert '<a class="brand" href="https://via.computer/"' in text
     host = json.loads((SITE / "vercel.json").read_text(encoding="utf-8"))
     assert host["buildCommand"] == "sh build.sh dist https://via.computer https://made.via.computer"
-    assert {
-        "source": "/",
-        "has": [{"type": "host", "value": "made.via.computer"}],
-        "destination": "/made",
-    } in host["rewrites"]
+    # Vercel serves a file before a rewrite of vercel.json, so `/` served index.html at the gallery's
+    # address (2026-11-26): Routing Middleware on `/` serves the gallery there, and nothing else does.
+    assert "rewrites" not in host
+    middleware = (SITE / "middleware.js").read_text(encoding="utf-8")
+    assert 'export const GALLERY = "made.via.computer";' in middleware
+    assert 'export const config = { matcher: "/" };' in middleware
+    assert 'rewrite(new URL("/made", request.url))' in middleware and ": next();" in middleware
+    if shutil.which("node") and (SITE / "node_modules" / "@vercel" / "functions").is_dir():
+        script = (
+            "const { default: mw } = await import(process.argv[1]);"
+            "for (const host of ['made.via.computer', 'via.computer', 'MADE.via.computer'])"
+            " console.log(host, mw(new Request(`https://${host}/`, { headers: { host } })).headers"
+            ".get('x-middleware-rewrite') ?? 'next');"
+        )
+        run = subprocess.run(
+            ["node", "--input-type=module", "-e", script, (SITE / "middleware.js").as_uri()],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert run.stdout.split("\n")[:3] == [
+            "made.via.computer https://made.via.computer/made",
+            "via.computer next",
+            "MADE.via.computer https://made.via.computer/made",
+        ], run.stdout
     assert {
         "source": "/made",
         "has": [{"type": "host", "value": "via.computer"}],

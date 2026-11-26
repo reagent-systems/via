@@ -79,7 +79,8 @@ it. The script refuses a folder that is not empty.
 | `media/` | The pictures of the root `README.md`, with the page its first picture is a capture of. `media/README.md` shows each and the command that draws it. The site serves none of them: they show a fixture board, and the site shows Herald. |
 | `fonts/` | Inter, the latin file, with its license. |
 | `build.sh` | Makes the folder a host serves. It names `site.css`, `site.js` and `effects.js` with their checksum (`site.css?v=...`): the custom domain's cache keeps them 4 hours and asks again for each page, so a page and its stylesheet always come from 1 build. It names `og.png` with its checksum too: X and Discord keep a shared link's picture by its address for days, so a new picture is fetched anew. |
-| `vercel.json` | The Vercel project's build command, output folder and headers, and the gallery's 3 host rules. `made.via.computer` serves the gallery and nothing else: its root serves `/made`, and every other page path there (a path with no dot, but `/_vercel/`) sends the reader to the same path on `https://via.computer` (302); a file the gallery loads (its stylesheet, scripts, fonts and pictures) is served there as it is on `via.computer`. `via.computer/made` sends the reader to `https://made.via.computer/` (302). |
+| `middleware.js` | Vercel's Routing Middleware, on `/` alone: at `made.via.computer` it serves `/made`, and at any other host it passes the request on. A rewrite in `vercel.json` cannot do it: Vercel serves a file before such a rewrite, so `/` served `index.html` there (2026-11-26). It uses `rewrite` and `next` from `@vercel/functions`, pinned in `package.json`. |
+| `vercel.json` | The Vercel project's build command, output folder and headers, and the gallery's 2 host rules. `made.via.computer` serves the gallery and nothing else: `middleware.js` serves `/made` at its root, and every other page path there (a path with no dot, but `/_vercel/`) sends the reader to the same path on `https://via.computer` (302); a file the gallery loads (its stylesheet, scripts, fonts and pictures) is served there as it is on `via.computer`. `via.computer/made` sends the reader to `https://made.via.computer/` (302). |
 
 ## The runs on the pages
 
@@ -344,7 +345,7 @@ The gallery has an address of its own, `made.via.computer`, added to the
 Vercel project on 2026-11-26. Cloudflare holds a CNAME record `made` to
 Vercel's target for the project, not proxied, as the apex's records are.
 That address is only the gallery: the project serves the gallery's page
-at its root, sends every other page path to the same path on
+at its root (`middleware.js`), sends every other page path to the same path on
 `via.computer`, and serves only the files the gallery loads. A preview
 serves the gallery at `/made`.
 
