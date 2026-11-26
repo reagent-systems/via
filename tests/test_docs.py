@@ -675,6 +675,28 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
         "destination": "https://made.via.computer/",
         "permanent": False,
     } in host["redirects"]
+    # made.via.computer is only the gallery (the owner's word, 2026-11-26): every other page path
+    # there goes to via.computer. A file the gallery loads has a dot, and the root has no path.
+    only = {
+        "source": "/:path((?!_vercel/)[^.]+)",
+        "has": [{"type": "host", "value": "made.via.computer"}],
+        "destination": "https://via.computer/:path*",
+        "permanent": False,
+    }
+    assert only in host["redirects"]
+    pattern = re.compile(r"(?!_vercel/)[^.]+")
+    for path in ("blog", "examples/hush", "guide", "made", "api/subscribe"):
+        assert pattern.fullmatch(path), path
+    for path in (
+        "",
+        "site.css",
+        "examples/hush/card.png",
+        "_vercel/insights/view",
+        "fonts/inter-latin-wght-normal.woff2",
+    ):
+        assert not pattern.fullmatch(path), path
+    loaded = [link for link in links_of(SITE / "made.html") if not re.match(r"https?://|%MADE%|#", link)]
+    assert loaded and all("." in link.split("?")[0] for link in loaded), loaded
 
 
 def test_the_site_builds_for_an_address_and_without_one(tmp_path):

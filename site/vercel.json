@@ -7,6 +7,17 @@
   "trailingSlash": false,
   "redirects": [
     {
+      "source": "/:path((?!_vercel/)[^.]+)",
+      "has": [
+        {
+          "type": "host",
+          "value": "made.via.computer"
+        }
+      ],
+      "destination": "https://via.computer/:path*",
+      "permanent": false
+    },
+    {
       "source": "/made",
       "has": [
         {
