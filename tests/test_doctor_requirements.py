@@ -485,10 +485,23 @@ def test_a_name_taken_from_a_folder_ends_at_the_last_dash_before_a_digit(tmp_pat
         assert row["ok"] is False
 
 
+# Doctor's pcbnew row runs the Python hostos.kicad_python() names and imports pcbnew in it. On macOS
+# and Windows that Python is found apart from KICAD_CLI (/Applications/KiCad, the per-user install), so
+# a doctor with KICAD_CLI pointed at an absent path still imported pcbnew there (run 46067841222, macOS:
+# "started pcbnew and has no engine marker"). A doctor run by a test that starts no engine finds none.
+NO_KICAD_PYTHON = (
+    "import sys\n"
+    f"sys.path.insert(0, {str(ROOT / 'tools')!r})\n"
+    "import hostos\n"
+    "hostos.kicad_python = lambda: None\n"
+)
+
+
 def doctor_with_a_check_that_raises(tmp_path: Path, *argv: str) -> subprocess.CompletedProcess:
     """The whole `doctor` in a subprocess, on a made-up root, with importlib.metadata.distributions
     replaced by a stand-in that raises: the check fails inside, where only cmd_doctor's guard holds it.
-    kicad-cli, ngspice and java point at an absent path, so no engine starts."""
+    kicad-cli, ngspice and java point at an absent path and no KiCad Python is found, so no engine
+    starts."""
     base = tmp_path / "root"
     site = base / "venv" / "lib" / "python3.12" / "site-packages"
     if not site.is_dir():
@@ -497,7 +510,7 @@ def doctor_with_a_check_that_raises(tmp_path: Path, *argv: str) -> subprocess.Co
     absent = str(tmp_path / "absent")
     env = {**os.environ, "WORKCENTER_ROOT": str(base), "HOME": str(tmp_path)}
     env.update(KICAD_CLI=absent, NGSPICE=absent, JAVA=absent)
-    stand_in = (
+    stand_in = NO_KICAD_PYTHON + (
         "import importlib.metadata, runpy, sys\n"
         "def boom(*a, **k):\n"
         "    raise RuntimeError('a stand-in raised inside the check')\n"
@@ -672,13 +685,18 @@ def test_doctor_with_unreadable_metadata_on_the_venv_path_prints_its_row(tmp_pat
         return base
 
     def doctor(base: Path) -> subprocess.CompletedProcess:
-        # No engine starts: kicad-cli, ngspice and java are pointed at a path that is not there, so
-        # doctor's exit code is the same `fail` on every machine, with or without the bad folder.
+        # No engine starts: kicad-cli, ngspice and java are pointed at a path that is not there, and
+        # no KiCad Python is found, so doctor's exit code is the same `fail` on every machine, with or
+        # without the bad folder.
         absent = str(tmp_path / "absent")
         env = {**os.environ, "WORKCENTER_ROOT": str(base), "HOME": str(tmp_path)}
         env.update(KICAD_CLI=absent, NGSPICE=absent, JAVA=absent)
+        run = (
+            NO_KICAD_PYTHON
+            + "import runpy\nsys.argv = sys.argv[1:]\nrunpy.run_path(sys.argv[0], run_name='__main__')\n"
+        )
         return subprocess.run(
-            [sys.executable, str(CLI), "doctor"],
+            [sys.executable, "-c", run, str(CLI), "doctor"],
             capture_output=True,
             text=True,
             env=env,
