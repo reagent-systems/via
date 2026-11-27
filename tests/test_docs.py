@@ -566,10 +566,11 @@ def test_every_page_a_reader_opens_loads_the_hosts_analytics_script_once():
         SITE / "feedback.html",
         SITE / "guide.html",
         SITE / "made.html",
+        *sorted((SITE / "made").glob("*.html")),
         *example_pages(),
         *blog_pages(),
     )
-    assert len(pages) >= 12
+    assert len(pages) >= 15
     for page in pages:
         text = page.read_text(encoding="utf-8")
         assert links_of(page).count(HOSTED) == 1, page.name
@@ -593,6 +594,7 @@ def test_every_link_on_the_site_names_what_exists():
         SITE / "feedback.html",
         SITE / "guide.html",
         SITE / "made.html",
+        *sorted((SITE / "made").glob("*.html")),
         *example_pages(),
         *blog_pages(),
     ):
@@ -604,7 +606,9 @@ def test_every_link_on_the_site_names_what_exists():
             elif link.startswith("#"):
                 into_page += 1
                 found = f'id="{link[1:]}"' in text
-            elif re.match(r"https?://|\./$|%ORIGIN%|%MADE%", link):
+            elif re.match(r"https?://|\./$|%ORIGIN%|%MADE%|/api/|/b/|/$|/#", link):
+                # Whole addresses, the gallery's API, its boards' pages (tested by the gallery's own
+                # test) and its root.
                 continue
             else:
                 beside += 1
@@ -657,9 +661,13 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
     )
     assert run.returncode == 0, run.stderr
     text = (SITE / "made.html").read_text(encoding="utf-8")
-    led = re.findall(r'<h2><a href="https://via\.computer/examples/([a-z0-9-]+)">', text)
+    led = re.findall(r'<h2><a href="/b/([a-z0-9-]+)">', text)
     assert len(led) >= 3
-    assert all((SITE / "examples" / f"{slug}.html").is_file() for slug in led), led
+    # Each card leads to the board's own page here, which made.py writes, and that page to its story.
+    for slug in led:
+        page = (SITE / "made" / f"{slug}.html").read_text(encoding="utf-8")
+        assert f'href="https://via.computer/examples/{slug}"' in page, slug
+        assert (SITE / "examples" / f"{slug}.html").is_file(), slug
     state = re.findall(r'<span class="thing-state" title="([^"]*)">v[\d.]+ · <b>(\w+)</b></span>', text)
     assert len(state) == len(led) and all(full.startswith("GREEN") and b == "GREEN" for full, b in state), (
         state
@@ -668,14 +676,28 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
     assert len(cards) == len(led)
     for attrs in cards:
         data = dict(re.findall(r'data-(\w+)="([^"]*)"', attrs))
-        assert set(data) == {"order", "text", "category", "parts", "layers", "area", "boards"}, data
+        assert set(data) == {
+            "id",
+            "order",
+            "text",
+            "category",
+            "parts",
+            "layers",
+            "area",
+            "boards",
+            "likes",
+            "fresh",
+        }
         assert int(data["parts"]) > 0 and int(data["layers"]) >= 2 and int(data["boards"]) >= 1, data
         assert data["category"] != "Other", data
-    for key in ("all", "parts", "layers", "area", "boards"):
+        # A card's likes come from the API: the page writes none of its own.
+        assert data["likes"] == "0" and data["id"].startswith("ex-"), data
+    for key in ("likes", "fresh", "parts", "layers", "area"):
         assert f'data-sort="{key}"' in text, key
-        assert key == "all" or f'"{key}"' in json.dumps(re.findall(r"data-(\w+)=", " ".join(cards)))
-    for word in ("likes", "Log In", "Sign in", "Upload"):
+        assert f'"{key}"' in json.dumps(re.findall(r"data-(\w+)=", " ".join(cards)))
+    for word in ("Sign in", "Upload", "Remove ads", "Become a Supporter"):
         assert word not in text, f"the gallery draws {word}, which it does not have"
+    assert 'href="/api/auth?do=login" data-login hidden>Log In</a>' in text, "Log In shows once the API says"
     assert '<link rel="canonical" href="%MADE%/">' in text
     assert '<a class="made-brand" href="https://made.via.computer/"' in text
     assert '<p class="brand"><a href="https://via.computer/"' in text
@@ -683,18 +705,21 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
     host = json.loads((SITE / "vercel.json").read_text(encoding="utf-8"))
     assert host["buildCommand"] == "sh build.sh dist https://via.computer https://made.via.computer"
     # Vercel serves a file before a rewrite of vercel.json, so `/` served index.html at the gallery's
-    # address (2026-11-26): Routing Middleware on `/` serves the gallery there, and nothing else does.
+    # address (2026-11-26): Routing Middleware on `/` serves the gallery there, and each board's page
+    # at /b/<name>; vercel.json holds no rewrite.
     assert "rewrites" not in host
     middleware = (SITE / "middleware.js").read_text(encoding="utf-8")
     assert 'export const GALLERY = "made.via.computer";' in middleware
-    assert 'export const config = { matcher: "/" };' in middleware
-    assert 'rewrite(new URL("/made", request.url))' in middleware and ": next();" in middleware
+    assert 'export const config = { matcher: ["/", "/b/:path*"] };' in middleware
     if shutil.which("node") and (SITE / "node_modules" / "@vercel" / "functions").is_dir():
         script = (
             "const { default: mw } = await import(process.argv[1]);"
-            "for (const host of ['made.via.computer', 'via.computer', 'MADE.via.computer'])"
-            " console.log(host, mw(new Request(`https://${host}/`, { headers: { host } })).headers"
-            ".get('x-middleware-rewrite') ?? 'next');"
+            "const asked = [['made.via.computer', '/'], ['via.computer', '/'], ['MADE.via.computer', '/'],"
+            " ['made.via.computer', '/b/hush'], ['made.via.computer', '/b/0a1b2c3d4e5f'],"
+            " ['made.via.computer', '/b/..%2Fx'], ['made.via.computer', '/b/Hush']];"
+            "for (const [host, path] of asked) {"
+            " const r = mw(new Request(`https://${host}${path}`, { headers: { host } }));"
+            " console.log(host + path, r.headers.get('x-middleware-rewrite') ?? 'next'); }"
         )
         run = subprocess.run(
             ["node", "--input-type=module", "-e", script, (SITE / "middleware.js").as_uri()],
@@ -702,10 +727,14 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
             text=True,
             check=True,
         )
-        assert run.stdout.split("\n")[:3] == [
-            "made.via.computer https://made.via.computer/made",
-            "via.computer next",
-            "MADE.via.computer https://made.via.computer/made",
+        assert run.stdout.split("\n")[:7] == [
+            "made.via.computer/ https://made.via.computer/made",
+            "via.computer/ next",
+            "MADE.via.computer/ https://made.via.computer/made",
+            "made.via.computer/b/hush https://made.via.computer/made/hush",
+            "made.via.computer/b/0a1b2c3d4e5f https://made.via.computer/made/board",
+            "made.via.computer/b/..%2Fx next",
+            "made.via.computer/b/Hush next",
         ], run.stdout
     assert {
         "source": "/made",
@@ -716,14 +745,14 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
     # made.via.computer is only the gallery (the owner's word, 2026-11-26): every other page path
     # there goes to via.computer. A file the gallery loads has a dot, and the root has no path.
     only = {
-        "source": "/:path((?!_vercel/)[^.]+)",
+        "source": "/:path((?!_vercel/|api/|b/)[^.]+)",
         "has": [{"type": "host", "value": "made.via.computer"}],
         "destination": "https://via.computer/:path*",
         "permanent": False,
     }
     assert only in host["redirects"]
-    pattern = re.compile(r"(?!_vercel/)[^.]+")
-    for path in ("blog", "examples/hush", "guide", "made", "api/subscribe"):
+    pattern = re.compile(r"(?!_vercel/|api/|b/)[^.]+")
+    for path in ("blog", "examples/hush", "guide", "made", "bob"):
         assert pattern.fullmatch(path), path
     for path in (
         "",
@@ -731,10 +760,61 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
         "examples/hush/card.png",
         "_vercel/insights/view",
         "fonts/inter-latin-wght-normal.woff2",
+        "api/auth",
+        "api/made",
+        "b/hush",
     ):
         assert not pattern.fullmatch(path), path
-    loaded = [link for link in links_of(SITE / "made.html") if not re.match(r"https?://|%MADE%|#", link)]
-    assert loaded and all("." in link.split("?")[0] for link in loaded), loaded
+    # What a page of the gallery loads from its own address has a dot; its other links are the API,
+    # a board's page (/b/<name>), the site's root or another address.
+    for page in (SITE / "made.html", *sorted((SITE / "made").glob("*.html"))):
+        links = [link for link in links_of(page) if not re.match(r"https?://|%MADE%|#|/api/|/b/|/$|/#", link)]
+        assert links and all("." in link.split("?")[0] for link in links), (page.name, links)
+        for slug in re.findall(r'href="/b/([a-z0-9-]+)"', page.read_text(encoding="utf-8")):
+            assert (SITE / "made" / f"{slug}.html").is_file(), (page.name, slug)
+
+
+def test_each_board_has_a_page_with_an_order_menu_from_the_fabs_own_pages():
+    """Each board has its own page, Thingiverse's page of a thing (the owner's word, 2026-11-26): its
+    pictures, a like and a share button, its details, files and checks, and the Order menu. OSH Park
+    takes the .kicad_pcb as it is from a link (docs.oshpark.com/tips+tricks/api/ and
+    /design-tools/kicad/), so its button names the board file on GitHub, which must exist and hold
+    every copper zone's fill (OSH Park does not fill zones). JLCPCB and PCBWay take a zip of the
+    Gerbers on their own upload page, which the check workflow makes."""
+    from urllib.parse import parse_qs, urlparse
+
+    raw = "https://raw.githubusercontent.com/reagent-systems/via/main/"
+    pages = sorted(p for p in (SITE / "made").glob("*.html") if p.name != "board.html")
+    assert len(pages) >= 3
+    for page in pages:
+        text = page.read_text(encoding="utf-8")
+        slug = page.stem
+        assert f'data-thing="ex-{slug}"' in text and f'<link rel="canonical" href="%MADE%/b/{slug}">' in text
+        assert f'data-like="ex-{slug}"' in text and f'data-share="https://made.via.computer/b/{slug}"' in text
+        for tab in ("details", "files", "checks"):
+            assert f'id="tab-{tab}"' in text and f'id="panel-{tab}"' in text, (slug, tab)
+        osh = [html.unescape(u) for u in re.findall(r'href="(https://oshpark\.com/import\?url=[^"]+)"', text)]
+        assert osh, slug
+        for link in osh:
+            board = parse_qs(urlparse(link).query)["url"][0]
+            assert board.startswith(raw) and board.endswith(".kicad_pcb"), board
+            pcb = (ROOT / board[len(raw) :]).read_text(encoding="utf-8")
+            for zone in re.split(r"\n\s*\(zone\b", pcb)[1:]:
+                head = zone.split("(polygon", 1)[0]
+                assert "(keepout" in head or "(filled_polygon" in zone, f"{board}: a copper zone with no fill"
+        for fab, upload in (
+            ("JLCPCB", "https://cart.jlcpcb.com/quote"),
+            ("PCBWay", "https://www.pcbway.com/QuickOrderOnline.aspx"),
+        ):
+            assert f'href="{upload}" target="_blank" rel="noopener">Open {fab}' in text, (slug, fab)
+        assert f'href="/api/made?do=file&amp;id=ex-{slug}&amp;kind=gerbers" data-gerbers hidden' in text, slug
+        assert "Aisler" not in text, "no fab's button is drawn before its own pages are read"
+        for link in re.findall(
+            r'href="(https://raw\.githubusercontent\.com/reagent-systems/via/main/[^"]+)"', text
+        ):
+            assert (ROOT / link[len(raw) :]).is_file(), link
+    added = (SITE / "made" / "board.html").read_text(encoding="utf-8")
+    assert "data-added hidden" in added and "data-missing hidden" in added
 
 
 def test_the_site_builds_for_an_address_and_without_one(tmp_path):
@@ -769,6 +849,7 @@ def test_the_site_builds_for_an_address_and_without_one(tmp_path):
         "feedback.html",
         "guide.html",
         "made.html",
+        *(str(p.relative_to(SITE)) for p in sorted((SITE / "made").glob("*.html"))),
         *(str(p.relative_to(SITE)) for p in (*example_pages(), *blog_pages())),
     ]
     # A post is served at /blog/<slug> with its share card, and the feed with whole addresses.
@@ -800,7 +881,7 @@ def test_the_site_builds_for_an_address_and_without_one(tmp_path):
         assert "%ORIGIN%" not in (served / name).read_text(encoding="utf-8")
         assert "%MADE%" not in (served / name).read_text(encoding="utf-8")
         for link in links_of(served / name):
-            if not re.match(r"https?://|#|\./$", link):
+            if not re.match(r"https?://|#|\./$|/api/|/b/|/$|/#", link):
                 looked_up += 1
                 assert beside_page(served / name, link), f"{name} names {link}, and build.sh does not copy it"
     assert looked_up >= 60

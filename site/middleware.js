@@ -1,14 +1,25 @@
 // made.via.computer is only the gallery (the owner's word, 2026-11-26), and its root is the gallery's
 // page. Vercel serves a file before a rewrite of vercel.json, so `/` would serve index.html there:
 // this Routing Middleware runs before the file is looked up, and serves /made at that host's root.
-// Every other page path of that host goes to via.computer by a redirect of vercel.json.
+// Each board's page is /b/<name> on any host (the owner's word: "the boards on the made.via.computer
+// should have their own pages"): an example's is /made/<name>, written by site/made.py, and a board
+// someone added is /made/board, which made.js fills from /api/made by the name in the address. Every
+// other page path of the gallery's host goes to via.computer by a redirect of vercel.json.
 import { next, rewrite } from "@vercel/functions";
 
-export const GALLERY = "made.via.computer";
+import { SOURCES } from "./api/_examples.js";
 
-export const config = { matcher: "/" };
+export const GALLERY = "made.via.computer";
+const PAGES = new Set(Object.keys(SOURCES).map((id) => id.replace(/^ex-/, "")));
+
+export const config = { matcher: ["/", "/b/:path*"] };
 
 export default function middleware(request) {
-  const host = (request.headers.get("host") || new URL(request.url).host).toLowerCase();
-  return host === GALLERY ? rewrite(new URL("/made", request.url)) : next();
+  const url = new URL(request.url);
+  const host = (request.headers.get("host") || url.host).toLowerCase();
+  if (url.pathname === "/") return host === GALLERY ? rewrite(new URL("/made", request.url)) : next();
+  const name = url.pathname.slice("/b/".length).replace(/\/+$/, "");
+  if (PAGES.has(name)) return rewrite(new URL(`/made/${name}`, request.url));
+  if (/^[a-z0-9]{6,20}$/.test(name)) return rewrite(new URL("/made/board", request.url));
+  return next();
 }

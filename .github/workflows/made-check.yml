@@ -1,0 +1,185 @@
+# Via's gates on the boards people add at made.via.computer (site/api/_made.js), 1 board a run, and
+# each board's Gerbers for the Order menu of its page: JLCPCB and PCBWay take them as 1 zip. When no
+# board waits, the run makes the Gerbers of an example whose version has none yet, with `workcenter
+# export` on each of its boards.
+#
+# 3 jobs, so the board's own code never runs where a token can be had:
+#   take    asks the site for the oldest board waiting, with GitHub's OIDC token (id-token: write);
+#           it runs no code of the board's.
+#   check   clones the board and runs `workcenter gates` on it in Via's image with no network
+#           (permissions: {}, no token), then draws it, reads the report and zips the Gerbers in a
+#           second container, also with no network; the result goes out as a job output and the zip
+#           as an artifact. The board's processes end with its container, before any action runs.
+#   report  posts the zip and the result to the site with a new OIDC token; it runs no code of the
+#           board's.
+# The site takes a token only from this file on main of reagent-systems/via, and only for this
+# audience. A board's own code can still write its own result (ngspice runs a deck's `shell` lines),
+# so a board is listed only once an admin has looked at it too.
+#
+# Every value from the site or the board reaches a script through `env:` alone; no `run:` holds an
+# expression of one.
+name: Made with Via checks
+on:
+  schedule:
+    - cron: '4,19,34,49 * * * *'
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: made-check
+  cancel-in-progress: false
+jobs:
+  take:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    outputs:
+      id: ${{ steps.take.outputs.id }}
+      repo: ${{ steps.take.outputs.repo }}
+      ref: ${{ steps.take.outputs.ref }}
+      path: ${{ steps.take.outputs.path }}
+      example: ${{ steps.take.outputs.example }}
+    steps:
+      - name: Take the board that has waited longest
+        id: take
+        run: |
+          token=$(curl -fsS --max-time 30 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=made.via.computer" | jq -r .value)
+          curl -fsS --max-time 60 -H "Authorization: Bearer $token" \
+            "https://made.via.computer/api/made?do=queue" > queue.json
+          # The site checked each value when the board was added; they are checked again here.
+          jq -r '.board // empty
+            | select(.id | test("^([a-z0-9]{6,20}|ex-[a-z0-9-]{1,40})$"))
+            | select(.repo | test("^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"))
+            | select(.ref | test("^[A-Za-z0-9._/-]{1,100}$"))
+            | select(.path | test("^[A-Za-z0-9._/-]{1,200}$"))
+            | "id=\(.id)\nrepo=\(.repo)\nref=\(.ref)\npath=\(.path)\nexample=\(.example // false)"' queue.json >> "$GITHUB_OUTPUT"
+          echo "taken: $(jq -c '.board' queue.json)"
+
+  check:
+    needs: take
+    if: needs.take.outputs.id != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions: {}
+    outputs:
+      result: ${{ steps.result.outputs.result }}
+    steps:
+      - name: Via's tools, at main
+        run: git clone --quiet --depth 1 https://github.com/reagent-systems/via.git .via
+      - name: The board
+        env:
+          REPO: ${{ needs.take.outputs.repo }}
+          REF: ${{ needs.take.outputs.ref }}
+        run: |
+          if [ "$REPO" = reagent-systems/via ] && [ "$REF" = main ]; then
+            cp -a .via board
+          else
+            git -c core.symlinks=false clone --quiet --depth 1 --branch "$REF" -- "https://github.com/$REPO.git" board
+          fi
+          rm -rf board/.git
+      - name: Via's image
+        id: image
+        run: |
+          # The image of this toolchain under the repository's owner, else under the owner the images
+          # were pushed to before the repository moved (2026-11-24), else that owner's main.
+          tag=$(python3 .via/tools/image.py tag --repo .via --json | jq -r .tag)
+          now=$(python3 .via/tools/image.py tag --repo .via --json --owner reagent-systems | jq -r .image)
+          before=$(python3 .via/tools/image.py tag --repo .via --json --owner ThyFriendlyFox | jq -r .image)
+          for ref in "$now:$tag" "$before:$tag" "$before:main"; do
+            if docker pull --quiet "$ref" > /dev/null 2>&1; then
+              echo "image=$ref" >> "$GITHUB_OUTPUT"
+              echo "image: $ref"
+              exit 0
+            fi
+          done
+          echo "no image of Via's toolchain could be pulled"
+          exit 1
+      - name: workcenter gates (an example, workcenter export on each board), with no network
+        id: gates
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          BOARD_PATH: ${{ needs.take.outputs.path }}
+          EXAMPLE: ${{ needs.take.outputs.example }}
+        run: |
+          mkdir -p out
+          uid=$(id -u)
+          gid=$(id -g)
+          set +e
+          if [ "$EXAMPLE" = true ]; then
+            # An example's verdict is its repository's; this run makes its Gerbers for the Order menu.
+            script='for pcb in "$1"/*.kicad_pcb "$1"/*/*.kicad_pcb; do
+              [ -f "$pcb" ] || continue; python3 .via/tools/workcenter export -- "$(dirname "$pcb")" || exit 1
+            done'
+            timeout 2400 docker run --rm --network none --user "$uid:$gid" -e CI -e GITHUB_ACTIONS \
+              -v "$PWD/board":/work/board -v "$PWD/.via":/work/.via:ro -v "$PWD/out":/work/out -w /work \
+              "$IMAGE" bash -c "$script" export "board/$BOARD_PATH"
+          else
+            timeout 1800 docker run --rm --network none --user "$uid:$gid" -e CI -e GITHUB_ACTIONS \
+              -v "$PWD/board":/work/board -v "$PWD/.via":/work/.via:ro -v "$PWD/out":/work/out -w /work \
+              "$IMAGE" python3 .via/tools/workcenter gates --report out/report.md -- "board/$BOARD_PATH"
+          fi
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+      - name: The result, read in a container of its own
+        id: result
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          BOARD_PATH: ${{ needs.take.outputs.path }}
+          CODE: ${{ steps.gates.outputs.code }}
+        run: |
+          # The board's processes ended with its container. This one mounts the board and the report
+          # read-only and prints the result; nothing of the board's is read on the runner itself.
+          rm -rf files
+          mkdir files
+          result=$(timeout 600 docker run --rm --network none --user "$(id -u):$(id -g)" \
+            -v "$PWD/board":/work/board:ro -v "$PWD/.via":/work/.via:ro -v "$PWD/out":/work/out:ro \
+            -v "$PWD/files":/work/files -w /work \
+            "$IMAGE" python3 .via/tools/ci/made_check.py --bundle files "board/$BOARD_PATH" out/report.md "${CODE:-1}" | tail -n 1)
+          # Only our script wrote into files/; a link or anything but the 1 zip is dropped.
+          find files -mindepth 1 ! -name gerbers.zip -exec rm -rf {} + 2> /dev/null || true
+          if [ -L files/gerbers.zip ] || [ ! -f files/gerbers.zip ]; then rm -f files/gerbers.zip; fi
+          if ! printf '%s' "$result" | jq -e 'type == "object"' > /dev/null 2>&1; then
+            result='{"green":false,"verdict":"The check stopped before it could judge the board.","report":"","facts":null}'
+          fi
+          printf '%s' "$result" | jq -r '.verdict'
+          echo "result=$(printf '%s' "$result" | jq -c .)" >> "$GITHUB_OUTPUT"
+      - name: The Gerbers, for the report job
+        if: hashFiles('files/gerbers.zip') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: gerbers
+          path: files/gerbers.zip
+          retention-days: 1
+          if-no-files-found: ignore
+
+  report:
+    needs: [take, check]
+    if: always() && needs.take.outputs.id != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    steps:
+      - name: The Gerbers the check made
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: gerbers
+          path: files
+      - name: Tell the site
+        env:
+          ID: ${{ needs.take.outputs.id }}
+          RESULT: ${{ needs.check.outputs.result }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if ! printf '%s' "$RESULT" | jq -e 'type == "object"' > /dev/null 2>&1; then RESULT=null; fi
+          token=$(curl -fsS --max-time 30 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=made.via.computer" | jq -r .value)
+          if [ -f files/gerbers.zip ] && [ ! -L files/gerbers.zip ]; then
+            curl -fsS --max-time 120 -X POST -H "Authorization: Bearer $token" -H "content-type: application/zip" \
+              --data-binary @files/gerbers.zip "https://made.via.computer/api/made?do=upload&id=$ID&kind=gerbers" || true
+            echo
+          fi
+          printf '%s' "$RESULT" | jq -c --arg id "$ID" --arg run "$RUN" '{id: $id, run: $run, result: .}' |
+            curl -fsS --max-time 60 -X POST -H "Authorization: Bearer $token" -H "content-type: application/json" \
+              --data-binary @- "https://made.via.computer/api/made?do=result"

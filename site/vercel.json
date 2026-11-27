@@ -7,7 +7,7 @@
   "trailingSlash": false,
   "redirects": [
     {
-      "source": "/:path((?!_vercel/)[^.]+)",
+      "source": "/:path((?!_vercel/|api/|b/)[^.]+)",
       "has": [
         {
           "type": "host",
