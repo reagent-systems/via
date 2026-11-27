@@ -103,7 +103,9 @@ def run_line(step: dict, env: dict) -> subprocess.CompletedProcess:
 
 
 def files(folder: Path) -> list[str]:
-    return sorted(str(p.relative_to(folder)) for p in folder.rglob("*"))
+    """The folder's files and folders, each by its path under it with `/` (on Windows too: run
+    46067841222 gave `library\\sources.csv`)."""
+    return sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*"))
 
 
 # ------------------------------------------------------------- the round's test
@@ -237,11 +239,11 @@ def test_new_keeps_what_is_there_and_the_library_above(tmp_path):
     made = workcenter("new", str(board), env=env)
     assert made.returncode == 0, made.stdout + made.stderr
     assert made.stdout.splitlines() == [
-        f"wrote {board}/design.py",
-        f"wrote {board}/.gitattributes",
-        f"wrote {board}/parts.csv",
-        f"kept  {board}/.gitignore (it is there already)",
-        f"kept  {tmp_path}/library/sources.csv (the library above serves this project)",
+        f"wrote {board / 'design.py'}",
+        f"wrote {board / '.gitattributes'}",
+        f"wrote {board / 'parts.csv'}",
+        f"kept  {board / '.gitignore'} (it is there already)",
+        f"kept  {tmp_path / 'library' / 'sources.csv'} (the library above serves this project)",
         f"new: 3 files written, 1 kept. Next: edit {board}/design.py, then workcenter next {board}",
     ]
     assert (board / ".gitignore").read_text(encoding="utf-8") == "mine\n"
@@ -267,7 +269,7 @@ def test_new_refuses_a_folder_under_a_file_in_one_line(tmp_path):
     made = workcenter("new", str(note / "sub"), env=env)
     assert (made.returncode, made.stdout.splitlines(), made.stderr) == (
         1,
-        [f"new: {note} is a file, where {note}/sub/design.py needs a folder; nothing written."],
+        [f"new: {note} is a file, where {note / 'sub' / 'design.py'} needs a folder; nothing written."],
         "",
     )
 
@@ -281,7 +283,7 @@ def test_new_checks_every_path_before_it_writes_one(tmp_path, there, kind):
     board.mkdir()
     if kind == "file":
         (board / there).write_text("x\n", encoding="utf-8")
-        line = f"new: {board / there} is a file, where {board}/library/sources.csv needs a folder"
+        line = f"new: {board / there} is a file, where {board / 'library' / 'sources.csv'} needs a folder"
     else:
         (board / there).mkdir()
         line = f"new: {board / there} is a folder, where a file goes"
@@ -515,7 +517,8 @@ def test_new_deck_never_replaces_a_file(tmp_path):
     assert (board / "sim" / "i2c_rise.cir").read_text(encoding="utf-8") == "* mine\n"
     named = workcenter("new", str(board), "--deck", "i2c_rise", "--as", "i2c_rise", env=env)
     assert named.returncode == 1
-    assert named.stdout.splitlines() == [f"new: {board}/sim/i2c_rise.cir is there already; nothing written."]
+    said = f"new: {board / 'sim' / 'i2c_rise.cir'} is there already; nothing written."
+    assert named.stdout.splitlines() == [said]
     assert (board / "sim" / "i2c_rise.cir").read_text(encoding="utf-8") == "* mine\n"
 
 

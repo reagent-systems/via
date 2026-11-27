@@ -661,12 +661,13 @@ def test_a_folder_with_two_project_files_is_told_to_name_one(tmp_path):
     assert code == 1 and step["next"] == (
         "Name one of the folder's 2 project files: a.kicad_pro, b.kicad_pro. The RUN line names the first."
     )
-    assert step["run"] == f"workcenter next {tmp_path}/a.kicad_pro"
+    pro = tmp_path / "a.kicad_pro"  # the system's separator (run 46067841222, Windows: `\a.kicad_pro`)
+    assert step["run"] == f"workcenter next {pro}"
     assert step["why"] == f"{tmp_path}: 2 .kicad_pro files; name one"
-    assert step["done_when"] == f"`workcenter next {tmp_path}/a.kicad_pro` names another step"
+    assert step["done_when"] == f"`workcenter next {pro}` names another step"
     code, step = follow(step)
     assert (code, step["next"]) == (1, "Run the gates.")
-    assert step["run"] == f"workcenter gates {tmp_path}/a.kicad_pro"
+    assert step["run"] == f"workcenter gates {pro}"
     # that line runs: with no schematic, no board and no deck it has nothing for an engine
     ran = run_line(step)
     assert ran.returncode == 2 and ran.stdout.splitlines()[-1].startswith("SKIPPED"), ran.stdout + ran.stderr
@@ -677,7 +678,7 @@ def test_a_folder_with_two_project_files_is_told_to_name_one(tmp_path):
     # a design file does not change the first answer: generated again, the folder holds 2 project files
     (tmp_path / "design.py").write_text("# a design\n", encoding="utf-8")
     code, step = ask(tmp_path)
-    assert (code, step["run"]) == (1, f"workcenter next {tmp_path}/a.kicad_pro")
+    assert (code, step["run"]) == (1, f"workcenter next {pro}")
 
 
 def test_a_folder_that_is_not_there_is_created_first(tmp_path):
