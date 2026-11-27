@@ -12,10 +12,12 @@ Standard library only, as the CLI (AGENTS.md invariant 3).
 
 from __future__ import annotations
 
+import errno
 import os
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # The KiCad 10 application bundle the official DMG and the Homebrew cask `kicad` install
@@ -261,3 +263,75 @@ def write_text(path: Path | str, text: str) -> int:
     does not follow the locale (Python's `open`). On Linux the bytes are those of today's writes, which
     rest on a UTF-8 locale."""
     return Path(path).write_text(text, encoding="utf-8", newline="\n")
+
+
+# The byte msvcrt.locking locks on Windows. Windows enforces a lock on reads too (LockFileEx: an
+# exclusive lock "denies all other processes both read and write access"), so the lock sits past any
+# text the engine lock writes, where it stops no reader. Locking past the end of a file is allowed
+# ("Locking a region that goes beyond the current end-of-file position is not an error", LockFileEx).
+WIN_LOCK_AT = 1 << 30
+
+
+def flock_files() -> bool:
+    """True where the engine lock's file lock is flock(2), on Linux and macOS.
+
+    There, a lock belongs to the open file, which a child that inherits the descriptor shares (Linux
+    `man 2 flock`; BSD flock on macOS), and an open file can be renamed or removed. On Windows neither
+    holds: a lock of msvcrt.locking belongs to the handle and process that took it, and a file that
+    Python's os.open opened (no FILE_SHARE_DELETE) can be neither renamed nor removed until it is closed
+    (CreateFileW, FILE_SHARE_DELETE). Not confirmed in a run on Windows."""
+    return not _windows()
+
+
+def user_id() -> int | None:
+    """The user's id that the lock folder must belong to; None on Windows, which has no os.getuid
+    (Python's os documentation) and whose default lock folder is under the user's own %LOCALAPPDATA%.
+
+    Linux and macOS: tools/enginelock.py:153."""
+    return None if _windows() else os.getuid()
+
+
+def lock_file(fd: int, wait: bool = False) -> bool:
+    """Take the exclusive lock on the open file `fd`: True once taken, False when another holds it and
+    `wait` is False. `wait` waits as long as it takes.
+
+    Linux and macOS: tools/enginelock.py:197, :408 and :421, flock(LOCK_EX), with LOCK_NB unless it
+    waits. Windows: msvcrt.locking of 1 byte at WIN_LOCK_AT with LK_NBLCK, tried again every 0.01 s when
+    it waits: LK_LOCK gives up after 10 tries 1 s apart (Python's msvcrt documentation). A lock held by
+    another raises OSError with EACCES (the CRT's _locking); any other error is raised. The system frees
+    the lock when the process ends (LockFileEx). Not confirmed in a run on Windows."""
+    if not _windows():
+        import fcntl
+
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        return True
+    import msvcrt
+
+    while True:
+        os.lseek(fd, WIN_LOCK_AT, os.SEEK_SET)
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError as exc:
+            if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                raise
+            if not wait:
+                return False
+        time.sleep(0.01)
+
+
+def unlock_file(fd: int) -> None:
+    """Free the lock `lock_file` took, before `fd` is closed.
+
+    Linux and macOS: nothing; close(2) drops a flock at once, as tools/enginelock.py does today.
+    Windows: msvcrt.locking with LK_UNLCK on the same byte; Windows frees the lock of a closed handle
+    only at a time that "depends upon available system resources" (LockFileEx). Not confirmed in a run."""
+    if not _windows():
+        return
+    import msvcrt
+
+    os.lseek(fd, WIN_LOCK_AT, os.SEEK_SET)
+    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
