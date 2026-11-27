@@ -175,6 +175,21 @@ def ngspice_candidates() -> list[str]:
     return ["ngspice"]
 
 
+def kicad_share() -> Path:
+    """The install's folder of KiCad's stock libraries, whatever the variables say.
+
+    Linux: /usr/share/kicad (tools/workcenter:70 keeps its 3dmodels apart from every variable).
+    macOS: the bundle's Contents/SharedSupport. Windows: share\\kicad of the first install that has one,
+    else of the first install. Not confirmed in a run off Linux."""
+    if _windows():
+        installs = _win_installs()
+        home = next((h for h in installs if (h / "share" / "kicad").is_dir()), installs[0])
+        return home / "share" / "kicad"
+    if _mac():
+        return _mac_contents()[0] / "SharedSupport"
+    return Path("/usr/share/kicad")
+
+
 def kicad_dirs() -> dict[str, Path]:
     """KiCad's library folders: "symbols", "footprints" and "3dmodels".
 
@@ -186,14 +201,7 @@ def kicad_dirs() -> dict[str, Path]:
     share\\kicad of the first install that has one (KiCad's stock data beside bin). Not confirmed in a
     run off Linux."""
     linux = not (_windows() or _mac())
-    if _windows():
-        installs = _win_installs()
-        home = next((h for h in installs if (h / "share" / "kicad").is_dir()), installs[0])
-        stock = home / "share" / "kicad"
-    elif _mac():
-        stock = _mac_contents()[0] / "SharedSupport"
-    else:
-        stock = Path("/usr/share/kicad")
+    stock = kicad_share()
 
     def pick(via: str | None, kicad: str, name: str) -> Path:
         if via is not None and via in os.environ:

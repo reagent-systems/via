@@ -386,6 +386,42 @@ def test_kicad_dirs_on_windows_follow_kicad_cli_first(hostos, monkeypatch, tmp_p
     assert hostos.kicad_dirs()["footprints"] == tmp_path / "D" / "KiCad" / "share" / "kicad" / "footprints"
 
 
+# ------------------------------------------------------------------ kicad_share
+
+
+def test_kicad_share_on_linux_is_the_ppas_folder_whatever_the_variables(hostos, monkeypatch, tmp_path):
+    """tools/workcenter:70 keeps the install's 3D folder apart from every variable: a board's
+    ${KICAD9_3DMODEL_DIR} unset falls back to it, never to KICAD10_3DMODEL_DIR's value."""
+    on(monkeypatch, "linux")
+    for name in ("KICAD_SYMBOL_DIR", "KICAD10_SYMBOL_DIR", "KICAD10_3DMODEL_DIR"):
+        monkeypatch.setenv(name, str(tmp_path / name))
+    assert hostos.kicad_share() == Path("/usr/share/kicad")
+
+
+def test_kicad_share_on_macos_is_the_bundles_sharedsupport(hostos, monkeypatch, tmp_path):
+    on(monkeypatch, "darwin")
+    monkeypatch.setenv("KICAD10_3DMODEL_DIR", str(tmp_path / "models"))
+    assert hostos.kicad_share() == MAC_SHARED
+
+
+def test_kicad_share_on_windows_is_the_first_install_with_a_share(hostos, monkeypatch, tmp_path):
+    on(monkeypatch, "win32")
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "pf"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    share = tmp_path / "local" / "Programs" / "KiCad" / "10.0" / "share" / "kicad"
+    share.mkdir(parents=True)
+    monkeypatch.setenv("KICAD10_3DMODEL_DIR", str(tmp_path / "models"))
+    assert hostos.kicad_share() == share
+
+
+@pytest.mark.parametrize("platform", PLATFORMS)
+def test_kicad_dirs_without_variables_are_the_folders_of_kicad_share(hostos, monkeypatch, tmp_path, platform):
+    on(monkeypatch, platform)
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "pf"))
+    share = hostos.kicad_share()
+    assert hostos.kicad_dirs() == {name: share / name for name in ("symbols", "footprints", "3dmodels")}
+
+
 # ------------------------------------------------------------------ awt_lib
 
 
