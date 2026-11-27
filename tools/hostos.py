@@ -13,6 +13,7 @@ Standard library only, as the CLI (AGENTS.md invariant 3).
 from __future__ import annotations
 
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -260,6 +261,18 @@ def stop_signals() -> tuple[int, ...]:
     process group as SIGBREAK. A signal this Python lacks is left out."""
     names = ("SIGTERM", "SIGBREAK") if _windows() else ("SIGTERM", "SIGHUP")
     return tuple(getattr(signal, name) for name in names if hasattr(signal, name))
+
+
+def shell_word(word: str) -> str:
+    """`word` quoted as 1 word of a command a person pastes into the system's shell; a plain word or
+    path stays as written, so Linux's commands are today's.
+
+    Linux and macOS: sh's quoting (shlex.quote); macOS's default root holds "Application Support".
+    Windows: double quotes where needed (subprocess.list2cmdline), as cmd.exe and PowerShell take them;
+    a user folder can hold a space. Not confirmed in a run off Linux."""
+    if _windows():
+        return subprocess.list2cmdline([word])
+    return shlex.quote(word)
 
 
 def write_text(path: Path | str, text: str) -> int:

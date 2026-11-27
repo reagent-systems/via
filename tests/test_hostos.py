@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -590,6 +591,31 @@ def test_write_text_leaves_a_carriage_return_the_text_holds(hostos, tmp_path):
     path = tmp_path / "out.txt"
     hostos.write_text(path, "a\r\nb\n")
     assert path.read_bytes() == b"a\r\nb\n"
+
+
+# ------------------------------------------------------------------ shell_word
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_shell_word_on_posix_quotes_a_path_with_a_space_for_sh(hostos, monkeypatch, platform):
+    on(monkeypatch, platform)
+    pip = "/Users/a/Library/Application Support/via/venv/bin/pip"
+    assert hostos.shell_word(pip) == f"'{pip}'"
+    assert shlex.split(hostos.shell_word(pip) + " install") == [pip, "install"]
+
+
+@pytest.mark.parametrize("platform", PLATFORMS)
+def test_shell_word_leaves_a_plain_path_as_written(hostos, monkeypatch, platform):
+    """Linux's command lines stay as they are today."""
+    on(monkeypatch, platform)
+    assert hostos.shell_word("/opt/workcenters/ee/venv/bin/pip") == "/opt/workcenters/ee/venv/bin/pip"
+
+
+def test_shell_word_on_windows_puts_a_path_with_a_space_in_double_quotes(hostos, monkeypatch):
+    """cmd.exe and PowerShell take double quotes, not sh's single ones (subprocess.list2cmdline)."""
+    on(monkeypatch, "win32")
+    pip = "C:\\Users\\John Smith\\AppData\\Local\\Via\\venv\\Scripts\\pip.exe"
+    assert hostos.shell_word(pip) == f'"{pip}"'
 
 
 # ------------------------------------------------------------------ the module
