@@ -8,7 +8,7 @@
 #   ./install-macos.sh --check    run `workcenter doctor` only
 #
 # Written for the bash macOS ships (3.2) and its own tools (shasum, hdiutil, ditto, plutil).
-# Apple Silicon is proven in CI; an Intel Mac is best effort. Every address and checksum comes from
+# Apple Silicon is the target; an Intel Mac is best effort. Every address and checksum comes from
 # toolchain/desktop.json. Each step skips work already done, so the script is safe to run again.
 #
 # Environment overrides:
@@ -33,6 +33,7 @@ KICAD_DIR="${KICAD_DIR:-/Applications/KiCad}"
 BREW_PREFIX=""
 ARCH=""
 JAVA_KEY=""
+MNT=""
 MARK="# Via (install-macos.sh)"
 
 usage() {
@@ -169,7 +170,7 @@ fetch() {
 }
 
 preflight() {
-  local system v major min translated
+  local system v major min brew_min kver pyver translated
   system="$(uname -s)"
   ARCH="$(uname -m)"
   if [ "$system" != Darwin ]; then
@@ -182,14 +183,19 @@ preflight() {
     die "no pins file at ${PINS}: run the script from a checkout of Via"
   fi
   min="$(pin kicad.macos.min_macos)"
+  brew_min="$(pin homebrew.min_macos)"
+  kver="$(pin kicad.version)"
+  pyver="$(pin python.version)"
   if command -v sw_vers > /dev/null 2>&1; then
     v="$(sw_vers -productVersion)"
     major="${v%%.*}"
     if [ "$major" -lt "$min" ] 2> /dev/null; then
       if [ "$DRY" != 1 ]; then
-        die "this is macOS ${v}; KiCad $(pin kicad.version) needs macOS ${min} or newer"
+        die "this is macOS ${v}; KiCad ${kver} needs macOS ${min} or newer"
       fi
       say "the real run stops here: this is macOS ${v}; KiCad needs macOS ${min} or newer"
+    elif [ "$major" -lt "$brew_min" ] 2> /dev/null; then
+      say "this is macOS ${v}: Homebrew supports macOS ${brew_min} and newer, so Python ${pyver} builds from source here, which is slow and may fail."
     fi
   fi
   case "$ARCH" in
@@ -202,7 +208,7 @@ preflight() {
         fi
         say "the real run stops here: this shell runs under Rosetta"
       fi
-      say "Intel Mac: best effort. Via proves Apple Silicon only, and Homebrew builds Python $(pin python.version) from source on Intel, which is slow."
+      say "Intel Mac: best effort; Via targets Apple Silicon. It needs a Homebrew already installed: Homebrew's installer no longer supports Intel, and Python ${pyver} builds from source."
       JAVA_KEY="macos_x64"
       ;;
     *) die "unknown processor ${ARCH}: Via installs on arm64 (Apple Silicon) and x86_64 (Intel)" ;;
@@ -213,16 +219,27 @@ preflight() {
 }
 
 step_brew() {
-  header 1 Homebrew "find brew; Python $(pin python.version) and ngspice come from it"
+  local pyver install
+  pyver="$(pin python.version)"
+  install="$(pin homebrew.install)"
+  header 1 Homebrew "find brew; Python ${pyver} and ngspice come from it"
   if command -v brew > /dev/null 2>&1; then
     :
   elif [ -x /opt/homebrew/bin/brew ]; then
     PATH="/opt/homebrew/bin:${PATH}"
   elif [ -x /usr/local/bin/brew ]; then
     PATH="/usr/local/bin:${PATH}"
+  elif [ "$ARCH" != arm64 ]; then
+    # Homebrew's own installer aborts on an Intel Mac: never send the user to it.
+    if [ "$DRY" != 1 ]; then
+      die "Homebrew is not installed, and on an Intel Mac Via cannot install it: Homebrew's installer no longer supports Intel. Via needs a Homebrew already installed there."
+    fi
+    say "dry run: the real run stops here: Homebrew is not installed, and Homebrew's installer no longer supports Intel"
+    BREW_PREFIX="/usr/local"
+    return 0
   else
     say "Homebrew is not installed. Install it with this 1 command, then run ./install-macos.sh again:"
-    printf '  %s\n' "$(pin homebrew.install)"
+    printf '  %s\n' "$install"
     if [ "$DRY" != 1 ]; then
       exit 1
     fi
@@ -240,26 +257,98 @@ step_brew() {
   fi
 }
 
+# Homebrew installs the ngspice it has today, not the pin: say which one it is, and warn when it differs.
+check_ngspice() {
+  local formula="$1" want got
+  want="$(pin ngspice.version)"
+  if [ "$DRY" = 1 ]; then
+    say "would check: brew list --versions ${formula} names ${want}"
+    return 0
+  fi
+  got="$(brew list --versions "$formula" 2> /dev/null || true)"
+  got="${got#"${formula}" }"
+  got="${got%% *}"
+  if [ "$got" = "$want" ]; then
+    say "ngspice ${got} from Homebrew, as pinned"
+  else
+    say "WARNING: Homebrew installed ngspice ${got:-of no version it names}; Via pins ${want}. The simulations may differ."
+  fi
+}
+
 step_formulae() {
-  local pyf ngf
+  local pyf ngf pyver
   pyf="$(pin python.macos_formula)"
   ngf="$(pin ngspice.macos_formula)"
-  header 2 "Python $(pin python.version) and ngspice" "brew installs ${pyf} and ${ngf} (ngspice $(pin ngspice.version)); one already there is kept"
+  pyver="$(pin python.version)"
+  header 2 "Python ${pyver} and ngspice" "brew installs ${pyf} and ${ngf}, then checks ngspice's version against the pin; one already there is kept"
   run brew install "$pyf" "$ngf"
-  PY312="${BREW_PREFIX}/opt/${pyf}/bin/python$(pin python.version)"
+  PY312="${BREW_PREFIX}/opt/${pyf}/bin/python${pyver}"
   if [ "$DRY" != 1 ]; then
     [ -x "$PY312" ] || die "no ${PY312} after brew install ${pyf}"
     [ -x "${BREW_PREFIX}/bin/ngspice" ] || die "no ${BREW_PREFIX}/bin/ngspice after brew install ${ngf}"
   fi
+  check_ngspice "$ngf"
 }
 
 kicad_cli() { printf '%s\n' "${KICAD_DIR}/KiCad.app/Contents/MacOS/kicad-cli"; }
 
+# Whether you may write in a folder: the 1 test of it, in a real run and in a dry run alike.
+can_write() { [ -w "$1" ]; }
+
+# The nearest folder that exists, from a path that may not exist yet.
+nearest_dir() {
+  local d="$1"
+  while [ ! -d "$d" ]; do
+    case "$d" in
+      */*) d="${d%/*}" ;;
+      *) d="." ;;
+    esac
+    [ -n "$d" ] || d="/"
+  done
+  printf '%s\n' "$d"
+}
+
+# Detaches the KiCad DMG and removes its mount folder. It is the EXIT trap while the DMG is mounted,
+# so a stop at any point after the mount leaves nothing mounted.
+detach_dmg() {
+  if [ -n "$MNT" ]; then
+    say "run: $(quoted hdiutil detach "$MNT")"
+    hdiutil detach "$MNT" > /dev/null 2>&1 || true
+    rmdir "$MNT" 2> /dev/null || true
+    MNT=""
+  fi
+}
+
+# Copies KiCad's folder from the mounted DMG to KICAD_DIR. A folder under your home is yours: it is
+# made with mkdir -p, never with sudo. Elsewhere sudo is asked for only when the nearest folder that
+# exists is not writable for you.
+place_kicad() {
+  local from="$1" parent="${KICAD_DIR%/*}"
+  case "${parent}/" in
+    "${HOME}/"*)
+      run mkdir -p "$parent" || return 1
+      run ditto "$from" "$KICAD_DIR" || return 1
+      return 0
+      ;;
+  esac
+  if can_write "$(nearest_dir "$parent")"; then
+    run mkdir -p "$parent" || return 1
+    run ditto "$from" "$KICAD_DIR" || return 1
+  else
+    as_admin "copy KiCad into ${parent}" ditto "$from" "$KICAD_DIR" || return 1
+  fi
+}
+
 step_kicad() {
-  local ver cli have="" dmg mnt folder
+  local ver cli have="" dmg mnt folder file url mirror sha bytes
   ver="$(pin kicad.version)"
   cli="$(kicad_cli)"
   folder="$(pin kicad.macos.folder)"
+  file="$(pin kicad.macos.file)"
+  url="$(pin kicad.macos.url)"
+  mirror="$(pin kicad.macos.mirror)"
+  sha="$(pin kicad.macos.sha256)"
+  bytes="$(pin kicad.macos.bytes)"
   header 3 KiCad "KiCad ${ver} from its pinned DMG, checked by SHA256, copied to ${KICAD_DIR}"
   if [ "$DRY" != 1 ] && [ -x "$cli" ]; then
     have="$("$cli" version 2> /dev/null || true)"
@@ -269,33 +358,29 @@ step_kicad() {
     fi
   fi
   if [ "$DRY" != 1 ] && [ -e "$KICAD_DIR" ]; then
-    die "${KICAD_DIR} holds another KiCad (${have:-no kicad-cli that answers}). Move it to the Trash, or install beside it with KICAD_DIR=\"\$HOME/Applications/KiCad\" ./install-macos.sh"
+    die "${KICAD_DIR} holds another KiCad (${have:-no kicad-cli that answers}). Install KiCad ${ver} beside it, with no sudo: KICAD_DIR=\"\$HOME/Applications/KiCad\" ./install-macos.sh. The KiCad in ${KICAD_DIR} belongs to you: ask before moving it."
   fi
-  dmg="${ROOT}/downloads/$(pin kicad.macos.file)"
-  fetch "$(pin kicad.macos.url)" "$(pin kicad.macos.mirror)" "$(pin kicad.macos.sha256)" \
-    "$(pin kicad.macos.bytes)" "$dmg"
+  dmg="${ROOT}/downloads/${file}"
+  fetch "$url" "$mirror" "$sha" "$bytes" "$dmg"
   if [ "$DRY" = 1 ]; then
     mnt="<a new temporary folder>"
   else
     mnt="$(mktemp -d "${TMPDIR:-/tmp}/via-kicad.XXXXXX")"
   fi
   run hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mnt" "$dmg"
-  if [ -w "${KICAD_DIR%/*}" ] || [ "$DRY" = 1 ]; then
-    if ! run ditto "${mnt}/${folder}" "$KICAD_DIR"; then
-      run hdiutil detach "$mnt"
-      die "the copy of KiCad to ${KICAD_DIR} failed"
-    fi
-  else
-    if ! as_admin "copy KiCad into ${KICAD_DIR%/*}" ditto "${mnt}/${folder}" "$KICAD_DIR"; then
-      run hdiutil detach "$mnt"
-      die "the copy of KiCad to ${KICAD_DIR} failed"
-    fi
+  if [ "$DRY" != 1 ]; then
+    MNT="$mnt"
+    trap detach_dmg EXIT
   fi
-  run hdiutil detach "$mnt"
+  if ! place_kicad "${mnt}/${folder}"; then
+    die "the copy of KiCad to ${KICAD_DIR} failed"
+  fi
   if [ "$DRY" = 1 ]; then
+    run hdiutil detach "$mnt"
     say "would check: $(kicad_cli) version prints ${ver}"
   else
-    rmdir "$mnt" 2> /dev/null || true
+    detach_dmg
+    trap - EXIT
     have="$("$cli" version 2> /dev/null || true)"
     [ "$have" = "$ver" ] || die "${cli} version printed '${have}', not ${ver}"
     say "KiCad ${have} at ${KICAD_DIR}"
@@ -304,15 +389,19 @@ step_kicad() {
 }
 
 step_java() {
-  local dir="${ROOT}/java21" tgz sha new top java
+  local dir="${ROOT}/java21" tgz sha new top java jver file url bytes
   sha="$(pin "java.${JAVA_KEY}.sha256")"
+  jver="$(pin java.version)"
+  file="$(pin "java.${JAVA_KEY}.file")"
+  url="$(pin "java.${JAVA_KEY}.url")"
+  bytes="$(pin "java.${JAVA_KEY}.bytes")"
   java="${dir}/Contents/Home/bin/java"
-  header 4 "Java 21" "Eclipse Temurin JRE $(pin java.version) for FreeRouting, into ${dir}"
+  header 4 "Java 21" "Eclipse Temurin JRE ${jver} for FreeRouting, into ${dir}"
   if [ "$DRY" != 1 ] && [ -x "$java" ] && [ "$(cat "${dir}/.sha256" 2> /dev/null)" = "$sha" ]; then
-    say "Temurin $(pin java.version) is already at ${dir}"
+    say "Temurin ${jver} is already at ${dir}"
   else
-    tgz="${ROOT}/downloads/$(pin "java.${JAVA_KEY}.file")"
-    fetch "$(pin "java.${JAVA_KEY}.url")" "" "$sha" "$(pin "java.${JAVA_KEY}.bytes")" "$tgz"
+    tgz="${ROOT}/downloads/${file}"
+    fetch "$url" "" "$sha" "$bytes" "$tgz"
     new="${ROOT}/java21.new"
     run rm -rf "$new"
     run mkdir -p "$new"
@@ -336,12 +425,15 @@ step_java() {
 }
 
 step_freerouting() {
-  local ver dir jar
+  local ver dir jar url sha bytes
   ver="$(pin freerouting.version)"
+  url="$(pin freerouting.url)"
+  sha="$(pin freerouting.sha256)"
+  bytes="$(pin freerouting.bytes)"
   dir="${ROOT}/freerouting"
   jar="${dir}/freerouting-${ver}.jar"
   header 5 FreeRouting "the FreeRouting ${ver} jar, checked by SHA256, into ${dir}"
-  fetch "$(pin freerouting.url)" "" "$(pin freerouting.sha256)" "$(pin freerouting.bytes)" "$jar"
+  fetch "$url" "" "$sha" "$bytes" "$jar"
   run ln -sfn "$jar" "${dir}/freerouting.jar"
 }
 
@@ -360,8 +452,7 @@ step_venv() {
   else
     run "$PY312" -m venv --clear "$venv"
   fi
-  # `python -m pip`, never venv/bin/pip: the root's path holds a blank, and pip's own script starts
-  # with a #! line that names it.
+  # `python -m pip`: the same pip as the venv's Python, whatever its path.
   run "${venv}/bin/python" -m pip install -q --upgrade pip
   run "${venv}/bin/python" -m pip install -q -r "${SRC_DIR}/requirements.txt"
 }

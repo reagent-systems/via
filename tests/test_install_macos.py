@@ -42,6 +42,13 @@ STEPS = [
     "workcenter doctor",
 ]
 READERS = {"uname", "sw_vers", "sysctl", "brew", "python3"}
+# Homebrew's installer aborts on Intel (raw.githubusercontent.com/Homebrew/install/HEAD/install.sh,
+# read 2026-11-27: "Homebrew on macOS is only supported on Apple Silicon processors!"), and
+# formulae.brew.sh/api/formula/python@3.12.json lists bottles for arm64 macOS only.
+INTEL_LINE = (
+    "[via] Intel Mac: best effort; Via targets Apple Silicon. It needs a Homebrew already installed: "
+    "Homebrew's installer no longer supports Intel, and Python 3.12 builds from source."
+)
 REFUSED = ["curl", "hdiutil", "ditto", "sudo", "shasum", "tar", "mkdir", "ln", "mv", "rm", "cp", "chmod"]
 REFUSED += ["mktemp", "grep", "rmdir", "xattr"]
 
@@ -71,7 +78,9 @@ def code_lines() -> list[str]:
     return out
 
 
-def fence(tmp_path: Path, *, arch: str = "arm64", system: str = "Darwin", brew: bool = True) -> dict:
+def fence(
+    tmp_path: Path, *, arch: str = "arm64", system: str = "Darwin", brew: bool = True, macos: str = "15.6"
+) -> dict:
     """The environment of 1 fenced run, with its stand-ins in tmp_path/bin."""
     bin_ = tmp_path / "bin"
     bin_.mkdir()
@@ -79,9 +88,10 @@ def fence(tmp_path: Path, *, arch: str = "arm64", system: str = "Darwin", brew: 
     calls.write_text("")
     answers = {
         "uname": 'case "$1" in -s) echo "$FAKE_S";; -m) echo "$FAKE_M";; *) echo "$FAKE_S";; esac',
-        "sw_vers": 'echo "15.6"',
+        "sw_vers": 'echo "$FAKE_V"',
         "sysctl": "echo 0",
-        "brew": 'case "$1" in --prefix) echo "$FAKE_PREFIX${2:+/opt/$2}";; *) exit 98;; esac',
+        "brew": 'case "$1" in --prefix) echo "$FAKE_PREFIX${2:+/opt/$2}";; '
+        'list) echo "$FAKE_LIST";; *) exit 98;; esac',
     }
     if not brew:
         del answers["brew"]
@@ -107,6 +117,8 @@ def fence(tmp_path: Path, *, arch: str = "arm64", system: str = "Darwin", brew: 
         "CALLS": str(calls),
         "FAKE_S": system,
         "FAKE_M": arch,
+        "FAKE_V": macos,
+        "FAKE_LIST": "ngspice 47",
         "FAKE_PREFIX": "/opt/homebrew" if arch == "arm64" else "/usr/local",
         "SHELL": "/bin/zsh",
     }
@@ -318,10 +330,7 @@ def test_the_dry_run_on_an_intel_mac_says_best_effort_once_and_takes_the_intel_j
     ran = run(tmp_path, env, "--dry-run")
     assert ran.returncode == 0, ran.stdout + ran.stderr
     lines = [x for x in ran.stdout.splitlines() if "Intel" in x]
-    assert lines == [
-        "[via] Intel Mac: best effort. Via proves Apple Silicon only, and Homebrew builds Python 3.12 "
-        "from source on Intel, which is slow."
-    ]
+    assert lines == [INTEL_LINE]
     assert pins()["java"]["macos_x64"]["url"] in ran.stdout
     assert pins()["java"]["macos_arm64"]["url"] not in ran.stdout
     assert len(step_lines(ran.stdout)) == 8
@@ -458,3 +467,199 @@ def test_the_command_it_writes_sets_every_path_via_reads(tmp_path):
         env={"PATH": os.environ["PATH"]},
     )
     assert probe.stdout == "/x/Application Support/via", probe.stderr
+
+
+# ---- the review's findings (E1 to E10) ----------------------------------------------------------------
+
+
+def test_the_script_claims_no_proof_that_has_not_run():
+    """No macOS CI job has run yet: the script says what it targets, not what is proven."""
+    text = SCRIPT.read_text().lower()
+    for word in ("proven", "proves", "proved"):
+        assert word not in text, word
+    assert "apple silicon is the target" in text
+
+
+def stand_in(tmp_path: Path, name: str, body: str) -> None:
+    p = tmp_path / "bin" / name
+    p.write_text(f'#!{BASH}\nprintf "{name} %s\\n" "$*" >> "$CALLS"\n{body}\n')
+    p.chmod(0o755)
+
+
+def test_on_an_intel_mac_without_homebrew_the_run_stops_and_names_no_installer(tmp_path):
+    """Homebrew's installer aborts on Intel: the script must not send the user there."""
+    env = fence(tmp_path, arch="x86_64", brew=False)
+    command = pins()["homebrew"]["install"]
+    ran = run(tmp_path, env)
+    assert ran.returncode == 1
+    assert command not in ran.stdout + ran.stderr
+    assert "Homebrew's installer no longer supports Intel" in ran.stderr
+    assert len(step_lines(ran.stdout)) == 1
+    assert_only_readers(tmp_path)
+    assert_nothing_written(tmp_path)
+    dry = run(tmp_path, env, "--dry-run")
+    assert dry.returncode == 0, dry.stdout + dry.stderr
+    assert command not in dry.stdout
+    assert "the real run stops here" in dry.stdout
+
+
+def test_homebrew_supports_macos_15_and_newer_and_the_run_says_so_below(tmp_path):
+    hb = pins()["homebrew"]
+    assert hb["min_macos"] == "15"
+    assert "MACOS_OLDEST_SUPPORTED" in hb["source"]
+    env = fence(tmp_path, macos="14.7")
+    ran = run(tmp_path, env, "--dry-run")
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+    lines = [x for x in ran.stdout.splitlines() if "macOS 14.7" in x]
+    assert lines == [
+        "[via] this is macOS 14.7: Homebrew supports macOS 15 and newer, so Python 3.12 builds from "
+        "source here, which is slow and may fail."
+    ], ran.stdout
+    assert len(step_lines(ran.stdout)) == 8
+    (tmp_path / "b").mkdir()
+    again = run(tmp_path / "b", fence(tmp_path / "b", macos="15.0"), "--dry-run")
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert "Homebrew supports" not in again.stdout
+
+
+def test_below_macos_12_the_run_stops_for_kicad(tmp_path):
+    env = fence(tmp_path, macos="11.7")
+    ran = run(tmp_path, env)
+    assert ran.returncode == 1
+    assert "KiCad 10.0.8 needs macOS 12 or newer" in ran.stderr
+
+
+def kicad_step(tmp_path: Path, env: dict, setup: str) -> subprocess.CompletedProcess:
+    return source_and_call(tmp_path, env, f"{setup}; step_kicad")
+
+
+def test_the_dry_run_shows_the_sudo_step_when_the_folder_is_not_writable(tmp_path):
+    """can_write is the 1 test of writability; a dry run takes it too, so it shows the sudo question."""
+    env = fence(tmp_path)
+    ran = kicad_step(tmp_path, env, "DRY=1; can_write() { return 1; }; KICAD_DIR=/Applications/KiCad")
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+    assert "this step needs sudo to copy KiCad into /Applications" in ran.stdout
+    assert "would ask first, then run: sudo ditto" in ran.stdout
+    writable = kicad_step(tmp_path, env, "DRY=1; can_write() { return 0; }; KICAD_DIR=/Applications/KiCad")
+    assert "sudo" not in writable.stdout
+    assert "would run: ditto" in writable.stdout
+    assert_only_readers(tmp_path)
+    assert_nothing_written(tmp_path)
+
+
+def test_the_nearest_folder_that_exists_is_the_one_tested(tmp_path):
+    env = fence(tmp_path)
+    (tmp_path / "a").mkdir()
+    ran = source_and_call(tmp_path, env, f'nearest_dir "{tmp_path}/a/b/c"; nearest_dir /no/such/folder')
+    assert ran.stdout.splitlines() == [f"{tmp_path}/a", "/"], ran.stderr
+
+
+def test_kicad_under_home_is_copied_without_sudo_and_its_folder_made(tmp_path):
+    """Even when nothing seems writable, a folder under HOME is the user's: mkdir -p, never sudo."""
+    env = fence(tmp_path)
+    home = env["HOME"]
+    ran = kicad_step(tmp_path, env, 'DRY=1; can_write() { return 1; }; KICAD_DIR="$HOME/Applications/KiCad"')
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+    assert "sudo" not in ran.stdout
+    assert f"would run: mkdir -p {home}/Applications" in ran.stdout
+    runs = [shlex.split(x.split("would run: ", 1)[1]) for x in ran.stdout.splitlines() if "would run: " in x]
+    assert ["ditto", "<a new temporary folder>/KiCad", f"{home}/Applications/KiCad"] in runs, runs
+    env["KICAD_DIR"] = f"{home}/Applications/KiCad"
+    whole = run(tmp_path, env, "--dry-run")
+    assert whole.returncode == 0, whole.stdout + whole.stderr
+    assert "sudo" not in whole.stdout.replace("Nothing here runs sudo", "")
+    assert_only_readers(tmp_path)
+    assert_nothing_written(tmp_path)
+
+
+def test_another_kicad_in_the_way_is_the_users_and_the_side_by_side_install_comes_first(tmp_path):
+    env = fence(tmp_path)
+    other = tmp_path / "KiCad"
+    other.mkdir()
+    ran = kicad_step(tmp_path, env, f'DRY=0; KICAD_DIR="{other}"')
+    assert ran.returncode == 1
+    err = ran.stderr
+    side = err.index('KICAD_DIR="$HOME/Applications/KiCad" ./install-macos.sh')
+    assert side < err.index("ask before moving it"), err
+    assert "Trash" not in err
+    assert other.exists()
+
+
+def test_the_ngspice_homebrew_installed_is_held_to_its_pin(tmp_path):
+    env = fence(tmp_path)
+    ok = source_and_call(tmp_path, env, "check_ngspice ngspice")
+    assert ok.returncode == 0, ok.stderr
+    assert "ngspice 47 from Homebrew, as pinned" in ok.stdout
+    env["FAKE_LIST"] = "ngspice 48"
+    other = source_and_call(tmp_path, env, "check_ngspice ngspice")
+    assert other.returncode == 0, other.stderr
+    assert "WARNING: Homebrew installed ngspice 48; Via pins 47" in other.stdout
+    dry = source_and_call(tmp_path, env, "DRY=1; check_ngspice ngspice")
+    assert "would check: brew list --versions ngspice names 47" in dry.stdout
+    # The 2 real checks asked brew; the dry run did not.
+    assert [x for x in called(tmp_path) if x.startswith("brew")] == ["brew list --versions ngspice"] * 2
+
+
+@pytest.mark.parametrize("why", ["the copy fails", "sudo is not allowed"])
+def test_a_stop_after_the_dmg_is_mounted_detaches_it_and_removes_its_folder(tmp_path, why):
+    env = fence(tmp_path)
+    k = pins()["kicad"]["macos"]
+    root = Path(env["HOME"]) / "Library" / "Application Support" / "via"
+    (root / "downloads").mkdir(parents=True)
+    (root / "downloads" / k["file"]).write_text("a stand-in DMG")
+    mnt = tmp_path / "tmp" / "via-kicad.test"
+    stand_in(tmp_path, "shasum", f'echo "{k["sha256"]}  $3"')
+    stand_in(tmp_path, "mktemp", f'/bin/mkdir -p "{mnt}"; echo "{mnt}"')
+    stand_in(tmp_path, "hdiutil", "exit 0")
+    stand_in(tmp_path, "ditto", "exit 1")
+    stand_in(tmp_path, "mkdir", 'exec /bin/mkdir "$@"')
+    stand_in(tmp_path, "rmdir", 'exec /bin/rmdir "$@"')
+    if why == "the copy fails":
+        setup = 'DRY=0; KICAD_DIR="$HOME/Applications/KiCad"'
+    else:
+        setup = "DRY=0; can_write() { return 1; }; KICAD_DIR=/Applications/KiCad"
+    ran = kicad_step(tmp_path, env, setup)
+    assert ran.returncode == 1, ran.stdout + ran.stderr
+    lines = called(tmp_path)
+    assert f"hdiutil detach {mnt}" in lines, lines
+    attach = next(x for x in lines if x.startswith("hdiutil attach"))
+    assert lines.index(f"hdiutil detach {mnt}") > lines.index(attach)
+    assert not mnt.exists()
+
+
+def test_every_pin_is_read_into_a_variable_on_its_own_line():
+    """`set -e` ignores a failed substitution inside an argument; a bare assignment stops the run."""
+    lines = [x.strip() for x in code_lines() if "$(pin " in x]
+    assert len(lines) >= 20, lines
+    bad = [x for x in lines if not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*="\$\(pin [^)]*\)"', x)]
+    assert bad == []
+
+
+@pytest.mark.parametrize(
+    "key,stop",
+    [
+        ("python.version", "step 1/8"),
+        ("ngspice.version", "step 3/8"),
+        ("kicad.macos.url", "download: "),
+        ("freerouting.sha256", "step 6/8"),
+    ],
+)
+def test_a_missing_pin_stops_the_run_and_names_its_key(tmp_path, key, stop):
+    """A pin read inside an argument must stop the run too, not go on with an empty value."""
+    d = pins()
+    v = d
+    parts = key.split(".")
+    for part in parts[:-1]:
+        v = v[part]
+    del v[parts[-1]]
+    cut = tmp_path / "pins.json"
+    cut.write_text(json.dumps(d))
+    env = fence(tmp_path)
+    ran = source_and_call(tmp_path, env, f'PINS="{cut}"; main --dry-run')
+    assert ran.returncode == 1, ran.stdout
+    assert f"toolchain/desktop.json names no {key}" in ran.stderr
+    if stop.startswith("step"):
+        assert stop not in ran.stdout, ran.stdout
+    else:
+        assert "download:  (" not in ran.stdout, ran.stdout
+    assert "dry run: nothing was installed" not in ran.stdout

@@ -82,6 +82,7 @@
   },
   "homebrew": {
     "install": "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"",
-    "source": "brew.sh, the command on its front page"
+    "min_macos": "15",
+    "source": "brew.sh, the command on its front page; min_macos is MACOS_OLDEST_SUPPORTED=\"15.0\" in that install.sh (raw.githubusercontent.com/Homebrew/install/HEAD/install.sh, read 2026-11-27), which on an Intel Mac aborts: \"Homebrew on macOS is only supported on Apple Silicon processors!\""
   }
 }
