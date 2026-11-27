@@ -238,7 +238,9 @@ jobs:
   # Windows and macOS (ee-agent-kit/CI.md, "Windows and macOS"): on a pull request that touches install
   # or platform code, on every push to main, on a run by hand; nightly.yml runs the same steps each
   # night (tests/test_ci_desktop.py holds the 2 copies equal). Each leg installs with the installer a
-  # person runs, keeps its downloads by the hash of toolchain/desktop.json, and runs
+  # person runs, keeps what the installer left in its downloads folder by the hash of
+  # toolchain/desktop.json (on Windows the Java, ngspice, 7-Zip and FreeRouting files; on macOS nothing
+  # yet: install-macos.sh deletes the DMG and the Java archive after use), and runs
   # tools/ci/desktop_smoke.py with the venv's Python the installer made. The limit, 60 minutes, is a
   # first bound with no run measured: the macOS DMG alone is 1,405,602,755 bytes, and the Linux full
   # job's install bound is 2523 s of its 45 minutes (tests/test_install_apt.py). After the first runs it
@@ -255,9 +257,12 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      # The installers keep their downloads under the root's downloads folder and check each by its
-      # SHA256 before use. A pull request's run restores and never saves; a push to main, a night and a
-      # run by hand save after a good install. Neither cache step fails the run.
+      # The installers download into the root's downloads folder and check each file by its SHA256
+      # before use. install.ps1 keeps its files there; winget's KiCad and Python are not there.
+      # install-macos.sh (wip/wmac 42bc45c) deletes the DMG and the Java archive after use, so the macOS
+      # folder is empty after a good install until it keeps them. A pull request's run restores and never
+      # saves; a push to main, a night and a run by hand save after a good install. Neither cache step
+      # fails the run.
       - name: Restore the downloads kept by an earlier run
         uses: actions/cache/restore@v4
         timeout-minutes: 5
@@ -314,9 +319,13 @@ jobs:
   # The WSL route on windows-latest: Ubuntu 24.04 in WSL 2, the commit cloned inside it, the unchanged
   # install.sh with CI's 3 bounds, then the same smoke. Experimental, so its state is reported, never
   # assumed: only 1 user report says `wsl --install` works on GitHub's Windows runners, and it may need
-  # a restart the runner cannot give. `continue-on-error` keeps a red leg out of the workflow's result,
-  # and `verdict` prints its result without asking it. The limit: install.sh's worst case is 2523 s
-  # (tests/test_install_apt.py), and the WSL install and the smoke come on top of it.
+  # a restart the runner cannot give. No job reads its result: a job marked continue-on-error may hand
+  # `success` to a job that needs it, even when it failed (users' reports; GitHub's documentation of the
+  # needs context is silent). So each step carries its own continue-on-error and an id, and the last
+  # step prints each step's outcome into the log and the job's summary, and fails unless all 3 passed.
+  # The job's continue-on-error keeps that red, and a timeout, out of the workflow's result; `verdict`
+  # does not wait for it. The limit: install.sh's worst case is 2523 s (tests/test_install_apt.py), and
+  # the WSL install and the smoke come on top of it.
   desktop-wsl:
     needs: scope
     if: needs.scope.outputs.desktop == 'yes'
@@ -327,6 +336,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Ubuntu 24.04 in WSL
+        id: wsl
+        continue-on-error: true
         shell: pwsh
         run: |
           wsl --install -d Ubuntu-24.04 --no-launch
@@ -338,19 +349,41 @@ jobs:
           }
           wsl --list --verbose
       - name: Clone this commit inside WSL and run install.sh
+        id: install
+        if: steps.wsl.outcome == 'success'
+        continue-on-error: true
         shell: pwsh
         run: |
           $sha = git rev-parse HEAD
           wsl -d Ubuntu-24.04 -u root --cd "$env:GITHUB_WORKSPACE" -- bash -euc "git config --global --add safe.directory '*'; git clone -q . /root/via; git -C /root/via checkout -q --detach $sha; cd /root/via; env REQUIRE_FREEROUTING=1 APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570 APT_OTHER_TIMEOUT=300 ./install.sh"
       - name: The smoke inside WSL
+        id: smoke
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
         shell: pwsh
         run: wsl -d Ubuntu-24.04 -u root --cd /root/via -- /opt/workcenters/ee/venv/bin/python tools/ci/desktop_smoke.py --work /root/desktop-smoke
+      # A step's outcome is its result before continue-on-error (GitHub's steps context); `none` is a
+      # step that never ended, as on a timeout.
+      - name: The WSL route's state
+        id: report
+        if: always()
+        shell: bash
+        env:
+          WSL: ${{ steps.wsl.outcome }}
+          INSTALL: ${{ steps.install.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+        run: |
+          line="wsl (experimental, not required): wsl --install: ${WSL:-none}; install.sh: ${INSTALL:-none}; smoke: ${SMOKE:-none}"
+          echo "$line"
+          echo "$line" >> "$GITHUB_STEP_SUMMARY"
+          test "$WSL/$INSTALL/$SMOKE" = success/success/success
 
   # Always runs, so a required check always resolves: green only when fast passed on every change,
   # full passed as well for a full change, and both desktop legs passed when the scope asked them. A
-  # skipped job is not a pass, and a failed scope job leaves no answer. The WSL leg is printed, not asked.
+  # skipped job is not a pass, and a failed scope job leaves no answer. It does not wait for the WSL leg,
+  # which reports its own state.
   verdict:
-    needs: [scope, fast, full, desktop, desktop-wsl]
+    needs: [scope, fast, full, desktop]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 2
@@ -362,9 +395,8 @@ jobs:
           FAST: ${{ needs.fast.result }}
           FULL: ${{ needs.full.result }}
           DESKTOP: ${{ needs.desktop.result }}
-          WSL: ${{ needs.desktop-wsl.result }}
         run: |
-          echo "scope: ${SCOPE:-none}; desktop asked: ${DESKTOP_ASKED:-none}; fast: $FAST; full: $FULL; desktop: $DESKTOP; wsl (experimental, not required): $WSL"
+          echo "scope: ${SCOPE:-none}; desktop asked: ${DESKTOP_ASKED:-none}; fast: $FAST; full: $FULL; desktop: $DESKTOP"
           ok=yes
           case "$SCOPE" in
             fast) [ "$FAST" = success ] || ok=no ;;

@@ -10,7 +10,7 @@ It runs the installed `workcenter` command, as a person runs it after the instal
     5 design-check  `workcenter design tests/boards/pass-first-design/design.py --check`: exit 0
     6 next          `workcenter next` on the copy of pass-first-design: exit 0 or 1, a `NEXT` line
     7 autoroute     `workcenter autoroute --apply` on a copy of tests/boards/route-me: exit 0, a `PASS` line
-    8 tests         verify/testshards.py on the test files verify/desktop.csv names: exit 0
+    8 tests         verify/testshards.py on the test files verify/desktop.csv names: exit 0, at least 1 passed
 
 The 2 RED fixtures matter as much as the GREEN one: a gate that passes because its engine never ran
 must show as wrong. A gate whose engine is absent exits 2 (SKIPPED), never 1. Each fixture is copied
@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -50,6 +51,11 @@ DESKTOP_TABLE = "verify/desktop.csv"
 # seconds. The bound only ends a step that hangs (a router waiting for a window), well inside the leg.
 STEP_SECONDS = 900
 TESTS_SECONDS = 1800
+# After a step's tree is ended, how long its output pipe may stay open. On Windows taskkill can fail, and
+# Popen.kill() then ends only workcenter.cmd's cmd.exe while its Python holds the pipe.
+DRAIN_SECONDS = 30
+# A count of passed tests, as testshards' `outcomes: 12 passed, ...` line and pytest's own summary give it.
+PASSED = re.compile(r"\b[1-9]\d* passed\b")
 
 
 @dataclass
@@ -78,6 +84,11 @@ def a_line_starts(word: str) -> tuple[str, Callable[[list[str]], bool]]:
 
 def says(word: str) -> tuple[str, Callable[[list[str]], bool]]:
     return (f"it names {word}", lambda lines: any(word in line for line in lines))
+
+
+def some_passed() -> tuple[str, Callable[[list[str]], bool]]:
+    """Exit 0 with 0 tests run is no pass: a list that names no file, or names files that match none."""
+    return ("a line names at least 1 passed test", lambda lines: any(PASSED.search(line) for line in lines))
 
 
 def steps(repo: Path, wc: str, python: str, work: Path) -> list[Step]:
@@ -139,6 +150,7 @@ def steps(repo: Path, wc: str, python: str, work: Path) -> list[Step]:
                 str(work / "tests"),
             ],
             (0,),
+            [some_passed()],
             seconds=TESTS_SECONDS,
         ),
     ]
@@ -168,10 +180,24 @@ def run_step(step: Step, cwd: Path) -> tuple[int | None, list[str], float]:
         code: int | None = proc.returncode
     except subprocess.TimeoutExpired:
         hostos.kill_tree(proc)
-        out, _ = proc.communicate()
+        held = False
+        try:
+            out, _ = proc.communicate(timeout=DRAIN_SECONDS)
+        except subprocess.TimeoutExpired as exc:
+            # A process the kill did not reach holds the pipe. On Linux and macOS the exception carries
+            # all that was read; on Windows Python gives none of it. The pipe is closed only where no
+            # reader thread holds its lock (Windows reads it in a thread that would block the close).
+            out, held = exc.output or b"", True
+            if os.name == "posix" and proc.stdout is not None:
+                proc.stdout.close()
         code = None
     lines = out.decode("utf-8", errors="replace").splitlines()
     if code is None:
+        if held:
+            lines.append(
+                f"a process it started held its output open {DRAIN_SECONDS} s after the kill; "
+                "what was read is above"
+            )
         lines.append(f"ended after its bound of {step.bound} s")
     return code, lines, time.monotonic() - started
 

@@ -3,15 +3,18 @@ on:
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch:
+# Each job's token reads the repository; only `verify` writes, to the ci-failure issue (its last step).
 permissions:
   contents: read
-  issues: write
 jobs:
   # The Linux gate starts after the Windows and macOS legs (the jobs below): its last step speaks for the
   # whole night, so it reads their result. It runs whatever they gave, unless the night was cancelled.
   verify:
     needs: desktop
     if: ${{ !cancelled() }}
+    permissions:
+      contents: read
+      issues: write
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -185,8 +188,8 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # ci.yml's experimental WSL leg, every night, its steps ci.yml's to the letter. Its result is reported
-  # in the run and does not open the ci-failure issue.
+  # ci.yml's experimental WSL leg, every night, its steps ci.yml's to the letter. Its last step reports
+  # each step's outcome in the log and the job's summary; no job reads it, so it opens no ci-failure issue.
   desktop-wsl:
     name: desktop windows-latest WSL (experimental)
     runs-on: windows-latest
@@ -195,6 +198,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Ubuntu 24.04 in WSL
+        id: wsl
+        continue-on-error: true
         shell: pwsh
         run: |
           wsl --install -d Ubuntu-24.04 --no-launch
@@ -206,10 +211,29 @@ jobs:
           }
           wsl --list --verbose
       - name: Clone this commit inside WSL and run install.sh
+        id: install
+        if: steps.wsl.outcome == 'success'
+        continue-on-error: true
         shell: pwsh
         run: |
           $sha = git rev-parse HEAD
           wsl -d Ubuntu-24.04 -u root --cd "$env:GITHUB_WORKSPACE" -- bash -euc "git config --global --add safe.directory '*'; git clone -q . /root/via; git -C /root/via checkout -q --detach $sha; cd /root/via; env REQUIRE_FREEROUTING=1 APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570 APT_OTHER_TIMEOUT=300 ./install.sh"
       - name: The smoke inside WSL
+        id: smoke
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
         shell: pwsh
         run: wsl -d Ubuntu-24.04 -u root --cd /root/via -- /opt/workcenters/ee/venv/bin/python tools/ci/desktop_smoke.py --work /root/desktop-smoke
+      - name: The WSL route's state
+        id: report
+        if: always()
+        shell: bash
+        env:
+          WSL: ${{ steps.wsl.outcome }}
+          INSTALL: ${{ steps.install.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+        run: |
+          line="wsl (experimental, not required): wsl --install: ${WSL:-none}; install.sh: ${INSTALL:-none}; smoke: ${SMOKE:-none}"
+          echo "$line"
+          echo "$line" >> "$GITHUB_STEP_SUMMARY"
+          test "$WSL/$INSTALL/$SMOKE" = success/success/success

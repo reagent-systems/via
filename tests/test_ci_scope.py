@@ -26,6 +26,7 @@ DESKTOP = "install or platform code, so the Windows and macOS legs run"
 DESKTOP_FILES = (
     ".gitattributes",
     ".github/workflows/ci.yml",
+    ".github/workflows/nightly.yml",
     "install-macos.sh",
     "install.ps1",
     "install.sh",
@@ -35,11 +36,19 @@ DESKTOP_FILES = (
     "tests/conftest.py",
     "toolchain/desktop.json",
     "tools/ci/desktop_smoke.py",
+    "tools/ci/scope.py",
     "tools/enginelock.py",
+    "tools/fields.py",
+    "tools/guide.py",
     "tools/hostos.py",
+    "tools/image.py",
     "tools/kicadchild.py",
+    "tools/mcpserver.py",
+    "tools/newboard.py",
+    "tools/routebench.py",
     "tools/routers.py",
     "verify/desktop.csv",
+    "verify/shards.csv",
     "verify/testshards.py",
     "workcenter.cmd",
 )
@@ -369,17 +378,28 @@ def test_each_path_of_install_or_platform_code_asks_the_desktop_legs(tmp_path):
         assert out.read_text(encoding="utf-8") == "scope=full\ndesktop=yes\n", path
 
 
+def test_a_path_given_twice_asks_the_desktop_legs_once():
+    code, lines = scope("--repo", ROOT, "--paths", "install.sh", "install.ps1", "install.sh")
+    assert code == 0, lines
+    assert [line for line in lines if line.startswith("desktop")] == [
+        f"desktop  install.ps1: {DESKTOP}",
+        f"desktop  install.sh: {DESKTOP}",
+    ]
+
+
 def test_paths_beside_the_desktop_scope_do_not_ask_it(tmp_path):
-    """Code that every full change touches (the CLI, the generator), another fixture, the nightly
-    workflow, a document, the site: full or fast as before, and desktop=no."""
+    """Code that every full change touches (the CLI, the generator), another fixture, another workflow,
+    a document, the site: full or fast as before, and desktop=no. Their cost: a break of the CLI or the
+    generator on Windows or macOS shows on the next push to main, after the merge."""
     others = (
         "tools/workcenter",
         "tools/kicadgen.py",
-        "tools/ci/scope.py",
+        "tools/ci/nightly_issue.py",
         "tests/test_gates.py",
         "tests/boards/pass-rc-divider/rc_divider.kicad_pcb",
         "tests/boards/route-me-too/x.kicad_pcb",
-        ".github/workflows/nightly.yml",
+        ".github/workflows/image.yml",
+        "verify/shards.csv.orig",
         "install.sh.orig",
         "toolchain/other.json",
         "ee-agent-kit/CI.md",
@@ -490,13 +510,14 @@ def test_the_fast_job_installs_no_engine_and_the_full_job_is_the_gate_of_today()
 
 
 def test_the_last_job_always_runs_and_passes_only_when_the_asked_jobs_passed(tmp_path):
-    """The verdict job needs all 5, runs with `if: always()`, and its 1 step is run here with each
-    answer: green only when the fast job succeeded, for a full change the full job too, and when the
-    scope asked the desktop legs, both of them. A skipped job is not a success, and a scope job that
-    failed leaves no answer. The WSL leg is experimental: its result is printed, never required."""
+    """The verdict job needs the 4 jobs it judges, runs with `if: always()`, and its 1 step is run here
+    with each answer: green only when the fast job succeeded, for a full change the full job too, and
+    when the scope asked the desktop legs, both of them. A skipped job is not a success, and a scope job
+    that failed leaves no answer. The WSL leg is experimental: verdict does not wait for it, and the leg
+    reports its own state (tests/test_ci_desktop.py)."""
     jobs = workflow()["jobs"]
     verdict = jobs["verdict"]
-    assert verdict["needs"] == ["scope", "fast", "full", "desktop", "desktop-wsl"]
+    assert verdict["needs"] == ["scope", "fast", "full", "desktop"]
     assert verdict["if"] == "always()"
     (step,) = verdict["steps"]
     script = tmp_path / "verdict.sh"
@@ -507,7 +528,6 @@ def test_the_last_job_always_runs_and_passes_only_when_the_asked_jobs_passed(tmp
         "FAST": "${{ needs.fast.result }}",
         "FULL": "${{ needs.full.result }}",
         "DESKTOP": "${{ needs.desktop.result }}",
-        "WSL": "${{ needs.desktop-wsl.result }}",
     }
     cases = {
         ("fast", "no", "success", "skipped", "skipped"): 0,
@@ -536,23 +556,21 @@ def test_the_last_job_always_runs_and_passes_only_when_the_asked_jobs_passed(tmp
         ("full", "maybe", "success", "success", "success"): 1,
     }
     for (asked, desk, fast, full, desktop), code in cases.items():
-        for wsl in ("success", "failure", "skipped"):
-            env = {
-                **os.environ,
-                "SCOPE": asked,
-                "DESKTOP_ASKED": desk,
-                "FAST": fast,
-                "FULL": full,
-                "DESKTOP": desktop,
-                "WSL": wsl,
-            }
-            ran = subprocess.run(["bash", "-e", str(script)], env=env, capture_output=True, text=True)
-            assert ran.returncode == code, (asked, desk, fast, full, desktop, wsl, ran.stdout, ran.stderr)
-            said = ran.stdout.splitlines()[0]
-            assert said == (
-                f"scope: {asked or 'none'}; desktop asked: {desk or 'none'}; fast: {fast}; full: {full}; "
-                f"desktop: {desktop}; wsl (experimental, not required): {wsl}"
-            ), said
+        env = {
+            **os.environ,
+            "SCOPE": asked,
+            "DESKTOP_ASKED": desk,
+            "FAST": fast,
+            "FULL": full,
+            "DESKTOP": desktop,
+        }
+        ran = subprocess.run(["bash", "-e", str(script)], env=env, capture_output=True, text=True)
+        assert ran.returncode == code, (asked, desk, fast, full, desktop, ran.stdout, ran.stderr)
+        said = ran.stdout.splitlines()[0]
+        assert said == (
+            f"scope: {asked or 'none'}; desktop asked: {desk or 'none'}; fast: {fast}; full: {full}; "
+            f"desktop: {desktop}"
+        ), said
 
 
 def test_the_nightly_run_stays_the_full_gate():

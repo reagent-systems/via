@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -53,19 +55,32 @@ answers = {
     "autoroute": [0, ["PASS   autoroute  0 unconnected, 0 errors"], 0],
 }
 answers.update(json.loads(os.environ.get("STANDIN", "{}")))
-code, lines, seconds = answers[step()]
+code, lines, seconds = answers[step()][:3]
 for line in lines:
     print(line)
 sys.stdout.flush()
+if len(answers[step()]) > 3:
+    # A child in a session of its own: the step's tree kill cannot reach it, and it holds the pipe.
+    import subprocess
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"], start_new_session=True)
+    with open(os.environ["STANDIN_ORPHAN"], "w", encoding="utf-8") as f:
+        f.write(str(child.pid))
 time.sleep(seconds)
 sys.exit(code)
 """
+
+# What verify/testshards.py prints at its end when 3 tests passed (its `outcomes:` line, then its verdict).
+TESTS_GREEN = [
+    "outcomes: 3 passed, 0 failed, 0 skipped, 0 xfailed, 0 xpassed",
+    "TESTS GREEN: 3 tests in 1 shards",
+]
 
 TESTSHARDS = r"""
 import json, os, sys
 with open(os.environ["STANDIN_LOG"], "a", encoding="utf-8") as log:
     log.write(json.dumps({"argv": ["testshards", *sys.argv[1:]], "cwd": os.getcwd()}) + "\n")
-answer = json.loads(os.environ.get("STANDIN", "{}")).get("tests", [0, ["VERIFY TESTS GREEN"], 0])
+green = ["outcomes: 3 passed, 0 failed, 0 skipped, 0 xfailed, 0 xpassed", "TESTS GREEN: 3 tests in 1 shards"]
+answer = json.loads(os.environ.get("STANDIN", "{}")).get("tests", [0, green, 0])
 for line in answer[1]:
     print(line)
 sys.exit(answer[0])
@@ -223,11 +238,65 @@ def test_next_passes_on_0_and_1_with_a_next_line_and_fails_on_an_error(stage, ca
         assert line.startswith("desktop-smoke: [1/1] next: " + ("ok" if ok else "FAIL")), line
 
 
+def test_a_step_fails_on_its_code_or_on_each_line_it_lacks(stage, capsys, monkeypatch):
+    """Each check is its own: a RED fixture without its fault named, a route with no PASS line, `next`
+    exiting 2 with a NEXT line, a GREEN line that is not the last."""
+    for name, answer, why in (
+        ("gates-sim", [1, ["FAIL   sim", "RED: fail-sim-spec"], 0], "not: it names vout"),
+        ("gates-drc", [1, ["FAIL   drc", "RED: rc_divider"], 0], "not: it names clearance"),
+        ("autoroute", [0, ["routed 13 segments"], 0], "not: a line starts with PASS"),
+        ("next", [2, ["NEXT       Run the ratings"], 0], "exit 2, wanted 0 or 1"),
+        (
+            "gates-green",
+            [0, ["GREEN: divider", "warning: a late line"], 0],
+            "not: its last line starts with GREEN",
+        ),
+        ("doctor", [1, ["status: fail"], 0], "exit 1, wanted 0"),
+        ("design-check", [1, ["design --check: 1 file differs"], 0], "exit 1, wanted 0"),
+    ):
+        monkeypatch.setenv("STANDIN", json.dumps({name: answer}))
+        code, lines = smoke(stage, capsys, "--only", name)
+        assert code == 1, (name, lines)
+        assert verdicts(lines) == [f"desktop-smoke: [1/1] {name}: FAIL ({why})"], (name, lines)
+
+
+def test_the_tests_step_fails_when_no_test_passed(stage, capsys, monkeypatch):
+    """Exit 0 with no test run is not a pass: the step needs a line that names at least 1 passed test,
+    as testshards' `outcomes:` line does. A run of 0 tests, or one that prints no count, fails."""
+    for lines_out in (
+        ["outcomes: 0 passed, 0 failed, 0 skipped, 0 xfailed, 0 xpassed", "TESTS GREEN: 0 tests in 0 shards"],
+        ["TESTS GREEN"],
+        ["outcomes: 10 failed"],
+    ):
+        monkeypatch.setenv("STANDIN", json.dumps({"tests": [0, lines_out, 0]}))
+        code, lines = smoke(stage, capsys, "--only", "tests")
+        assert code == 1, lines
+        assert verdicts(lines) == [
+            "desktop-smoke: [1/1] tests: FAIL (not: a line names at least 1 passed test)"
+        ]
+    for lines_out in (TESTS_GREEN, ["outcomes: 10 passed, 1 skipped"], ["1 passed in 0.3s"]):
+        monkeypatch.setenv("STANDIN", json.dumps({"tests": [0, lines_out, 0]}))
+        code, lines = smoke(stage, capsys, "--only", "tests")
+        assert code == 0, lines
+
+
+def test_each_step_has_its_bound_and_the_tests_theirs(monkeypatch):
+    """A step's bound is STEP_SECONDS when it names none, read when it runs; the tests have their own."""
+    plan = {s.name: s for s in desktop_smoke.steps(Path("r"), "wc", "py", Path("w"))}
+    assert plan["tests"].bound == desktop_smoke.TESTS_SECONDS == 1800
+    assert plan["doctor"].bound == desktop_smoke.STEP_SECONDS == 900
+    monkeypatch.setattr(desktop_smoke, "STEP_SECONDS", 7)
+    assert plan["doctor"].bound == 7 and plan["tests"].bound == 1800
+    assert desktop_smoke.Step("x", "x", ["x"], (0,), seconds=12).bound == 12
+
+
 def test_a_failed_test_run_fails_the_last_step(stage, capsys, monkeypatch):
     monkeypatch.setenv("STANDIN", json.dumps({"tests": [1, ["TESTS RED: 1 failed"], 0]}))
     code, lines = smoke(stage, capsys, "--only", "tests")
     assert code == 1
-    assert verdicts(lines) == ["desktop-smoke: [1/1] tests: FAIL (exit 1, wanted 0)"]
+    assert verdicts(lines) == [
+        "desktop-smoke: [1/1] tests: FAIL (exit 1, wanted 0; not: a line names at least 1 passed test)"
+    ]
     assert "  | TESTS RED: 1 failed" in lines
 
 
@@ -243,6 +312,34 @@ def test_a_step_past_its_bound_is_ended_with_its_tree_and_fails(stage, capsys, m
         "desktop-smoke: [2/2] autoroute: FAIL (ended after its bound of 2 s)",
     ]
     assert "  | routing ..." in lines
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the stand-in leaves its child with start_new_session")
+def test_a_child_that_escapes_the_kill_and_holds_the_pipe_does_not_hang_the_run(
+    stage, capsys, monkeypatch, tmp_path
+):
+    """On Windows taskkill can fail, and Popen.kill() then ends only workcenter.cmd's cmd.exe: its Python
+    keeps the pipe open. Here a child in a session of its own does the same. The smoke waits DRAIN_SECONDS
+    for the pipe, keeps what it read, says why, and goes on."""
+    orphan = tmp_path / "orphan.pid"
+    monkeypatch.setenv("STANDIN_ORPHAN", str(orphan))
+    monkeypatch.setattr(desktop_smoke, "STEP_SECONDS", 1)
+    monkeypatch.setattr(desktop_smoke, "DRAIN_SECONDS", 1)
+    monkeypatch.setenv("STANDIN", json.dumps({"autoroute": [0, ["routing ..."], 60, "orphan"]}))
+    began = time.monotonic()
+    try:
+        code, lines = smoke(stage, capsys, "--only", "autoroute", "doctor")
+    finally:
+        if orphan.exists():
+            os.kill(int(orphan.read_text(encoding="utf-8")), signal.SIGKILL)
+    assert time.monotonic() - began < 30, lines
+    assert code == 1
+    assert verdicts(lines) == [
+        "desktop-smoke: [1/2] doctor: ok (exit 0)",
+        "desktop-smoke: [2/2] autoroute: FAIL (ended after its bound of 1 s)",
+    ]
+    assert "  | routing ..." in lines
+    assert "  | a process it started held its output open 1 s after the kill; what was read is above" in lines
 
 
 def test_misuse_exits_2(stage, capsys, monkeypatch):
@@ -344,6 +441,73 @@ def test_the_wsl_leg_is_experimental_and_reported():
     assert "./install.sh" in text and "tools/ci/desktop_smoke.py" in text
     # install.sh with CI's 3 bounds, as the full job gives it.
     assert "APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570 APT_OTHER_TIMEOUT=300" in text
+
+
+def test_the_wsl_leg_reports_each_steps_outcome_itself(tmp_path):
+    """A job marked continue-on-error may hand a reader `success` for a failed run (users' reports; the
+    needs context's documentation is silent). So no job reads needs.desktop-wsl: each WSL step carries
+    its own continue-on-error and an id, a later step runs only on an earlier success, and the last step
+    runs always and prints each outcome, into the log and the job's summary. It exits 1 unless all 3
+    succeeded, so the job's own mark is red."""
+    for name in ("ci.yml", "nightly.yml"):
+        text = (FLOWS / name).read_text(encoding="utf-8")
+        assert "needs.desktop-wsl" not in text, name
+    job = flow("ci.yml")["jobs"]["desktop-wsl"]
+    named = {s["id"]: s for s in job["steps"] if "id" in s}
+    assert [s.get("id") for s in job["steps"]] == [None, "wsl", "install", "smoke", "report"]
+    for sid in ("wsl", "install", "smoke"):
+        assert named[sid]["continue-on-error"] is True, sid
+    assert named["install"]["if"] == "steps.wsl.outcome == 'success'"
+    assert named["smoke"]["if"] == "steps.install.outcome == 'success'"
+    report = named["report"]
+    assert report["if"] == "always()" and report["shell"] == "bash"
+    assert report["env"] == {
+        "WSL": "${{ steps.wsl.outcome }}",
+        "INSTALL": "${{ steps.install.outcome }}",
+        "SMOKE": "${{ steps.smoke.outcome }}",
+    }
+    script = tmp_path / "report.sh"
+    script.write_text(report["run"], encoding="utf-8")
+    for wsl, install, smoke_, code in (
+        ("success", "success", "success", 0),
+        ("failure", "skipped", "skipped", 1),
+        ("success", "failure", "skipped", 1),
+        ("success", "success", "failure", 1),
+        ("", "", "", 1),
+    ):
+        summary = tmp_path / "summary.md"
+        summary.write_text("", encoding="utf-8")
+        env = {
+            **os.environ,
+            "WSL": wsl,
+            "INSTALL": install,
+            "SMOKE": smoke_,
+            "GITHUB_STEP_SUMMARY": str(summary),
+        }
+        ran = subprocess.run(["bash", "-e", str(script)], env=env, capture_output=True, text=True)
+        assert ran.returncode == code, (wsl, install, smoke_, ran.stdout, ran.stderr)
+        line = (
+            f"wsl (experimental, not required): wsl --install: {wsl or 'none'}; install.sh: "
+            f"{install or 'none'}; smoke: {smoke_ or 'none'}"
+        )
+        assert ran.stdout.splitlines() == [line], ran.stdout
+        assert summary.read_text(encoding="utf-8") == line + "\n"
+
+
+def test_no_desktop_job_holds_a_write_permission():
+    """The legs run Homebrew, winget, pip, downloads and install.sh: their token reads the repository
+    and writes nothing. A job's `permissions` replaces the workflow's; with neither, GitHub gives its
+    default, so one of them must be set. In nightly.yml only `verify` writes issues (its last step)."""
+    for name in ("ci.yml", "nightly.yml"):
+        data = flow(name)
+        for job_name in ("desktop", "desktop-wsl"):
+            given = data["jobs"][job_name].get("permissions", data.get("permissions"))
+            assert given is not None, (name, job_name)
+            assert isinstance(given, dict), (name, job_name, given)
+            assert "write" not in given.values(), (name, job_name, given)
+    night = flow("nightly.yml")
+    assert night["permissions"] == {"contents": "read"}
+    assert night["jobs"]["verify"]["permissions"] == {"contents": "read", "issues": "write"}
 
 
 def test_the_nightly_runs_the_same_desktop_steps_and_its_issue_reads_them():

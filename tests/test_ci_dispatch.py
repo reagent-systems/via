@@ -62,7 +62,6 @@ def test_a_run_by_hand_gates_any_branch_and_is_full(tmp_path: Path):
             "FAST": "success",
             "FULL": full,
             "DESKTOP": "success",
-            "WSL": "failure",
         }
         ran = subprocess.run(["bash", "-e", str(verdict)], env=env, capture_output=True, text=True)
         assert ran.returncode == code, (full, ran.stdout)

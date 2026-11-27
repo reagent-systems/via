@@ -38,13 +38,15 @@ DOCUMENT_SUFFIXES = (".md", ".html")
 UNKNOWN = "no rule names this path, so it needs the full gate"
 
 # The desktop scope: install or platform code, which the Windows and macOS legs prove
-# (ee-agent-kit/CI.md, "Windows and macOS"). The installers and their pins, the files every command's
-# start or a platform difference lives in, the test runner's portable parts, the smoke and its fixtures,
-# and the workflow that holds the legs. tools/workcenter and tools/kicadgen.py are left out: nearly every
-# full change touches them, and a push to main runs the legs on every change.
+# (ee-agent-kit/CI.md, "Windows and macOS"). The installers and their pins, the files a platform
+# difference lives in (tools/hostos.py and the files that call it), the test runner's portable parts and
+# its table, the smoke, this script and its fixtures, and the 2 workflows that hold the legs.
+# tools/workcenter and tools/kicadgen.py are left out: nearly every full change touches them. The cost:
+# a break of either on Windows or macOS shows only on the next push to main, after the merge.
 DESKTOP_FILES = (
     ".gitattributes",
     ".github/workflows/ci.yml",
+    ".github/workflows/nightly.yml",
     "install-macos.sh",
     "install.ps1",
     "install.sh",
@@ -54,11 +56,19 @@ DESKTOP_FILES = (
     "tests/conftest.py",
     "toolchain/desktop.json",
     "tools/ci/desktop_smoke.py",
+    "tools/ci/scope.py",
     "tools/enginelock.py",
+    "tools/fields.py",
+    "tools/guide.py",
     "tools/hostos.py",
+    "tools/image.py",
     "tools/kicadchild.py",
+    "tools/mcpserver.py",
+    "tools/newboard.py",
+    "tools/routebench.py",
     "tools/routers.py",
     "verify/desktop.csv",
+    "verify/shards.csv",
     "verify/testshards.py",
     "workcenter.cmd",
 )
