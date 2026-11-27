@@ -556,7 +556,10 @@ def test_kicadgen_on_linux_reads_no_kicad10_library_variable(tmp_path):
 
 @posix
 def test_kicadgen_on_macos_reads_kicad10_symbol_dir(tmp_path):
-    said = run_on("darwin", SHOW_SYMBOLS, {"KICAD10_SYMBOL_DIR": str(tmp_path)})
+    # HOME, as every Mac sets it: macOS's root is under the home folder, and the image of GitHub's
+    # full job runs as a user id with no passwd line, where Python finds no home without HOME (run
+    # 46067841222: "RuntimeError: Could not determine home directory." at tools/routers.py's import).
+    said = run_on("darwin", SHOW_SYMBOLS, {"KICAD10_SYMBOL_DIR": str(tmp_path), "HOME": str(tmp_path)})
     assert said == str(tmp_path)
 
 
