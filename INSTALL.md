@@ -32,9 +32,9 @@ Find the platform with 1 command:
 | Platform | Route | State |
 |---|---|---|
 | Ubuntu 24.04 (x86_64 or arm64) | L | Proven on GitHub's runners (ubuntu-24.04). |
-| macOS 12 or later, Apple Silicon (`Darwin arm64`) | D until route M is on `main`, then M | Not yet proven: the first CI run will say. On macOS 12 to 14, Homebrew is not supported: it builds Python and ngspice from source, which is slow and may fail. |
-| macOS 12 or later, Intel (`Darwin x86_64`) | D until route M is on `main`, then M with a Homebrew already installed, else D | Best effort: no CI job runs on an Intel Mac. Homebrew's installer refuses an Intel Mac. On macOS 12 to 14, Homebrew is not supported: it builds Python and ngspice from source, which is slow and may fail. |
-| Windows 10 or 11, x64 | W until route N is on `main`, then N, or W when the person asks for Linux | Not yet proven: the first CI run will say. |
+| macOS 12 or later, Apple Silicon (`Darwin arm64`) | M | Not yet proven: the first CI run will say. On macOS 12 to 14, Homebrew is not supported: it builds Python and ngspice from source, which is slow and may fail. |
+| macOS 12 or later, Intel (`Darwin x86_64`) | M with a Homebrew already installed, else D | Best effort: no CI job runs on an Intel Mac. Homebrew's installer refuses an Intel Mac. On macOS 12 to 14, Homebrew is not supported: it builds Python and ngspice from source, which is slow and may fail. |
+| Windows 10 or 11, x64 | N, or W when the person asks for Linux | Not yet proven: the first CI run will say. |
 | Any computer with Docker | D | Not proven, and no GitHub runner can prove it on macOS or Windows (Docker Desktop). The image build runs the gates in it on Linux, amd64 and arm64. |
 | Another Linux | D | Not offered natively: install.sh refuses every release but Ubuntu 24.04. |
 | Windows on Arm | W or D | Not offered natively: ngspice's Windows build is x64 only. |
@@ -68,9 +68,6 @@ The rest of this file names that folder `~/via` (on Windows, `$HOME\via`).
 `./install.sh --check` runs the doctor alone, with no sudo.
 
 ## Route M: macOS
-
-Until `install-macos.sh` and Via's macOS paths are on `main`, use route D. A clone of `main` has no
-`install-macos.sh` yet, and its doctor reads KiCad's folders where Linux keeps them.
 
 The installer is `install-macos.sh`. It installs for your own user. KiCad 10 comes from its pinned
 disk image into `/Applications/KiCad`. Java 21, FreeRouting and Via's venv go under
@@ -124,10 +121,6 @@ which is slow and may fail.
 The script stops in an x86_64 shell on Apple Silicon (Rosetta) and on macOS older than 12.
 
 ## Route N: Windows, native
-
-Until `install.ps1` and Via's Windows port are on `main`, use route W, or route D. A clone of `main`
-has no `install.ps1` yet, and every `workcenter` command stops at its start with
-`No module named 'fcntl'`.
 
 The installer is `install.ps1`. It installs for your own user, with no administrator of its own.
 Java 21, ngspice, FreeRouting and Via's venv go under `%LOCALAPPDATA%\Via`, and the `workcenter`
@@ -251,6 +244,19 @@ On your own board, mount its folder on `/work`, the image's working folder:
 `docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work ghcr.io/reagent-systems/via:main workcenter gates .`
 (in PowerShell: `docker run --rm -v "${PWD}:/work" ghcr.io/reagent-systems/via:main workcenter gates .`).
 
+## What macOS and Windows do not run
+
+Routes M and N run the gates, `design`, `next` and the autoroute. Some tools stay on Linux and in
+Docker, and say so where they stop:
+
+- openEMS (`workcenter fields`), the chip flow, and renders through Xvfb.
+- `workcenter placement`, `inspect`, `copper`, the assembly pictures and the legend's ink rule: they
+  need pcbnew in Via's own Python, and KiCad's pcbnew loads only in KiCad's Python there. They say
+  SKIPPED or not judged. `design --route` stitches pours in KiCad's own Python, so it works there.
+- ngspice is 47 on macOS and Windows, and 42 on Ubuntu 24.04.
+
+Tell the person when their board needs one of these: route W or route D runs it.
+
 ## Done when
 
 All 3 hold, each run in the clone of Via. Route M writes `~/.local/bin/workcenter` for `workcenter`;
@@ -284,7 +290,6 @@ When a check fails:
 | `SKIPPED`, exit 2 | An engine is absent. This is not GREEN. Show the line to the person and stop. |
 | `RED` on pass-first-design | Show the whole output to the person and stop. This board is GREEN on Ubuntu 24.04. |
 | `GREEN` on fail-drc-clearance | Show the whole output to the person and stop. The DRC did not run as it must. |
-| `No module named 'fcntl'` | Native Windows without Via's Windows port. Use route W or route D. |
 | `workcenter` is not found | Your shell keeps the PATH it started with. Run it by its full path: `~/.local/bin/workcenter` on M, `& "$env:LOCALAPPDATA\Via\bin\workcenter.cmd"` on N. A new terminal of the person's finds it by name. |
 
 ## Report to the person

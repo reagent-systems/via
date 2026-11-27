@@ -44,8 +44,9 @@ def text(path: Path) -> str:
 
 
 def paths_port() -> bool:
-    """The doctor reads KiCad's folders through tools/hostos.py (wip/wpaths), not Linux's alone."""
-    return "hostos.kicad_dirs()" in text(CLI)
+    """The doctor reads KiCad's folders through tools/hostos.py (wip/wpaths), not Linux's alone: its
+    symbols row and the 3D models' folder read `hostos.kicad_share()`."""
+    return re.search(r"hostos\.kicad_(dirs|share)\(\)", text(CLI)) is not None
 
 
 def lock_port() -> bool:

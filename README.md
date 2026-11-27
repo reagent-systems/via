@@ -247,9 +247,9 @@ installer runs from a clone of Via (`git clone https://github.com/reagent-system
 | Computer | Command | State |
 |---|---|---|
 | Linux, Ubuntu 24.04 | `sudo ./install.sh` | Proven on GitHub's runners (ubuntu-24.04). |
-| macOS, Apple Silicon | `./install-macos.sh` | Not yet proven: the first CI run will say (macos-latest). `install-macos.sh` is not on `main` yet; until it is, use Docker. On macOS 12 to 14, Homebrew is not supported and builds Python and ngspice from source, which is slow and may fail. |
-| macOS, Intel | `./install-macos.sh` | Best effort: no CI job runs on an Intel Mac. It needs a Homebrew already installed: Homebrew's installer refuses an Intel Mac. `install-macos.sh` is not on `main` yet; until it is, use Docker. On macOS 12 to 14, Homebrew is not supported and builds Python and ngspice from source, which is slow and may fail. |
-| Windows 10 or 11, native (x64) | `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1` | Not yet proven: the first CI run will say (windows-latest). `install.ps1` and Via's Windows port are not on `main` yet; until they are, use WSL2. |
+| macOS, Apple Silicon | `./install-macos.sh` | Not yet proven: the first CI run will say (macos-latest). On macOS 12 to 14, Homebrew is not supported and builds Python and ngspice from source, which is slow and may fail. |
+| macOS, Intel | `./install-macos.sh` | Best effort: no CI job runs on an Intel Mac. It needs a Homebrew already installed: Homebrew's installer refuses an Intel Mac. On macOS 12 to 14, Homebrew is not supported and builds Python and ngspice from source, which is slow and may fail. |
+| Windows 10 or 11, native (x64) | `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1` | Not yet proven: the first CI run will say (windows-latest). |
 | Windows 10 or 11, WSL2 | `wsl --install -d Ubuntu-24.04` as an administrator, a restart, then the Ubuntu row inside Ubuntu | Not yet proven: the first CI run will say (an experimental leg on windows-latest). |
 | Docker, on any of them | `docker run --rm ghcr.io/reagent-systems/via:main` | Not proven, and no GitHub runner can prove it on macOS or Windows (Docker Desktop). The image build runs the gates in it on Linux, amd64 and arm64. Today ghcr.io refuses an anonymous pull of it; `ghcr.io/thyfriendlyfox/via:main`, older, answers one. |
 
@@ -277,7 +277,7 @@ Output goes to `<project>/build/`: `erc.json`, `drc.json`, `sim/`,
 A first board starts in a folder of its own outside this checkout:
 
 ```sh
-workcenter new ~/divider                         # design.py from the template, .gitignore, parts.csv, library/sources.csv
+workcenter new ~/divider                         # design.py from the template, .gitignore, .gitattributes, parts.csv, library/sources.csv
 workcenter next ~/divider                        # the one next step: here, the design
 workcenter design ~/divider/design.py --route    # the KiCad project, routed
 workcenter gates ~/divider --strict              # GREEN, and SIM has no deck to run yet
@@ -300,7 +300,7 @@ has every flag.
 |---|---|
 | `doctor` | Report each engine's status. |
 | `next` | Name the one next step for a project. |
-| `new` | Start a board project in a folder: the template's design file under the folder's name, `.gitignore`, `parts.csv` and `library/sources.csv` with their headers. Refuses a folder that holds a design. |
+| `new` | Start a board project in a folder: the template's design file under the folder's name, `.gitignore`, `.gitattributes` (`* -text`), `parts.csv` and `library/sources.csv` with their headers. Refuses a folder that holds a design. `--empty` makes the folder alone; `--deck <template>` copies a template deck and its bounds into `sim/`. |
 | `chip` | A chip project, from RTL to a GDSII layout: `chip init`, `chip gates`, 1 command for each of its 10 gates, and `chip render` for a picture of the layout. Tests hold all 10 gates. The acceptance design, an 8-bit processor of 760 cells on the sky130A process, is GREEN with `--strict` in under 4 minutes. |
 | `design` | Build a design file into a KiCad project; `--route` routes it; `--check` compares; `--rules-only` writes the copied fab rule file again and nothing else. |
 | `erc`, `drc`, `sim`, `export` | One gate, alone. |
@@ -410,7 +410,10 @@ images are drawn.
 
 | Path | What |
 |---|---|
-| `install.sh` | The only source of the toolchain. |
+| `install.sh` | The only source of the toolchain on Linux (Ubuntu 24.04, and the image). |
+| `install-macos.sh`, `install.ps1`, `workcenter.cmd`, `toolchain/desktop.json` | The toolchain on macOS (`install-macos.sh`) and on Windows (`install.ps1`, which puts `workcenter.cmd` on the user's PATH), for 1 user each; `toolchain/desktop.json` pins every download of both by its SHA256. Neither has run on its system yet. |
+| `INSTALL.md` | The install on every computer, step by step with a check each, for a person and their coding agent. |
+| `.gitattributes` | `* -text`: Git converts no line end, so a Windows checkout holds a Linux checkout's bytes. |
 | `Makefile`, `verify/` | `make verify`: the repository's health gate, one command, run by CI's `full` job; `make check`: the fast checks before a push to a work branch, with `make kit`, the gate's kit checks alone; `verify/testshards.py` runs its tests in shards side by side by `verify/shards.csv` (`verify/README.md`). |
 | `tools/workcenter` | The CLI and the gates. Standard library only. |
 | `tools/kicadgen.py` | Design a board in Python from the KiCad libraries; writes the KiCad project and routes it headless. |
@@ -418,10 +421,10 @@ images are drawn.
 | `tools/simcorners.py`, `tools/freqplan.py`, `tools/thermal.py`, `tools/simneeds.py` | The corners a deck runs at; the frequency plan; each part's junction temperature at every run; the decks the schematic asks for. Read by the SIM gate. |
 | `tools/partdata.py` | The makers' data of a deck's capacitors and inductors: picks each curve from the part's facts when its maker's file has its row in `library/sources.csv`, and rewrites the deck's part as ngspice's behavioural element on it. Standard library only; the SIM gate runs it. |
 | `tools/guide.py` | `workcenter next`: the one next step and the fix for each kind of failure. |
-| `tools/newboard.py` | `workcenter new`: a board project from `templates/project/`, with the headers of the parts file and of `library/sources.csv`. Standard library only. |
+| `tools/newboard.py` | `workcenter new`: a board project from `templates/project/`, with the headers of the parts file and of `library/sources.csv`; `--empty` and `--deck`, the steps `next` names. Standard library only. |
 | `tools/enginelock.py` | The engine lock: long `workcenter` commands take turns on 1 machine in the order they came, and `make verify` holds it for the whole gate; `hold`, `held` and `state` on its own command line. Standard library only. |
 | `tools/clock.py` | The day and the time a command runs at: 1 reading at its start, pinned by `SOURCE_DATE_EPOCH`; the machine's day for a price's age and the machine's clock for the engine lock; and the reader of a file's calls of the clock that 2 tests hold the tools and the test files to. Standard library only. |
-| `tools/hostos.py` | What differs between Linux, macOS and Windows: the root and lock folders, the venv's and KiCad's Python, the kicad-cli and ngspice to try, KiCad's library folders, Java's AWT library, ending a process tree, the stop signals, and writes with LF line ends. On Linux each is today's value; no command uses it yet, and the macOS and Windows values are not confirmed in a run. Standard library only. |
+| `tools/hostos.py` | What differs between Linux, macOS and Windows: the root and lock folders, the venv's and KiCad's Python, the kicad-cli and ngspice to try, KiCad's library folders, Java's AWT library, ending a process tree, the stop signals, and writes with LF line ends. On Linux each is today's value. The CLI, the engine lock, the routers, the MCP server, the generator's writes, `next` and the test runner use it; the macOS and Windows values are not confirmed in a run. Standard library only. |
 | `tools/ratings.py` | `workcenter ratings`: the voltage span of each net, the facts of each part, and each stress against its limit. Standard library only. |
 | `tools/blocks.py` | Circuit blocks a design file adds in 1 call, each written from its maker's note: `blocks.buck`, a buck regulator by TI SLVA477C, and the entry points of the other blocks; their numbers in `rules/blocks/`. |
 | `tools/blocks_usbc.py` | `blocks.usbc`: a USB Type-C receptacle as a sink, by USB Type-C R2.5 and USB 2.0. |
