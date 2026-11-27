@@ -604,10 +604,14 @@ def test_a_bundle_that_gives_another_number_than_the_gate_is_named(tmp_path):
     assert re.fullmatch(r"rdiv: the bundle gives vout=0\.501\d*, the gate 0\.9", problems[1]), problems
     # a bundle whose model is gone does not run, and the line carries ngspice's own first error
     (folder / "models" / "rdiv.ngspice.lib").unlink()
-    assert cli.check_bundle(folder, "rdiv", {})[0] == (
-        "rdiv: the bundle does not run from another folder: ngspice exit 1, 1 error lines: Error: Could "
-        "not find include file models/rdiv.ngspice.lib"
-    )
+    # The count is ngspice's own: Ubuntu's ngspice 42 gives 1 error line here, Homebrew's ngspice 47
+    # gives 2 (run 46067841222, macOS); the first is the same.
+    line = cli.check_bundle(folder, "rdiv", {})[0]
+    assert re.fullmatch(
+        r"rdiv: the bundle does not run from another folder: ngspice exit 1, [1-9]\d* error lines: "
+        r"Error: Could not find include file models/rdiv\.ngspice\.lib",
+        line,
+    ), line
 
 
 @needs_ngspice
