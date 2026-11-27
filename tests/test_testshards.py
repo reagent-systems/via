@@ -753,6 +753,7 @@ def test_an_error_at_collection_in_1_process_alone_is_in_the_gates_output(tmp_pa
     assert any("RuntimeError: not here" in line for line in block), proc.stdout
 
 
+@posix_only("the planted test kills its own pytest by SIGKILL; test_desktop.py ends 1 by os._exit")
 def test_a_shard_killed_mid_run_names_the_test_it_was_running_and_the_end_of_its_output(tmp_path):
     """The test kills its own pytest with SIGKILL: no report, no end of session. The gate names the test
     the shard started last and did not end, and the last lines of the shard's output."""
@@ -774,6 +775,7 @@ def test_a_shard_killed_mid_run_names_the_test_it_was_running_and_the_end_of_its
     assert header in proc.stdout.splitlines(), proc.stdout
 
 
+@posix_only("os.kill on Windows ends the process with the signal's number as its exit; no crash is written")
 def test_a_shard_that_crashes_shows_the_crash_from_the_end_of_its_output(tmp_path):
     """A segmentation fault in a test: pytest's faulthandler writes the Python stack to the shard's
     output as the process dies, and the gate prints that end of the output."""

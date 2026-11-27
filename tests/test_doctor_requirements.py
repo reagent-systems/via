@@ -223,8 +223,12 @@ def says(obj) -> str:
     return f"print({json.dumps(obj)!r})\n"
 
 
-# A venv's Python on Windows is Scripts\python.exe: a stand-in cannot be one (it is a .cmd file there).
-fake_venv_posix = posix_only("a stand-in venv's Python is a script; on Windows it must be an .exe")
+# A venv's Python on Windows is Scripts\python.exe: a stand-in cannot be one (it is a .cmd file there),
+# and doctor reads venv/bin/python until piece B. So doctor's venv probe is not proved on Windows; the
+# row of verify/desktop.csv says so.
+fake_venv_posix = posix_only(
+    "doctor's venv probe: doctor reads venv/bin/python until piece B, and a stand-in cannot be an .exe"
+)
 
 
 @fake_venv_posix

@@ -31,6 +31,10 @@ import time
 from pathlib import Path
 
 import pytest
+from conftest import linux_only, posix_only, stand_in
+
+# The tests piece A ports to Windows: each kills a run by SIGKILL, reads /proc or asks for the user id.
+KILLS = posix_only("it kills a run by SIGKILL, which Windows' Python lacks (piece A ports it)")
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / "tools" / "enginelock.py"
@@ -78,10 +82,7 @@ class Bench:
         self.dir = tmp / "lock"
         self.engine = tmp / "engine.py"
         self.engine.write_text(ENGINE, encoding="utf-8")
-        ngspice = tmp / "ngspice"
-        ngspice.write_text(f"#!{PY}\n{NGSPICE}", encoding="utf-8")
-        ngspice.chmod(0o755)
-        self.ngspice = ngspice
+        self.ngspice = stand_in(tmp / "ngspice", NGSPICE)
         self.procs: list[subprocess.Popen] = []
 
     def env(self, **extra: str) -> dict[str, str]:
@@ -272,6 +273,7 @@ def test_tickets_taken_at_the_same_moment_get_distinct_numbers(tmp_path, monkeyp
             t.release()
 
 
+@KILLS
 def test_a_holder_killed_with_sigkill_frees_the_lock_when_its_engine_ends(bench):
     """A's lock process dies by SIGKILL; its engine, A's child, runs on. B, waiting behind it, does not
     start beside that engine, and its line (every 0.25 s) says the holder ended and its engine still runs.
@@ -290,6 +292,7 @@ def test_a_holder_killed_with_sigkill_frees_the_lock_when_its_engine_ends(bench)
     assert len(bench.tickets()) == 1
 
 
+@KILLS
 def test_a_waiter_killed_while_waiting_does_not_block_those_behind_it(bench):
     """A holds, B and C wait; B dies by SIGKILL; when A ends, C starts."""
     bench.hold("A")
@@ -619,6 +622,7 @@ def alive(pid: int) -> bool:
     return stat.rsplit(")", 1)[1].split()[0] != "Z"
 
 
+@linux_only("it reads /proc for the engines left (piece A ports it)")
 def test_a_holder_stopped_by_sigterm_stops_its_engine_before_the_next_run_starts(bench):
     """A host's time limit sends SIGTERM to a holding `workcenter sim`. It passes the signal to the
     engine it started, says so in its last line, and B's engine starts only when no engine of A's runs."""
@@ -680,6 +684,7 @@ def test_doctor_with_a_lock_folder_that_is_a_file_says_not_judged(bench):
     assert "is not a folder" in data["engine_lock"]["not_judged"]
 
 
+@posix_only("the folder's name holds os.getuid(), which Windows lacks; test_hostos holds Windows' folder")
 def test_the_lock_folder_does_not_follow_tmpdir(bench):
     """2 runs of 1 user whose TMPDIR differ share 1 lock: with no `WORKCENTER_LOCK_DIR`, the folder is
     /tmp/workcenter-lock-<uid> whatever TMPDIR says."""

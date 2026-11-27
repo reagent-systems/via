@@ -33,14 +33,14 @@ tests/test_creepage.py,posix,not on the desktop list; not run on Windows yet
 tests/test_creepage_drc.py,posix,not on the desktop list; not run on Windows yet
 tests/test_curve.py,posix,not on the desktop list; not run on Windows yet
 tests/test_designfile.py,desktop,"design: a first design file, its traps and --route"
-tests/test_desktop.py,desktop,"this table, the stand-in engines and the run with no home folder"
+tests/test_desktop.py,desktop,"this table, the stand-in engines and the run with no home folder; not proved on Windows: a stand-in's first line, the POSIX no-home start and the stand-in taskkill (their Windows twins run there)"
 tests/test_docs.py,posix,it runs the documents' commands in bash
 tests/test_doctools.py,posix,not on the desktop list; not run on Windows yet
-tests/test_doctor_requirements.py,desktop,doctor: the Python environment against requirements.txt
+tests/test_doctor_requirements.py,desktop,"doctor: the Python environment against requirements.txt; not proved on Windows: doctor's venv probe, which reads venv/bin/python until piece B (a stand-in cannot be Scripts\python.exe)"
 tests/test_done.py,desktop,next: the one definition of done
 tests/test_engine_marker.py,linux,"the engine guard's cases start timeout, env -u and flock as on Ubuntu"
-tests/test_enginelock.py,desktop,the engine lock every command takes; piece A ports it to Windows
-tests/test_fab.py,desktop,DRC and EXPORT: a fab's rule set
+tests/test_enginelock.py,desktop,"the engine lock every command takes; piece A ports it to Windows; not proved on Windows: a run killed by SIGKILL, the engines left after a stop (/proc) and the lock folder's user id"
+tests/test_fab.py,desktop,"DRC and EXPORT: a fab's rule set; not proved on Windows: a rule file's mode bits and a linked rule file"
 tests/test_fabexport.py,desktop,"EXPORT: the files for a fab and an assembler, read back"
 tests/test_fabfiles.py,posix,not on the desktop list; not run on Windows yet
 tests/test_fetch.py,posix,not on the desktop list; not run on Windows yet
@@ -58,7 +58,7 @@ tests/test_guide_ratings.py,posix,not on the desktop list; not run on Windows ye
 tests/test_harvest.py,posix,not on the desktop list; not run on Windows yet
 tests/test_highspeed.py,posix,not on the desktop list; not run on Windows yet
 tests/test_highspeed_drc.py,posix,not on the desktop list; not run on Windows yet
-tests/test_hostos.py,desktop,"the platform layer: every difference between Linux, macOS and Windows"
+tests/test_hostos.py,desktop,"the platform layer: every difference between Linux, macOS and Windows; not proved off Linux: kill_tree's end of a grandchild (/proc) and the match with today's code"
 tests/test_image.py,linux,the Linux container image
 tests/test_inspect.py,posix,not on the desktop list; not run on Windows yet
 tests/test_install_apt.py,linux,install.sh's apt step on Ubuntu
@@ -73,7 +73,7 @@ tests/test_made.py,posix,it makes symbolic links
 tests/test_mcp.py,linux,the MCP server's tests read /proc and signal process groups
 tests/test_measureplan.py,posix,not on the desktop list; not run on Windows yet
 tests/test_mutate.py,posix,workcenter mutate runs each firmware test in bash
-tests/test_new.py,desktop,"next on a new board, and workcenter new"
+tests/test_new.py,desktop,"next on a new board, and workcenter new; not proved on Windows: that no engine starts by its bare name, since such a start looks for <name>.exe and never reaches the .cmd stand-in"
 tests/test_no_home.py,posix,no home folder is a container's case (M299); Windows always sets USERPROFILE
 tests/test_now.py,posix,its scratch git trees use shell scripts and file modes
 tests/test_partdata.py,posix,not on the desktop list; not run on Windows yet
@@ -100,7 +100,7 @@ tests/test_simneeds.py,posix,not on the desktop list; not run on Windows yet
 tests/test_simneeds_cli.py,posix,it runs a step's line in bash
 tests/test_sources.py,posix,it makes symbolic links
 tests/test_standards.py,posix,not on the desktop list; not run on Windows yet
-tests/test_testshards.py,desktop,"the runner that runs this list, and its clean-up through hostos.kill_tree"
+tests/test_testshards.py,desktop,"the runner that runs this list, and its clean-up through hostos.kill_tree; not proved on Windows: a stop by signal, and a shard killed by SIGKILL or crashed by SIGSEGV (test_desktop ends 1 by os._exit there)"
 tests/test_thermal.py,posix,not on the desktop list; not run on Windows yet
 tests/test_thermal_asked.py,posix,not on the desktop list; not run on Windows yet
 tests/test_thermal_asked_boards.py,posix,not on the desktop list; not run on Windows yet

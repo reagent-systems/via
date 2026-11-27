@@ -14,6 +14,7 @@ sys.modules, or runs the code the conftest would run there; none ran on a Mac or
 
 from __future__ import annotations
 
+import ast
 import csv
 import os
 import shlex
@@ -21,12 +22,15 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
 import conftest
+import engine_watch
 import pytest
-from test_testshards import FOUR, folder
+import test_new
+from test_testshards import FOUR, folder, gate, shard_of
 
 ROOT = Path(__file__).resolve().parents[1]
 TABLE = ROOT / "verify" / "desktop.csv"
@@ -224,13 +228,27 @@ ECHO = (
 FIRST_LINE = conftest.posix_only("a program's first line is POSIX; the Windows stand-in has its own test")
 
 
+def first_line(prog: Path) -> str:
+    """The program a stand-in's first line starts. No stand-in is a shell script."""
+    text = prog.read_text(encoding="utf-8")
+    assert "/bin/sh" not in text and "exec " not in text, text
+    line = text.splitlines()[0]
+    assert line.startswith("#!"), line
+    return line[2:]
+
+
 @FIRST_LINE
 def test_a_stand_in_is_a_python_program_that_starts_no_shell(tmp_path):
-    """The stand-in's first line names this Python: the kernel starts it with no shell, so it runs with
-    PATH empty (no sh, no bash to find), and it passes its arguments and its exit code."""
+    """The stand-in's first line names this Python, or a link to it where its own path cannot be a
+    first line (a venv under macOS's "Application Support"): the kernel starts it with no shell, so it
+    runs with PATH empty (no sh, no bash to find), and it passes its arguments and its exit code."""
     prog = conftest.stand_in(tmp_path / "bin" / "kicad-cli", ECHO)
     assert prog == tmp_path / "bin" / "kicad-cli"
-    assert prog.read_text(encoding="utf-8").splitlines()[0] == f"#!{sys.executable}"
+    started = first_line(prog)
+    if conftest.first_line_fits(sys.executable):
+        assert started == sys.executable
+    else:
+        assert conftest.first_line_fits(started) and os.path.samefile(started, sys.executable), started
     argv = [str(prog), "pcb", "drc", "a b", "7"]
     ran = subprocess.run(argv, capture_output=True, text=True, env={"PATH": ""})
     assert (ran.returncode, ran.stdout, ran.stderr) == (7, "stand-in pcb drc a b 7\n", "err\n")
@@ -242,20 +260,104 @@ def test_a_stand_in_is_found_on_path_by_its_name(tmp_path):
     assert shutil.which("ngspice", path=str(tmp_path / "bin")) == str(tmp_path / "bin" / "ngspice")
 
 
+@pytest.mark.parametrize(
+    ("path", "fits"),
+    [
+        ("/" + "a" * 124, True),
+        ("/" + "a" * 125, False),
+        ("/" + "é" * 62, True),  # 125 bytes in UTF-8
+        ("/" + "é" * 63, False),  # 64 characters, 127 bytes: the kernel counts bytes
+        ("/Users/x/Library/Application Support/via/venv/bin/python", False),
+        ("/a\tb/python", False),
+        ("", False),
+    ],
+)
+def test_a_first_line_holds_at_most_125_bytes_and_no_space(path, fits):
+    """Linux before 5.1 cuts a first line at 127 bytes ("#!" and 125 more); macOS's kernel splits it at a
+    space or a tab."""
+    assert conftest.first_line_fits(path) is fits
+
+
 @FIRST_LINE
-def test_where_this_pythons_path_cannot_be_a_first_line_the_stand_in_starts_it_by_sh(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("folder", "beside"),
+    [("Application Support", "bin"), ("it's Application Support", "bin"), ("Application Support", "a b/bin")],
+)
+def test_where_this_pythons_path_cannot_be_a_first_line_the_stand_in_names_a_link_to_it(
+    tmp_path, monkeypatch, folder, beside
+):
     """A first line holds no space (macOS's kernel splits it there) and at most 127 bytes; the venv of
-    Via's macOS root is under "Application Support". There the stand-in is `#!/bin/sh` and 1 exec line,
-    and the program beside it. The Python here is a link to this one through a folder with a space."""
-    spaced = tmp_path / "Application Support"
+    Via's macOS root is under "Application Support". There the first line names a link to this Python,
+    beside the stand-in or, where that path cannot be a first line either, in a temporary folder. No
+    shell runs: it starts with PATH empty and passes its arguments. The Python here is a link to this
+    one through a folder with a space, and a quote in 1 case."""
+    spaced = tmp_path / folder
     spaced.mkdir()
     real = Path(sys.base_prefix) / "bin" / Path(sys.executable).name
     (spaced / "python3").symlink_to(real if real.exists() else Path(sys.executable).resolve())
     monkeypatch.setattr(sys, "executable", str(spaced / "python3"))
-    prog = conftest.stand_in(tmp_path / "bin" / "java", ECHO)
-    assert prog.read_text(encoding="utf-8").splitlines()[0] == "#!/bin/sh"
+    prog = conftest.stand_in(tmp_path / beside / "java", ECHO)
+    started = first_line(prog)
+    assert conftest.first_line_fits(started) and os.path.samefile(started, sys.executable), started
     ran = subprocess.run([str(prog), "-version", "3"], capture_output=True, text=True, env={"PATH": ""})
     assert (ran.returncode, ran.stdout) == (3, "stand-in -version 3\n"), ran.stderr
+
+
+@FIRST_LINE
+@pytest.mark.parametrize("beside", ["bin", "a b/bin"])
+def test_the_link_to_this_python_is_beside_the_stand_in_where_its_path_can_be_a_first_line(
+    tmp_path, monkeypatch, beside
+):
+    """The link goes in the stand-in's own folder; where that folder's path cannot be a first line (a
+    space), in a temporary folder of the run. The bound of 125 bytes is lifted here, since this run's
+    folders are long: what is held is the order."""
+    spaced = tmp_path / "Application Support"
+    spaced.mkdir()
+    (spaced / "python3").symlink_to(Path(sys.executable).resolve())
+    monkeypatch.setattr(sys, "executable", str(spaced / "python3"))
+    monkeypatch.setattr(conftest, "first_line_fits", lambda p: bool(p) and not any(c.isspace() for c in p))
+    prog = conftest.stand_in(tmp_path / beside / "java", ECHO)
+    started = first_line(prog)
+    where = tmp_path / "bin" if beside == "bin" else Path(tempfile.gettempdir())
+    assert started.startswith(str(where) + os.sep), started
+    assert os.path.samefile(started, sys.executable)
+    ran = subprocess.run([str(prog), "1"], capture_output=True, text=True, env={"PATH": ""})
+    assert (ran.returncode, ran.stdout) == (1, "stand-in 1\n"), ran.stderr
+
+
+def spaced_venv(tmp_path: Path) -> Path:
+    """The Python of a venv under macOS's default root (hostos.default_root(): "~/Library/Application
+    Support/via"): bin/python is a link to this Python, beside this venv's pyvenv.cfg and lib, so it
+    imports what this one imports."""
+    venv = tmp_path / "Library" / "Application Support" / "via" / "venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "python").symlink_to(sys.executable)
+    prefix = Path(sys.prefix)
+    if (prefix / "pyvenv.cfg").is_file():
+        (venv / "pyvenv.cfg").symlink_to(prefix / "pyvenv.cfg")
+        (venv / "lib").symlink_to(prefix / "lib")
+    return venv / "bin" / "python"
+
+
+@FIRST_LINE
+def test_this_file_passes_under_a_venv_in_macos_default_root(tmp_path):
+    """The macOS list runs with the venv the installer made, under "Application Support": this file's
+    other tests pass under that venv's Python, and none of their stand-ins is a shell script."""
+    py = spaced_venv(tmp_path)
+    me = "tests/test_desktop.py::test_this_file_passes_under_a_venv_in_macos_default_root"
+    env = {k: v for k, v in os.environ.items() if not k.startswith("TESTSHARDS_")}
+    args = ["-q", "-p", "no:cacheprovider", "--basetemp", str(tmp_path / "bt"), "--deselect", me]
+    ran = subprocess.run(
+        [str(py), "-m", "pytest", *args, "tests/test_desktop.py"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+    )
+    assert ran.returncode == 0, ran.stdout[-4000:] + ran.stderr[-2000:]
+    assert " passed" in ran.stdout and " failed" not in ran.stdout, ran.stdout[-2000:]
 
 
 def test_on_windows_the_stand_in_is_a_cmd_file_that_starts_this_python(tmp_path, monkeypatch):
@@ -445,11 +547,61 @@ def test_only_takes_a_list_with_a_file_column_alone(tmp_path):
 
 
 def test_only_with_a_file_that_is_not_there_is_refused_with_its_name(tmp_path):
+    """The message names the list and the line of the row (the header is line 1)."""
     root = folder(tmp_path, FOUR)
-    proc = gate_only(root, only_list(root, "file,runs,reason\ntests/test_gone.py,desktop,a\n"))
+    text = "file,runs,reason\ntests/test_p.py,desktop,a\ntests/test_gone.py,desktop,b\n"
+    listing = only_list(root, text)
+    proc = gate_only(root, listing)
     assert proc.returncode == 2, proc.stdout + proc.stderr
-    assert "tests/test_gone.py" in proc.stderr and "not a test file under" in proc.stderr
+    assert proc.stderr == f"{listing}:3: 'tests/test_gone.py' is not a test file under the tests folder\n"
     assert not (tmp_path / "work").exists()
+
+
+def test_only_with_a_list_with_no_file_column_is_refused(tmp_path):
+    root = folder(tmp_path, FOUR)
+    listing = only_list(root, "name,runs\ntests/test_p.py,desktop\n")
+    proc = gate_only(root, listing)
+    assert (proc.returncode, proc.stderr) == (2, f"{listing}:1: no column file\n"), proc.stdout
+    assert not (tmp_path / "work").exists()
+
+
+def test_only_with_a_list_that_is_not_there_is_refused_with_no_traceback(tmp_path):
+    root = folder(tmp_path, FOUR)
+    proc = gate_only(root, root / "absent.csv")
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "No such file" in proc.stderr and "absent.csv" in proc.stderr, proc.stderr
+    assert "Traceback" not in proc.stderr and len(proc.stderr.splitlines()) == 1, proc.stderr
+    assert not (tmp_path / "work").exists()
+
+
+def test_a_padded_cell_of_the_table_names_the_file_all_the_same(tmp_path):
+    """A row written with spaces around its cells (` tests/test_x.py , posix , it forks `) skips its
+    file as the row without them does."""
+    table = tmp_path / "desktop.csv"
+    table.write_text("file,runs,reason\n tests/test_x.py , posix , it forks \n", encoding="utf-8")
+    assert conftest.host_rows(table) == {"tests/test_x.py": ("posix", "it forks")}
+    why = conftest.host_skip("tests/test_x.py", conftest.host_rows(table), "win32")
+    assert why == "POSIX-only: it forks (verify/desktop.csv)"
+
+
+def test_a_second_stop_of_either_kind_during_the_clean_up_is_ignored(monkeypatch):
+    """The first stop raises Stopped and ignores every stop signal from then on: under `enginelock.py
+    hold` the second may be the other kind (TERM, then HUP from the closing terminal)."""
+    kept = {s: signal.getsignal(s) for s in testshards.stops()}
+    try:
+        for s in testshards.stops():
+            signal.signal(s, signal.SIG_DFL)
+        first = testshards.stops()[0]
+        with pytest.raises(testshards.Stopped) as stopped:
+            testshards._stop(first, None)
+        assert stopped.value.signum == first
+        assert {s: signal.getsignal(s) for s in testshards.stops()} == dict.fromkeys(
+            testshards.stops(), signal.SIG_IGN
+        )
+        assert len(testshards.stops()) == 2 or sys.platform == "win32"
+    finally:
+        for s, handler in kept.items():
+            signal.signal(s, handler)
 
 
 def test_only_with_a_list_that_names_no_file_is_refused(tmp_path):
@@ -457,3 +609,255 @@ def test_only_with_a_list_that_names_no_file_is_refused(tmp_path):
     proc = gate_only(root, only_list(root, "file,runs,reason\ntests/test_p.py,linux,a\n"))
     assert proc.returncode == 2, proc.stdout + proc.stderr
     assert "names no file to run" in proc.stderr
+
+
+# -- a shard that ends on Windows (no signal to plant there) ------------------------------------------------
+
+
+def test_a_shard_that_exits_mid_run_names_its_exit_and_the_test_it_was_running(tmp_path):
+    """Windows' Python has no SIGKILL, and its os.kill ends a process by TerminateProcess with the
+    signal's number as the exit code, so no crash is written. The test there ends its own pytest by
+    os._exit(3): the gate names the exit, the test the shard started last and the end of its output.
+    test_testshards.py holds the POSIX twins, by SIGKILL and by SIGSEGV."""
+    files = dict(FOUR)
+    files["test_s.py"] = (
+        "import os\n\n\ndef test_one():\n    pass\n\n\n"
+        "def test_exit():\n    os._exit(3)\n\n\ndef test_after():\n    pass\n"
+    )
+    root = folder(tmp_path, files)
+    shard = shard_of(root, "test_s.py")
+    proc = gate(root)
+    assert proc.returncode == 1, proc.stdout
+    log = root.parent / "work" / f"shard-{shard}" / "pytest.log"
+    header = (
+        f"why: shard {shard} ended with no report from pytest (exit 3); "
+        f"the test it started last and did not end: tests/test_s.py::test_exit; "
+        f"the last lines of its output, {log}:"
+    )
+    assert header in proc.stdout.splitlines(), proc.stdout
+
+
+# -- what a desktop file may hold ---------------------------------------------------------------------------
+
+# Names Windows' Python lacks (Python's os and signal documentation), and the folder only Linux has.
+POSIX_NAMES = frozenset({"SIGKILL", "SIGSEGV", "SIGHUP", "killpg", "getuid", "symlink_to"})
+PROC = "/proc/"
+PLATFORM_MARKS = frozenset({"posix_only", "linux_only"})
+# Tests that read a POSIX name only after they stand it in where Python lacks it: the run of
+# test_hostos.py with those names taken away (below) is what holds each.
+STOOD_IN = {
+    "tests/test_hostos.py::test_lock_dir_on_posix_is_one_folder_per_user_in_tmp": "on() stands in os.getuid",
+    "tests/test_hostos.py::test_lock_dir_leaves_workcenter_lock_dir_to_the_lock": "on() stands in os.getuid",
+    "tests/test_hostos.py::test_stop_signals_on_posix_are_term_and_hup": "on() stands in signal.SIGHUP",
+    "tests/test_hostos.py::test_kill_tree_on_posix_kills_the_process_group": "on() stands in signal.SIGKILL",
+}
+# The files whose tests are of the first line itself.
+FIRST_LINES = {"tests/test_desktop.py": "its tests are of conftest.stand_in's first line"}
+
+
+def _called(node: ast.AST) -> str | None:
+    func = node.func if isinstance(node, ast.Call) else node
+    if isinstance(func, ast.Name):
+        return func.id
+    return func.attr if isinstance(func, ast.Attribute) else None
+
+
+def scan(path: Path) -> tuple[list[str], list[str], int]:
+    """A desktop file read as Python: its tests that use a POSIX name or /proc, by themselves or by a
+    module-level function they call, and carry no platform mark; its strings that begin a first line
+    (`#!`); and the count of its tests that carry a platform mark. A platform mark is posix_only(...),
+    linux_only(...), a name given 1 of them, or a skipif that reads sys.platform."""
+    text = path.read_text(encoding="utf-8")
+    tree = ast.parse(text)
+    marks = set(PLATFORM_MARKS)
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            if _called(node.value) in PLATFORM_MARKS:
+                marks |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+
+    def posix(node: ast.AST) -> set[str]:
+        found = set()
+        for n in ast.walk(node):
+            if isinstance(n, ast.Attribute) and n.attr in POSIX_NAMES:
+                found.add(n.attr)
+            elif isinstance(n, ast.Constant) and isinstance(n.value, str) and PROC in n.value:
+                found.add(PROC)
+        return found
+
+    helpers = {
+        n.name: posix(n)
+        for n in tree.body
+        if isinstance(n, ast.FunctionDef) and not n.name.startswith("test_") and posix(n)
+    }
+    unmarked, marked = [], 0
+    for node in tree.body:
+        if not (isinstance(node, ast.FunctionDef) and node.name.startswith("test_")):
+            continue
+        is_marked = any(
+            (isinstance(d, ast.Name) and d.id in marks)
+            or (isinstance(d, ast.Call) and _called(d) in PLATFORM_MARKS)
+            or (isinstance(d, ast.Call) and _called(d) == "skipif" and "sys.platform" in ast.unparse(d))
+            for d in node.decorator_list
+        )
+        marked += is_marked
+        used = posix(node) | {
+            name for n in ast.walk(node) if isinstance(n, ast.Call) and (name := _called(n)) in helpers
+        }
+        if used and not is_marked:
+            unmarked.append(f"{node.name} ({', '.join(sorted(used))})")
+    lines = sorted(
+        {
+            n.lineno
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.Constant, ast.JoinedStr))
+            and (ast.get_source_segment(text, n) or "").lstrip("rbuf").lstrip("\"'").startswith("#!")
+        }
+    )
+    return unmarked, [f"line {n}" for n in lines], marked
+
+
+def test_no_test_of_a_desktop_file_uses_a_posix_name_without_its_mark():
+    """Every test of a desktop file runs on Windows unless it says otherwise: 1 that sends SIGKILL or
+    SIGSEGV, reads /proc, kills a process group, asks for the user id or makes a symbolic link carries
+    posix_only(...) or linux_only(...). A test that stands the name in first is listed in STOOD_IN."""
+    found = []
+    for r in rows():
+        if r["runs"] == "desktop":
+            unmarked, _, _ = scan(ROOT / r["file"])
+            found += [f"{r['file']}::{t}" for t in unmarked if f"{r['file']}::{t.split()[0]}" not in STOOD_IN]
+    assert found == []
+
+
+def test_the_tests_it_stands_in_for_are_tests_of_desktop_files():
+    desktop = {r["file"] for r in rows() if r["runs"] == "desktop"}
+    for name in STOOD_IN:
+        file, test = name.split("::")
+        assert file in desktop and f"def {test}(" in (ROOT / file).read_text(encoding="utf-8"), name
+
+
+def test_no_desktop_file_writes_a_first_line_by_hand():
+    """A stand-in engine goes through conftest.stand_in: a first line written by hand breaks on Windows
+    and on a venv under "Application Support"."""
+    found = {}
+    for r in rows():
+        if r["runs"] == "desktop" and r["file"] not in FIRST_LINES:
+            _, lines, _ = scan(ROOT / r["file"])
+            if lines:
+                found[r["file"]] = lines
+    assert found == {}
+
+
+def test_a_desktop_row_whose_file_skips_a_test_somewhere_says_what_is_not_proved():
+    """The row's reason is what the not-judged table of macOS and Windows reads: where a file of the
+    list skips a test on a system, its reason says `not proved` there, and what."""
+    missing = []
+    for r in rows():
+        if r["runs"] == "desktop":
+            _, _, marked = scan(ROOT / r["file"])
+            if marked and "not proved" not in r["reason"]:
+                missing.append(f"{r['file']}: {marked} marked")
+    assert missing == []
+
+
+# Taken away where pytest has started, as Windows' Python lacks them: os.getuid, os.killpg, SIGHUP and
+# SIGKILL. pytest itself starts with them (its temporary folder reads os.getuid unless --basetemp).
+NO_POSIX_NAMES = """\
+import os
+import signal
+
+import pytest
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_sessionstart(session):
+    for module, name in ((os, "getuid"), (os, "killpg"), (signal, "SIGHUP"), (signal, "SIGKILL")):
+        if hasattr(module, name):
+            delattr(module, name)
+"""
+
+
+def test_the_platform_layers_tests_pass_where_python_lacks_the_posix_names(tmp_path):
+    """test_hostos.py in a pytest of its own, whose Python lacks os.getuid, os.killpg, signal.SIGHUP and
+    signal.SIGKILL, as Windows' does. Its 2 tests that run on Linux alone are left out: on Windows they
+    skip. Every other test passes."""
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    (plugins / "no_posix_names.py").write_text(NO_POSIX_NAMES, encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH" and not k.startswith("TESTSHARDS_")}
+    env["PYTHONPATH"] = str(plugins)
+    linux = [
+        "tests/test_hostos.py::test_kill_tree_on_linux_ends_a_grandchild_the_test_started",
+        "tests/test_hostos.py::test_on_linux_hostos_returns_what_the_code_returns_today",
+    ]
+    args = ["-q", "-p", "no_posix_names", "-p", "no:cacheprovider", "--basetemp", str(tmp_path / "bt")]
+    for name in linux:
+        args += ["--deselect", name]
+    ran = subprocess.run(
+        [sys.executable, "-m", "pytest", *args, "tests/test_hostos.py"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    assert ran.returncode == 0, ran.stdout[-4000:] + ran.stderr[-2000:]
+    assert " failed" not in ran.stdout, ran.stdout[-2000:]
+
+
+# -- the engine guard on Windows (tools/ci/guard/engine_watch.py) --------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("platform", "argv", "engine"),
+    [
+        ("win32", ["C:\\Program Files\\KiCad\\10.0\\bin\\kicad-cli.exe", "pcb", "drc"], "kicad-cli"),
+        ("win32", ["C:/Spice64/bin/NGSPICE_CON.EXE", "-b"], "ngspice_con"),
+        ("win32", ["ngspice.exe", "-b"], "ngspice"),
+        ("win32", ["OPENEMS.EXE"], "openEMS"),
+        ("win32", ["xvfb-run", "-a", "java.exe", "-jar", "fr.jar"], "java"),
+        ("win32", ["kicad-cli.txt"], None),
+        ("win32", ["notepad.exe"], None),
+        ("linux", ["/usr/bin/kicad-cli", "pcb"], "kicad-cli"),
+        ("linux", ["kicad-cli.exe"], None),
+    ],
+)
+def test_the_engine_guard_knows_an_engine_by_its_windows_program_name(
+    tmp_path, monkeypatch, platform, argv, engine
+):
+    """On Windows a program is `<name>.exe` (or another PATHEXT extension) in any case: the guard of the
+    fast lane, and its refusal under WORKCENTER_NO_ENGINES=1, know the engine by it. ngspice's console
+    program there is ngspice_con (hostos.ngspice_candidates). Linux reads names as before. A program
+    under the temporary folder is a stand-in; here that folder is 1 of the test's own, since on Linux
+    `C:/...` is a path under the working folder."""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "temp"))
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+    assert engine_watch.engine_of(argv, path="") == engine
+
+
+# -- a stand-in is reached the ways the workcenter starts engines -------------------------------------------
+
+
+def test_a_stand_in_on_path_is_reached_the_ways_the_workcenter_starts_engines(tmp_path):
+    """test_new's stand-ins prove a command started no engine by an empty log: the control is that a
+    stand-in, once started, writes its line. Through shutil.which (doctor, the gates' checks) it does on
+    every system. By its bare name it does on Linux and macOS; on Windows a bare-name start looks for
+    `<name>.exe` alone, never the `.cmd` stand-in, so it writes nothing (test_new's row says what that
+    leaves not proved)."""
+    env, log = test_new.stand_ins(tmp_path)
+    found = shutil.which("kicad-cli", path=env["PATH"])
+    assert found, env["PATH"]
+    ran = subprocess.run([found, "version"], env=env, capture_output=True, text=True, timeout=60)
+    assert ran.returncode == 97, ran.stderr
+    assert log.read_text(encoding="utf-8").splitlines() == ["kicad-cli version"]
+    try:
+        bare = subprocess.run(["kicad-cli", "pcb"], env=env, capture_output=True, text=True, timeout=60)
+    except FileNotFoundError:
+        bare = None
+    lines = log.read_text(encoding="utf-8").splitlines()
+    if sys.platform == "win32":
+        assert lines == ["kicad-cli version"], lines
+    else:
+        assert bare is not None and bare.returncode == 97
+        assert lines == ["kicad-cli version", "kicad-cli pcb"], lines

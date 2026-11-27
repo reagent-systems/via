@@ -17,9 +17,11 @@ that needs fcntl or pwd. 1 test of a desktop file that cannot run somewhere carr
 `linux_only(...)`. A stand-in engine is a Python program (`stand_in`), never a shell script.
 """
 
+import atexit
 import csv
+import hashlib
 import os
-import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -94,35 +96,69 @@ def pytest_pycollect_makemodule(module_path, parent):
     return module
 
 
-# A first line the kernel can start: no space (macOS splits the line there) and at most 127 bytes
-# (Linux before 5.1 cuts it; macOS's bound is larger).
-SHEBANG = re.compile(r"[^\s]{1,125}")
+def first_line_fits(path: str) -> bool:
+    """Whether the kernel starts `path` from a first line (`#!path`): no space or tab (macOS's kernel
+    splits the line there) and at most 125 bytes, so the line is at most 127 (Linux before 5.1 cuts it
+    there; macOS's bound is larger). The bound is in bytes: a non-ASCII letter takes 2 or more."""
+    return bool(path) and not any(c.isspace() for c in path) and len(os.fsencode(path)) <= 125
+
+
+_TWINS: list[str] = []
+
+
+def _twin(folder: Path) -> Path:
+    """`folder`/bin/python, a link to this Python, with this venv's pyvenv.cfg and lib beside it (where
+    this Python is a venv's), so the link imports what this Python imports. Made once."""
+    py = folder / "bin" / "python"
+    py.parent.mkdir(parents=True, exist_ok=True)
+    prefix = Path(sys.prefix)
+    links = [(py, Path(sys.executable))]
+    if (prefix / "pyvenv.cfg").is_file():
+        links += [(folder / "pyvenv.cfg", prefix / "pyvenv.cfg"), (folder / "lib", prefix / "lib")]
+    for link, target in links:
+        try:
+            link.symlink_to(target)
+        except FileExistsError:
+            pass
+    return py
+
+
+def first_line_python(folder: Path) -> str:
+    """The Python a stand-in's first line names: this one, or where its path cannot be a first line (a
+    venv under macOS's "Application Support"), a link to it in `folder`, else in a temporary folder of
+    this process, removed at its exit. The link's folder is named by this Python's path. RuntimeError
+    where neither can be a first line."""
+    if first_line_fits(sys.executable):
+        return sys.executable
+    name = ".p" + hashlib.sha256(os.fsencode(sys.executable)).hexdigest()[:8]  # short: the bound is tight
+    for base in (folder, None):
+        if base is None:
+            if not _TWINS:
+                _TWINS.append(tempfile.mkdtemp(prefix="si-"))
+                atexit.register(shutil.rmtree, _TWINS[0], True)
+            base = Path(_TWINS[0])
+        if first_line_fits(str(base / name / "bin" / "python")):
+            return str(_twin(base / name))
+    raise RuntimeError(f"no first line can start this Python ({sys.executable}): set TMPDIR to a short path")
 
 
 def stand_in(path: Path, source: str) -> Path:
     """A stand-in engine at `path`: a program that runs the Python `source` under this Python, with no
     shell, and the path to run it by.
 
-    Linux and macOS: `path` itself, whose first line names this Python. Where that path cannot be a
-    first line (a venv under macOS's "Application Support"), `path` is `#!/bin/sh` and 1 exec line, and
-    the program is `<name>-stand-in.py` beside it. Windows starts no first line: the program is
-    `<name>-stand-in.py`, and `<name>.cmd` (found on PATH by PATHEXT) starts this Python on it with every
-    argument. Not run on Windows yet: cmd reads `%` and `^` in an argument."""
+    Linux and macOS: `path` itself, whose first line names this Python, or a link to it where this
+    Python's path cannot be a first line (first_line_python). Windows starts no first line: the program
+    is `<name>-stand-in.py`, and `<name>.cmd` (found on PATH by PATHEXT) starts this Python on it with
+    every argument. Not run on Windows yet: cmd reads `%` and `^` in an argument."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    script = path.with_name(f"{path.name}-stand-in.py")
     if sys.platform == "win32":
+        script = path.with_name(f"{path.name}-stand-in.py")
         script.write_text(source, encoding="utf-8")
         cmd = path.with_name(f"{path.name}.cmd")
         cmd.write_bytes(f'@"{sys.executable}" "{script}" %*\r\n'.encode())
         return cmd
-    if SHEBANG.fullmatch(sys.executable):
-        path.write_text(f"#!{sys.executable}\n{source}", encoding="utf-8")
-    else:
-        script.write_text(source, encoding="utf-8")
-        quote = "'\"'\"'"
-        py, prog = (str(p).replace("'", quote) for p in (sys.executable, script))
-        path.write_text(f"#!/bin/sh\nexec '{py}' '{prog}' \"$@\"\n", encoding="utf-8")
+    path.write_text(f"#!{first_line_python(path.parent)}\n{source}", encoding="utf-8")
     path.chmod(0o755)
     return path
 
