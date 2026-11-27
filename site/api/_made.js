@@ -2,9 +2,15 @@
 // "im asking you already to implement it", after "why don't we have a login for people to upload
 // their own stuff and manage their own projects" and "why not track likes".
 //
-// - Sign-in is GitHub's OAuth (the app's id and secret are the project's GITHUB_CLIENT_ID and
-//   GITHUB_CLIENT_SECRET). GitHub's token is used once, to read the profile, and never kept. The
-//   session is a cookie signed with a key made from the secret.
+// - Sign-in is with Google, Microsoft or GitHub, at the owner's word (2026-11-27: "login with google
+//   and login with microsoft and login with github"): each an OAuth app whose id and secret are the
+//   project's GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, MICROSOFT_CLIENT_ID and
+//   MICROSOFT_CLIENT_SECRET, GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET; a way in with no id and secret
+//   is not offered. The provider's token is used once, to read the name and picture, and never kept.
+//   A person is 1 account for each way in (`google-<sub>`, `microsoft-<sub>`, `github-<id>`). The
+//   session is a cookie signed with a key made from the secrets.
+// - Adding a board takes a GitHub login: the board comes from the person's own repository there. An
+//   admin is a GitHub login MADE_ADMINS names.
 // - A board is added from one of the person's own public GitHub repositories (a link, no upload),
 //   checked by Via's gates in GitHub Actions (.github/workflows/made-check.yml), and listed when its
 //   gates say GREEN and an admin (MADE_ADMINS) has looked at it: a board's own code runs in its check,
@@ -91,10 +97,48 @@ function ours(request) {
 // A path on this site to go back to after sign-in: never another host.
 export const back = (next) => (typeof next === "string" && /^\/(?![/\\])[A-Za-z0-9/_.#?=&-]*$/.test(next) ? next : "/");
 
+// ------------------------------------------------------------------ the ways in
+
+// Each way in, from its own documents: GitHub's OAuth app endpoints, and Google's and Microsoft's
+// OpenID Connect discovery documents (accounts.google.com/.well-known/openid-configuration and
+// login.microsoftonline.com/common/v2.0/.well-known/openid-configuration, read 2026-11-27). Only
+// the name and picture are asked for: no email. Microsoft's `common` takes personal and work or
+// school accounts; its picture needs a token Via does not keep, so a Microsoft account shows its
+// initials.
+export const PROVIDERS = {
+  google: {
+    name: "Google",
+    authorize: "https://accounts.google.com/o/oauth2/v2/auth",
+    token: "https://oauth2.googleapis.com/token",
+    profile: "https://openidconnect.googleapis.com/v1/userinfo",
+    scope: "openid profile",
+    form: true,
+    person: (p) => ({ id: String(p.sub || ""), login: String(p.name || p.given_name || "Someone"), avatar: String(p.picture || "") }),
+  },
+  microsoft: {
+    name: "Microsoft",
+    authorize: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    token: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    profile: "https://graph.microsoft.com/oidc/userinfo",
+    scope: "openid profile",
+    form: true,
+    person: (p) => ({ id: String(p.sub || ""), login: String(p.name || p.given_name || "Someone"), avatar: "" }),
+  },
+  github: {
+    name: "GitHub",
+    authorize: "https://github.com/login/oauth/authorize",
+    token: "https://github.com/login/oauth/access_token",
+    profile: "https://api.github.com/user",
+    scope: "",
+    form: false,
+    person: (p) => ({ id: String(p.id ?? ""), login: String(p.login || ""), avatar: String(p.avatar_url || "") }),
+  },
+};
+
 // ------------------------------------------------------------------ sessions
 
 async function key(env) {
-  const raw = await subtle.importKey("raw", new TextEncoder().encode(env.clientSecret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const raw = await subtle.importKey("raw", new TextEncoder().encode(env.secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const derived = await subtle.sign("HMAC", raw, new TextEncoder().encode("made.via.computer session"));
   return subtle.importKey("raw", derived, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
@@ -106,7 +150,7 @@ export async function seal(user, env, now) {
 }
 
 export async function opened(request, env, now) {
-  if (!env.clientSecret) return null;
+  if (!env.secret) return null;
   const value = cookies(request)[SESSION];
   if (!value || !value.includes(".")) return null;
   const [body, mac] = value.split(".");
@@ -120,78 +164,94 @@ export async function opened(request, env, now) {
   try {
     const user = JSON.parse(unb64url(body).toString("utf8"));
     if (typeof user.exp !== "number" || user.exp * 1000 <= now.getTime()) return null;
-    return { id: String(user.id), login: String(user.login), name: user.name ? String(user.name) : "", avatar: String(user.avatar || "") };
+    if (!(user.provider in PROVIDERS) || !String(user.id).startsWith(`${user.provider}-`)) return null;
+    return { id: String(user.id), provider: user.provider, login: String(user.login), avatar: String(user.avatar || "") };
   } catch {
     return null;
   }
 }
 
-const isAdmin = (user, env) => Boolean(user) && env.admins.some((a) => a.toLowerCase() === user.login.toLowerCase());
+// An admin is a GitHub login MADE_ADMINS names: a Google or Microsoft name is anyone's to pick.
+const isAdmin = (user, env) =>
+  Boolean(user) && user.provider === "github" && env.admins.some((a) => a.toLowerCase() === user.login.toLowerCase());
 
 // ------------------------------------------------------------------ sign-in (api/auth.js)
 
 export async function auth(request, ctx) {
   const { env, store, net, now } = ctx;
   const url = new URL(request.url);
-  const step = url.searchParams.get("do") || (url.searchParams.has("code") ? "callback" : "me");
-  const configured = Boolean(env.clientId && env.clientSecret);
+  const step = url.searchParams.get("do") || (url.searchParams.has("state") ? "callback" : "me");
+  const offered = Object.keys(PROVIDERS).filter((p) => env.providers[p]);
   if (step === "me") {
     const user = await opened(request, env, now);
-    return json({ configured, user, admin: isAdmin(user, env) });
+    return json({ configured: offered.length > 0, providers: offered, user, admin: isAdmin(user, env) });
   }
   if (step === "logout") {
     if (request.method !== "POST") return refuse(405, "Logging out takes a POST.");
     if (!ours(request)) return refuse(403, "That came from another site.");
     return json({ ok: true }, 200, { "set-cookie": cookie(SESSION, "", 0) });
   }
-  if (!configured) return refuse(503, "Sign-in isn't switched on yet.");
   if (step === "login") {
+    const provider = url.searchParams.get("with") || "github";
+    const app = env.providers[provider];
+    if (!(provider in PROVIDERS)) return refuse(404, "There's no such way to log in.");
+    if (!app) return refuse(503, `Logging in with ${PROVIDERS[provider].name} isn't switched on yet.`);
+    const way = PROVIDERS[provider];
     const state = b64url(randomBytes(18));
     const next = back(url.searchParams.get("next"));
-    const to = new URL("https://github.com/login/oauth/authorize");
-    to.searchParams.set("client_id", env.clientId);
+    const to = new URL(way.authorize);
+    to.searchParams.set("client_id", app.id);
     to.searchParams.set("redirect_uri", `${ORIGIN}/api/auth`);
     to.searchParams.set("state", state);
-    to.searchParams.set("allow_signup", "true");
-    return redirect(to.href, [cookie(STATE, `${state}.${b64url(next)}`, 600, "/api/auth")]);
+    if (way.scope) {
+      to.searchParams.set("response_type", "code");
+      to.searchParams.set("scope", way.scope);
+    }
+    if (provider === "github") to.searchParams.set("allow_signup", "true");
+    if (provider === "microsoft") to.searchParams.set("response_mode", "query");
+    if (provider === "google") to.searchParams.set("prompt", "select_account");
+    return redirect(to.href, [cookie(STATE, `${state}.${provider}.${b64url(next)}`, 600, "/api/auth")]);
   }
   if (step !== "callback") return refuse(404, "There's nothing here.");
-  const saved = cookies(request)[STATE] || "";
-  const [state, nextPacked] = saved.split(".");
+  const [state, provider, nextPacked] = (cookies(request)[STATE] || "").split(".");
   const clear = cookie(STATE, "", 0, "/api/auth");
-  if (!state || state !== url.searchParams.get("state")) {
-    return new Response("That sign-in link is old or came from somewhere else. Could you try again?", {
-      status: 400,
-      headers: { "set-cookie": clear, "content-type": "text/plain; charset=utf-8" },
-    });
+  const said = (status, words) =>
+    new Response(words, { status, headers: { "set-cookie": clear, "content-type": "text/plain; charset=utf-8" } });
+  if (!state || state !== url.searchParams.get("state") || !(provider in PROVIDERS) || !env.providers[provider]) {
+    return said(400, "That sign-in link is old or came from somewhere else. Could you try again?");
   }
   const next = back(nextPacked ? unb64url(nextPacked).toString("utf8") : "/");
-  let profile;
+  // The person said no, or closed the provider's page: back where they were, not signed in.
+  if (url.searchParams.has("error") || !url.searchParams.get("code")) return redirect(next, [clear]);
+  const way = PROVIDERS[provider];
+  const app = env.providers[provider];
+  let person;
   try {
-    const exchanged = await net.fetch("https://github.com/login/oauth/access_token", {
+    const fields = {
+      client_id: app.id,
+      client_secret: app.secret,
+      code: url.searchParams.get("code"),
+      redirect_uri: `${ORIGIN}/api/auth`,
+    };
+    const exchanged = await net.fetch(way.token, {
       method: "POST",
-      headers: { accept: "application/json", "content-type": "application/json" },
-      body: JSON.stringify({
-        client_id: env.clientId,
-        client_secret: env.clientSecret,
-        code: url.searchParams.get("code"),
-        redirect_uri: `${ORIGIN}/api/auth`,
-      }),
+      headers: way.form
+        ? { accept: "application/json", "content-type": "application/x-www-form-urlencoded" }
+        : { accept: "application/json", "content-type": "application/json" },
+      body: way.form ? new URLSearchParams({ ...fields, grant_type: "authorization_code" }).toString() : JSON.stringify(fields),
     });
     const { access_token: token } = await exchanged.json();
     if (!token) throw new Error("no token");
-    const answer = await net.fetch("https://api.github.com/user", {
-      headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "made.via.computer" },
+    const answer = await net.fetch(way.profile, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/json", "user-agent": "made.via.computer" },
     });
-    if (!answer.ok) throw new Error(`GitHub said ${answer.status}`);
-    profile = await answer.json();
+    if (!answer.ok) throw new Error(`${way.name} said ${answer.status}`);
+    person = way.person(await answer.json());
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(person.id) || !person.login) throw new Error("no person");
   } catch {
-    return new Response("GitHub didn't let us sign you in. Could you try again?", {
-      status: 502,
-      headers: { "set-cookie": clear, "content-type": "text/plain; charset=utf-8" },
-    });
+    return said(502, `${way.name} didn't let us sign you in. Could you try again?`);
   }
-  const user = { id: String(profile.id), login: String(profile.login), name: profile.name ? String(profile.name) : "", avatar: String(profile.avatar_url || "") };
+  const user = { id: `${provider}-${person.id}`, provider, login: person.login.slice(0, 80), avatar: person.avatar };
   const known = (await store.get(`made/users/${user.id}.json`)) || { first: now.toISOString() };
   await store.put(`made/users/${user.id}.json`, { ...known, ...user, last: now.toISOString() });
   return redirect(next, [clear, cookie(SESSION, await seal(user, env, now), 30 * DAY)]);
@@ -434,6 +494,9 @@ export async function made(request, ctx) {
   }
 
   if (step === "add") {
+    if (user.provider !== "github") {
+      return refuse(403, "Adding a board takes a GitHub login, since your board comes from your own repository there.");
+    }
     const repo = repository(data.repo);
     if (!repo) return refuse(400, "That doesn't look like a GitHub repository. It's owner/name, or its address.");
     if (repo.split("/")[0].toLowerCase() !== user.login.toLowerCase()) {
@@ -452,7 +515,7 @@ export async function made(request, ctx) {
     const id = randomBytes(8).toString("hex").slice(0, 12);
     const board = {
       id,
-      owner: { id: user.id, login: user.login, avatar: user.avatar },
+      owner: { id: user.id, provider: user.provider, login: user.login, avatar: user.avatar },
       repo,
       ref: found.ref,
       path,
@@ -646,10 +709,18 @@ async function checks(request, ctx, step) {
   return json({ board: board.id, status: board.status });
 }
 
+// The ways in that have an id and a secret, and the session's key, made from every secret: a way in
+// added or taken away signs everyone out once.
 export function environment(vars) {
+  const providers = {};
+  for (const name of Object.keys(PROVIDERS)) {
+    const id = vars[`${name.toUpperCase()}_CLIENT_ID`] || "";
+    const secret = vars[`${name.toUpperCase()}_CLIENT_SECRET`] || "";
+    if (id && secret) providers[name] = { id, secret };
+  }
   return {
-    clientId: vars.GITHUB_CLIENT_ID || "",
-    clientSecret: vars.GITHUB_CLIENT_SECRET || "",
+    providers,
+    secret: Object.keys(providers).map((name) => providers[name].secret).join("\n"),
     admins: (vars.MADE_ADMINS || "ThyFriendlyFox").split(",").map((a) => a.trim()).filter(Boolean),
   };
 }

@@ -697,7 +697,25 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
         assert f'"{key}"' in json.dumps(re.findall(r"data-(\w+)=", " ".join(cards)))
     for word in ("Sign in", "Upload", "Remove ads", "Become a Supporter"):
         assert word not in text, f"the gallery draws {word}, which it does not have"
-    assert 'href="/api/auth?do=login" data-login hidden>Log In</a>' in text, "Log In shows once the API says"
+    assert '<button class="made-login" type="button" data-login hidden>Log In</button>' in text, (
+        "Log In shows once the API says"
+    )
+    # Log In offers Google, Microsoft and GitHub, in the owner's order, each shown once the API offers it.
+    ways = re.findall(
+        r'href="/api/auth\?do=login&amp;with=(\w+)" data-with="\1" hidden>.*?Log in with (\w+)</a>', text
+    )
+    assert ways == [("google", "Google"), ("microsoft", "Microsoft"), ("github", "GitHub")], ways
+    # The owner took these lines off the site (2026-11-27): "This doesn't need to be on the website at all".
+    for page in (SITE / "made.html", *sorted((SITE / "made").glob("*.html"))):
+        said = page.read_text(encoding="utf-8")
+        for gone in (
+            "built or tested",
+            "built it or tested",
+            "built this board",
+            "You order and pay",
+            "after its next run",
+        ):
+            assert gone not in said, (page.name, gone)
     assert '<link rel="canonical" href="%MADE%/">' in text
     assert '<a class="made-brand" href="https://made.via.computer/"' in text
     assert '<p class="brand"><a href="https://via.computer/"' in text

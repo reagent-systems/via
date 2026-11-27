@@ -3,7 +3,8 @@
 // boards: adding 1, and hiding, checking again, editing or taking down theirs. The boards' facts are
 // in each card's data-*; the likes, the account and the boards people added come from /api/auth and
 // /api/made (site/api/_made.js). Without this script the page shows the examples in the repository's
-// order; without the API it shows them with no likes and no Log In.
+// order; without the API it shows them with no likes and no Log In. Log In opens a dialog with a
+// button for each way in the API offers: Google, Microsoft and GitHub. Adding a board asks for GitHub.
 //
 // A board's page (made.via.computer/b/<name>, [data-thing]) has the same bar, and its own parts: the
 // pictures with their arrows and thumbnails, the tabs, the like and share buttons, and the Order
@@ -24,7 +25,7 @@
   const state = { sort: "likes", q: "", category: "", layers: "", multi: false };
   const thingBox = document.querySelector("[data-thing]");
   const onBoard = Boolean(thingBox);
-  const me = { configured: false, user: null, admin: false, liked: new Set() };
+  const me = { configured: false, providers: [], user: null, admin: false, liked: new Set() };
 
   const cards = () => [...grid.querySelectorAll(".thing")];
   const num = (card, key) => Number(card.dataset[key]) || 0;
@@ -78,8 +79,22 @@
     return data;
   };
 
-  const login = (next = "/") => {
-    location.href = `/api/auth?do=login&next=${encodeURIComponent(next)}`;
+  // The Log In dialog: a button for each way in the API offers, each back to `next`. `github` alone is
+  // for adding a board, which comes from the person's own repository on GitHub.
+  const login = (next = location.pathname + location.search, githubOnly = false) => {
+    const dialog = document.getElementById("made-login");
+    if (!dialog || !me.configured) return;
+    const why = dialog.querySelector("[data-login-why]");
+    why.textContent = githubOnly
+      ? "Adding a board takes a GitHub login, since your board comes from your own repository there."
+      : "You log in to like boards and to add your own.";
+    for (const a of dialog.querySelectorAll("[data-with]")) {
+      const way = a.dataset.with;
+      a.hidden = !me.providers.includes(way) || (githubOnly && way !== "github");
+      a.href = `/api/auth?do=login&with=${way}&next=${encodeURIComponent(next)}`;
+    }
+    for (const open of document.querySelectorAll("dialog[open]")) if (open !== dialog) open.close();
+    if (!dialog.open) dialog.showModal();
   };
 
   // ---------------------------------------------------------------- likes
@@ -181,7 +196,13 @@
   const load = async () => {
     try {
       const [who, data] = await Promise.all([api("/api/auth"), api("/api/made?do=boards")]);
-      Object.assign(me, { configured: who.configured, user: who.user, admin: who.admin, liked: new Set(data.liked || []) });
+      Object.assign(me, {
+        configured: who.configured,
+        providers: who.providers || [],
+        user: who.user,
+        admin: who.admin,
+        liked: new Set(data.liked || []),
+      });
       for (const card of cards()) if (num(card, "order") >= 1000) card.remove();
       const here = thingBox?.dataset.thing;
       (data.boards || []).filter((b) => b.id !== here).forEach((b, i) => grid.append(added(b, i)));
@@ -213,7 +234,6 @@
         avatar.alt = me.user.login;
       }
     }
-    if (loginLink) loginLink.href = `/api/auth?do=login&next=${encodeURIComponent(location.pathname)}`;
   };
 
   const STATES = {
@@ -273,6 +293,7 @@
 
   const openAdd = (board) => {
     if (!me.user) return login("/#add-board");
+    if (!board && me.user.provider !== "github") return login("/#add-board", true);
     addForm.reset();
     addForm.dataset.edit = board ? board.id : "";
     addDialog.querySelector("[data-add-title]").textContent = board ? `Edit ${board.name}` : "Add your board";
@@ -388,7 +409,6 @@
   // The Gerbers show in the Order menu and the Files tab once the check workflow has made them.
   const gerbers = (ready) => {
     for (const el of document.querySelectorAll("[data-gerbers], [data-gerbers-row]")) el.hidden = !ready;
-    for (const el of document.querySelectorAll("[data-gerbers-wait]")) el.hidden = ready;
   };
 
   const RAW = "https://raw.githubusercontent.com/";
@@ -520,6 +540,7 @@
       navigator.clipboard?.writeText(d.copyLink).then(done, () => {});
       return;
     } else if ("like" in d) return like(button);
+    else if ("login" in d) return login();
     else if ("openMine" in d) {
       closeMenus();
       return openMine();

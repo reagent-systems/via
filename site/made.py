@@ -10,7 +10,8 @@ and a grid of cards, each a picture with its dots, the name, a count, a menu, th
 Every control does what it says with the boards' own facts (site/made.js): the orders are by likes,
 age, parts, layers and size, the dropdown and the filters pick by layers, category and boards.
 
-Then, at the owner's word ("im asking you already to implement it"): a person logs in with GitHub,
+Then, at the owner's word ("im asking you already to implement it"): a person logs in with Google,
+Microsoft or GitHub (the owner's word, 2026-11-27),
 likes boards, adds a board from 1 of their own public repositories and manages theirs under "My
 boards" (site/api/_made.js). A board added there is listed once Via's checks say GREEN and an admin
 has looked at it; made.js draws its card from /api/made like the examples' cards here. This script
@@ -48,7 +49,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
 sys.path.insert(0, str(SITE))
 
-from frame import LOGO, REPO, shell  # noqa: E402
+from frame import GH_PATH, LOGO, REPO, shell  # noqa: E402
 
 from examples import GATES, OUT, Example, draw_board, examples, inline, mm, pictures_size  # noqa: E402
 
@@ -114,6 +115,24 @@ SHARE = icon(
     '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/>'
 )
 OUTSIDE = icon('<path d="M14 5h5v5M19 5l-8 8M17 14v5H5V7h5"/>')
+# The 3 ways in, each with its own mark, in the owner's order: Google, Microsoft, GitHub.
+WAYS_IN = (
+    (
+        "google",
+        "Google",
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5a5.6 5.6 0 0 1-2.4 3.6v3h3.9c2.3-2.1 3.5-5.2 3.5-8.8z"/>'
+        '<path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-2.9l-3.9-3c-1.1.7-2.5 1.2-4.1 1.2-3.1 0-5.8-2.1-6.7-5H1.3v3.1A12 12 0 0 0 12 24z"/>'
+        '<path fill="#FBBC05" d="M5.3 14.3a7.2 7.2 0 0 1 0-4.6V6.6h-4a12 12 0 0 0 0 10.8l4-3.1z"/>'
+        '<path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4A11.6 11.6 0 0 0 12 0 12 12 0 0 0 1.3 6.6l4 3.1c.9-2.9 3.6-4.9 6.7-4.9z"/></svg>',
+    ),
+    (
+        "microsoft",
+        "Microsoft",
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#F25022" d="M1 1h10.5v10.5H1z"/><path fill="#7FBA00" d="M12.5 1H23v10.5H12.5z"/>'
+        '<path fill="#00A4EF" d="M1 12.5h10.5V23H1z"/><path fill="#FFB900" d="M12.5 12.5H23V23H12.5z"/></svg>',
+    ),
+    ("github", "GitHub", f'<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="{GH_PATH}"/></svg>'),
+)
 FUNNEL = icon('<path d="M4 5h16l-6 7.5V19l-4-2v-4.5L4 5z"/>')
 KEBAB = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>'
 MOON = icon('<path d="M20.2 14.6A8.4 8.4 0 1 1 9.4 3.8a6.6 6.6 0 0 0 10.8 10.8Z"/>').replace(
@@ -266,6 +285,10 @@ def bar(things: list[Thing]) -> str:
         for c, n in sorted(counts.items())
     )
     logo = LOGO.replace(" data-logo", "")
+    ways = "\n".join(
+        f'            <a class="made-login-with" href="/api/auth?do=login&amp;with={key}" data-with="{key}" hidden>{mark}Log in with {name}</a>'
+        for key, name, mark in WAYS_IN
+    )
     return f"""    <header class="made-bar">
       <div class="made-bar-in">
         <a class="made-brand" href="{GALLERY}" aria-label="Made with Via, all the boards">
@@ -298,7 +321,7 @@ def bar(things: list[Thing]) -> str:
         <div class="made-end">
           <a class="made-out" href="{HOME}guide">Get Via</a>
           <a class="made-home" href="{HOME}">via.computer</a>
-          <a class="made-login" href="/api/auth?do=login" data-login hidden>Log In</a>
+          <button class="made-login" type="button" data-login hidden>Log In</button>
           <details class="made-drop made-me" data-me hidden>
             <summary aria-label="Your account"><img data-avatar alt="" width="32" height="32"></summary>
             <ul>
@@ -313,6 +336,17 @@ def bar(things: list[Thing]) -> str:
           </button>
         </div>
       </div>
+      <dialog class="made-dialog made-login-dialog" id="made-login" aria-labelledby="made-login-title">
+        <div class="made-dialog-head">
+          <h2 id="made-login-title">Log in</h2>
+          <button type="button" class="made-quiet" data-close>Close</button>
+        </div>
+        <p class="made-hint" data-login-why>You log in to like boards and to add your own.</p>
+        <div class="made-login-list">
+{ways}
+        </div>
+        <p class="made-hint made-login-note">We keep the name and picture it gives us, to show next to your boards. Adding a board takes a GitHub login, since your board comes from your own repository there.</p>
+      </dialog>
     </header>
 """
 
@@ -370,9 +404,8 @@ def made_page(green: list[Example], waiting: list[Example], things: list[Thing])
       <section class="made-add" id="add" aria-labelledby="add-title">
         <div class="made-wrap">
           <h2 id="add-title">Adding your board</h2>
-          <p>You log in with GitHub and add a board from one of your public repositories. Via's checks run on it in GitHub Actions, and once it passes and we've had a look, it shows up here with the others. You can hide it, check it again or take it down from "My boards". We'd also like to see what you're making in <a class="link" href="{DISCORD}">our Discord</a>.</p>
+          <p>You log in with GitHub and add a board from one of your public repositories. Logging in with Google or Microsoft lets you like boards. Via's checks run on it in GitHub Actions, and once it passes and we've had a look, it shows up here with the others. You can hide it, check it again or take it down from "My boards". We'd also like to see what you're making in <a class="link" href="{DISCORD}">our Discord</a>.</p>
           <p>The first boards here are ours.{later}</p>
-          <p>A board here passed Via's checks on its design files. That doesn't mean anyone has built it or tested it.</p>
         </div>
       </section>
 
@@ -456,8 +489,6 @@ def order_menu(board_id: str, kicad: list[tuple[str, str]]) -> str:
                 <div class="made-fab-name"><b>OSH Park</b><small>Takes the KiCad board file as it is, so its order page opens with this board in it.{several}</small></div>
                 <div class="made-fab-do" data-osh-list>{osh}</div>
               </div>{fabs}
-              <p class="made-order-note" data-gerbers-wait>JLCPCB and PCBWay take Gerbers, which Via's check makes from the board file in GitHub Actions. You'll find them here after its next run; until then, the fab's page takes the zip you make in KiCad.</p>
-              <p class="made-order-note">You order and pay on the fab's own site. Via checked the design files. That doesn't mean anyone has built this board or tested it.</p>
             </div>
           </details>"""
 
@@ -592,7 +623,6 @@ def board_page(t: Thing, others: list[Thing], top: str) -> str:
             {facts}
             <h2 id="its-story">Its story</h2>
             <p>Its page on via.computer lets you turn it in 3D, follow every track and read how it came together, step by step. <a class="link" href="{t.story}">{name} on via.computer</a></p>
-            <p class="made-thing-note">Via checked the design files. That doesn't mean anyone has built this board or tested it.</p>
           </div>
         </section>
         <section class="made-tab" id="panel-files" role="tabpanel" aria-labelledby="tab-files" hidden>
@@ -660,7 +690,6 @@ def added_page(things: list[Thing], top: str) -> str:
             <p data-summary></p>
             <h2 id="the-board">The board</h2>
             <table class="made-table"><tbody data-facts></tbody></table>
-            <p class="made-thing-note">Via checked the design files. That doesn't mean anyone has built this board or tested it.</p>
           </div>
         </section>
         <section class="made-tab" id="panel-files" role="tabpanel" aria-labelledby="tab-files" hidden>
