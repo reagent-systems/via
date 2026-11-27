@@ -368,7 +368,8 @@ def installer_command(src: Path | str) -> str:
     Linux: tools/guide.py:834, `sudo <src>/install.sh`. macOS: install-macos.sh, which asks before it
     uses sudo itself (winmac plan, piece E). Windows: install.ps1 run by Windows PowerShell, which every
     Windows 10 and 11 has (winmac plan, piece F2); the path is in double quotes, which cmd.exe and
-    PowerShell both read and which no Windows file name holds. Neither script exists yet."""
+    PowerShell both read and which no Windows file name holds. Both scripts sit at the checkout's root;
+    neither has run on its system yet."""
     if _windows():
         script = str(src).rstrip("\\/") + "\\install.ps1"
         return f'powershell -NoProfile -ExecutionPolicy Bypass -File "{script}"'

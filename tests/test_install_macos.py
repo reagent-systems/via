@@ -223,7 +223,7 @@ def test_the_pins_parse_and_name_every_file_with_its_checksum():
     assert d["python"]["version"] == "3.12"
     assert d["java"]["version"].startswith("21.")
     files = files_of(d)
-    assert len(files) == 8, files
+    assert len(files) == 9, files  # KiCad 2, ngspice, Java 3, the jar, Python, 7-Zip (Windows)
     for f in files:
         assert f["url"].startswith("https://"), f
         assert SHA.match(f["sha256"]), f

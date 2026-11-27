@@ -64,6 +64,8 @@ tests/test_hostos.py,desktop,"the platform layer: every difference between Linux
 tests/test_image.py,linux,the Linux container image
 tests/test_inspect.py,posix,not on the desktop list; not run on Windows yet
 tests/test_install_apt.py,linux,install.sh's apt step on Ubuntu
+tests/test_install_macos.py,posix,"it runs install-macos.sh in bash with stand-in programs that it writes by hand"
+tests/test_install_windows.py,desktop,"install.ps1, workcenter.cmd and their pins, read as text; not proved off Windows: install.ps1's own dry run, which needs Windows, and its parse, which needs pwsh"
 tests/test_java.py,linux,"its stand-in javas are shell scripts; the JDK layouts of macOS and Windows are held there by fixtures on Linux"
 tests/test_kicadchild.py,desktop,"design --route's pour stitching, run as a child under KiCad's own Python; not proved off Linux: the in-process byte test, which needs pcbnew in Via's venv"
 tests/test_kicadgen.py,desktop,design: the generator behind workcenter design

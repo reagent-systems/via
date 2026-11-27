@@ -1,6 +1,7 @@
 {
   "about": [
-    "The pins the 2 desktop installers read: install-macos.sh, and the Windows installer.",
+    "The pins the 2 desktop installers read: install-macos.sh (each tool's 'macos' entry) and install.ps1",
+    "(each tool's 'windows_x64' entry, the tool's 'version' when the entry has none, and 'freerouting').",
     "Each URL and each SHA256 is named here only (tests/test_install_macos.py holds this), except the",
     "FreeRouting jar's SHA256, which install.sh names too and the test holds equal.",
     "Each 'source' says where the value was read on 2026-11-27. A 'hashed' source means: the file was",
@@ -24,8 +25,9 @@
       "mirror": "https://github.com/KiCad/kicad-source-mirror/releases/download/10.0.8/kicad-10.0.8-x86_64.exe",
       "sha256": "5652b9ed52fca4aa63ec2ec61c8bfd4fab4f6a2fbfdb441def2972b0e9b2dfc7",
       "bytes": 969079176,
-      "user_switch": "/currentuser",
-      "source": "downloads.kicad.org/kicad/windows/explore/stable; hashed from the url; the same SHA256 and the user switch in winget-pkgs manifests/k/KiCad/KiCad/10.0.8/KiCad.KiCad.installer.yaml"
+      "winget_id": "KiCad.KiCad",
+      "user_switches": "/S /currentuser",
+      "source": "downloads.kicad.org/kicad/windows/explore/stable; hashed from the url; the same SHA256 and the user switch in winget-pkgs manifests/k/KiCad/KiCad/10.0.8/KiCad.KiCad.installer.yaml (x64, Scope user)"
     }
   },
   "ngspice": {
@@ -33,10 +35,11 @@
     "macos_formula": "ngspice",
     "windows_x64": {
       "file": "ngspice-47_64.7z",
-      "url": "https://sourceforge.net/projects/ngspice/files/ng-spice-rework/47/ngspice-47_64.7z/download",
+      "url": "https://downloads.sourceforge.net/project/ngspice/ng-spice-rework/47/ngspice-47_64.7z",
       "sha256": "59225971bd68cdd1199443649aa4615a9e6d684933f205ab49006a3942518f5a",
       "bytes": 13814879,
-      "source": "hashed from the url (SourceForge, the ngspice project's own file area); the macOS version from formulae.brew.sh/api/formula/ngspice.json (stable 47)"
+      "exe": "Spice64/bin/ngspice_con.exe",
+      "source": "sourceforge.net/projects/ngspice/files/ng-spice-rework/47/ (the sha256 the page lists, read 2026-11-27); the archive it served hashed to the same SHA256 and names Spice64/bin/ngspice_con.exe; the macOS version from formulae.brew.sh/api/formula/ngspice.json (stable 47)"
     }
   },
   "java": {
@@ -57,7 +60,8 @@
       "file": "OpenJDK21U-jre_x64_windows_hotspot_21.0.13.1_2.zip",
       "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jre_x64_windows_hotspot_21.0.13.1_2.zip",
       "sha256": "e15ee1e54a5a3b38027a09cedfa87bc3348d7dd3ce50866dd3d9671d7fffc6c1",
-      "bytes": 49108427
+      "bytes": 49108427,
+      "folder": "jdk-21.0.13.1+2-jre"
     },
     "source": "Eclipse Temurin 21 JRE: api.adoptium.net/v3/assets/latest/21/hotspot?image_type=jre (link, checksum and size of each package)"
   },
@@ -77,7 +81,19 @@
       "url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe",
       "sha256": "67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb",
       "bytes": 26964224,
-      "source": "python.org/downloads/release/python-31210 (Windows installer, 64-bit; the page gives no SHA256, only sigstore); hashed from the url"
+      "winget_id": "Python.Python.3.12",
+      "user_switches": "/quiet InstallAllUsers=0 InstallLauncherAllUsers=0 PrependPath=0 Include_test=0",
+      "source": "python.org/downloads/release/python-31210 (Windows installer, 64-bit; the page gives no SHA256, only sigstore); hashed from the url; winget-pkgs manifests/p/Python/Python/3/12/3.12.10/Python.Python.3.12.installer.yaml, x64 Scope user; InstallLauncherAllUsers=0 because python/cpython v3.12.10 Tools/msi/bundle/bundle.wxs:31 defaults it to -1 and packagegroups/launcher.wxs installs launcher_AllUsers per machine when it is set"
+    }
+  },
+  "sevenzip": {
+    "version": "26.06",
+    "windows_x64": {
+      "file": "7zr.exe",
+      "url": "https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe",
+      "sha256": "e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc",
+      "bytes": 600064,
+      "source": "www.7-zip.org/download.html links this 7zr.exe for 7-Zip 26.06 (2026-11-06); the SHA256 is of the 600064-byte file that URL served on 2026-11-27 (the page gives none)"
     }
   },
   "homebrew": {
