@@ -697,7 +697,27 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
         assert f'"{key}"' in json.dumps(re.findall(r"data-(\w+)=", " ".join(cards)))
     for word in ("Sign in", "Upload", "Remove ads", "Become a Supporter"):
         assert word not in text, f"the gallery draws {word}, which it does not have"
-    assert 'href="/api/auth?do=login" data-login hidden>Log In</a>' in text, "Log In shows once the API says"
+    # Log In is a profile icon in the bar (the owner's word, 2026-11-27), shown once the API says.
+    assert (
+        '<button class="made-login" type="button" data-login aria-label="Log in" title="Log in" hidden><svg'
+        in text
+    )
+    # Log In offers Google, Microsoft and GitHub, in the owner's order, each shown once the API offers it.
+    ways = re.findall(
+        r'href="/api/auth\?do=login&amp;with=(\w+)" data-with="\1" hidden>.*?Log in with (\w+)</a>', text
+    )
+    assert ways == [("google", "Google"), ("microsoft", "Microsoft"), ("github", "GitHub")], ways
+    # The owner took these lines off the site (2026-11-27): "This doesn't need to be on the website at all".
+    for page in (SITE / "made.html", *sorted((SITE / "made").glob("*.html"))):
+        said = page.read_text(encoding="utf-8")
+        for gone in (
+            "built or tested",
+            "built it or tested",
+            "built this board",
+            "You order and pay",
+            "after its next run",
+        ):
+            assert gone not in said, (page.name, gone)
     assert '<link rel="canonical" href="%MADE%/">' in text
     assert '<a class="made-brand" href="https://made.via.computer/"' in text
     assert '<p class="brand"><a href="https://via.computer/"' in text
@@ -710,13 +730,15 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
     assert "rewrites" not in host
     middleware = (SITE / "middleware.js").read_text(encoding="utf-8")
     assert 'export const GALLERY = "made.via.computer";' in middleware
-    assert 'export const config = { matcher: ["/", "/b/:path*"] };' in middleware
+    assert 'export const config = { matcher: ["/", "/b/:path*", "/u/:path*"] };' in middleware
     if shutil.which("node") and (SITE / "node_modules" / "@vercel" / "functions").is_dir():
         script = (
             "const { default: mw } = await import(process.argv[1]);"
             "const asked = [['made.via.computer', '/'], ['via.computer', '/'], ['MADE.via.computer', '/'],"
             " ['made.via.computer', '/b/hush'], ['made.via.computer', '/b/0a1b2c3d4e5f'],"
-            " ['made.via.computer', '/b/..%2Fx'], ['made.via.computer', '/b/Hush']];"
+            " ['made.via.computer', '/b/..%2Fx'], ['made.via.computer', '/b/Hush'],"
+            " ['made.via.computer', '/u/github-123'], ['made.via.computer', '/u/google-1098_x-Y'],"
+            " ['made.via.computer', '/u/bob'], ['made.via.computer', '/u/github-..%2Fx']];"
             "for (const [host, path] of asked) {"
             " const r = mw(new Request(`https://${host}${path}`, { headers: { host } }));"
             " console.log(host + path, r.headers.get('x-middleware-rewrite') ?? 'next'); }"
@@ -727,7 +749,7 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
             text=True,
             check=True,
         )
-        assert run.stdout.split("\n")[:7] == [
+        assert run.stdout.split("\n")[:11] == [
             "made.via.computer/ https://made.via.computer/made",
             "via.computer/ next",
             "MADE.via.computer/ https://made.via.computer/made",
@@ -735,6 +757,10 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
             "made.via.computer/b/0a1b2c3d4e5f https://made.via.computer/made/board",
             "made.via.computer/b/..%2Fx next",
             "made.via.computer/b/Hush next",
+            "made.via.computer/u/github-123 https://made.via.computer/made/profile",
+            "made.via.computer/u/google-1098_x-Y https://made.via.computer/made/profile",
+            "made.via.computer/u/bob next",
+            "made.via.computer/u/github-..%2Fx next",
         ], run.stdout
     assert {
         "source": "/made",
@@ -745,13 +771,13 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
     # made.via.computer is only the gallery (the owner's word, 2026-11-26): every other page path
     # there goes to via.computer. A file the gallery loads has a dot, and the root has no path.
     only = {
-        "source": "/:path((?!_vercel/|api/|b/)[^.]+)",
+        "source": "/:path((?!_vercel/|api/|b/|u/)[^.]+)",
         "has": [{"type": "host", "value": "made.via.computer"}],
         "destination": "https://via.computer/:path*",
         "permanent": False,
     }
     assert only in host["redirects"]
-    pattern = re.compile(r"(?!_vercel/|api/|b/)[^.]+")
+    pattern = re.compile(r"(?!_vercel/|api/|b/|u/)[^.]+")
     for path in ("blog", "examples/hush", "guide", "made", "bob"):
         assert pattern.fullmatch(path), path
     for path in (
@@ -763,8 +789,19 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
         "api/auth",
         "api/made",
         "b/hush",
+        "u/github-123",
     ):
         assert not pattern.fullmatch(path), path
+    # Every page of the gallery has the bar's 3 dialogs once (logging in, adding a board, "My
+    # boards"), and the profile its own page, which made.js fills (the owner's word, 2026-11-27).
+    for page in (SITE / "made.html", *sorted((SITE / "made").glob("*.html"))):
+        said = page.read_text(encoding="utf-8")
+        for dialog in ("made-login", "made-add", "made-mine"):
+            assert said.count(f'id="{dialog}"') == 1, (page.name, dialog)
+        assert "data-my-profile" in said, page.name
+    profile = (SITE / "made" / "profile.html").read_text(encoding="utf-8")
+    assert "data-profile hidden" in profile and "<template data-example-cards>" in profile
+    assert 'id="made-profile-edit"' in profile and 'name="bio" maxlength="280"' in profile
     # What a page of the gallery loads from its own address has a dot; its other links are the API,
     # a board's page (/b/<name>), the site's root or another address.
     for page in (SITE / "made.html", *sorted((SITE / "made").glob("*.html"))):
@@ -784,7 +821,8 @@ def test_each_board_has_a_page_with_an_order_menu_from_the_fabs_own_pages():
     from urllib.parse import parse_qs, urlparse
 
     raw = "https://raw.githubusercontent.com/reagent-systems/via/main/"
-    pages = sorted(p for p in (SITE / "made").glob("*.html") if p.name != "board.html")
+    # Each example's page: not the 1 page of the boards people add, nor the 1 page of a profile.
+    pages = sorted(p for p in (SITE / "made").glob("*.html") if p.name not in ("board.html", "profile.html"))
     assert len(pages) >= 3
     for page in pages:
         text = page.read_text(encoding="utf-8")

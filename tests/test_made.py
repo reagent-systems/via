@@ -69,7 +69,10 @@ const good = {
 // GitHub, as each scenario wants it.
 const people = { a: { id: 101, login: "Alice", name: "Alice A", avatar_url: "https://avatars.githubusercontent.com/u/101?v=4" },
                  b: { id: 202, login: "bob", name: "", avatar_url: "https://avatars.githubusercontent.com/u/202?v=4" },
-                 o: { id: 1, login: "ThyFriendlyFox", name: "Owner", avatar_url: "" } };
+                 o: { id: 1, login: "ThyFriendlyFox", name: "Owner", avatar_url: "" },
+                 // A Google account that calls itself the admin's GitHub login, and a Microsoft one.
+                 g: { sub: "1098765432109876543", name: "ThyFriendlyFox", picture: "https://lh3.googleusercontent.com/a/x", email: "g@example.com" },
+                 ms: { sub: "AAAAAAAAAAAAAAAAAAAAAK-xyz_123", name: "Mia Soft", preferred_username: "mia@example.com" } };
 let who = "a";
 const repos = { "Alice/lamp": { private: false, default_branch: "trunk", license: { spdx_id: "CERN-OHL-S-2.0" } },
                 "Alice/secret": { private: true } };
@@ -81,6 +84,22 @@ const net = {
       return Response.json(sent.code === "good" ? { access_token: "gho_test" } : { error: "bad_verification_code" });
     }
     if (u === "https://api.github.com/user") return Response.json(people[who]);
+    // Google and Microsoft take the code as a form, with grant_type, and answer a profile by `sub`.
+    for (const [token, profile, prefix] of [
+      ["https://oauth2.googleapis.com/token", "https://openidconnect.googleapis.com/v1/userinfo", "ya29"],
+      ["https://login.microsoftonline.com/common/oauth2/v2.0/token", "https://graph.microsoft.com/oidc/userinfo", "eyJ0"],
+    ]) {
+      if (u === token) {
+        const sent = new URLSearchParams(init.body);
+        const ok = init.headers["content-type"] === "application/x-www-form-urlencoded" && sent.get("grant_type") === "authorization_code"
+          && sent.get("code") === "good" && sent.get("redirect_uri") === "https://made.via.computer/api/auth" && sent.get("client_secret");
+        return Response.json(ok ? { access_token: `${prefix}_test`, id_token: "x.y.z" } : { error: "invalid_grant" });
+      }
+      if (u === profile) {
+        if (init.headers.authorization !== `Bearer ${prefix}_test`) return new Response("{}", { status: 401 });
+        return Response.json(people[who]);
+      }
+    }
     if (u.startsWith("https://api.github.com/repos/")) {
       // GitHub finds a repository by its name in any case.
       const asked = u.slice("https://api.github.com/repos/".length).toLowerCase();
@@ -91,7 +110,12 @@ const net = {
     throw new Error(`no such address in the test: ${u}`);
   },
 };
-const env = m.environment({ GITHUB_CLIENT_ID: "cid", GITHUB_CLIENT_SECRET: "csecret", MADE_ADMINS: "ThyFriendlyFox" });
+const env = m.environment({
+  GITHUB_CLIENT_ID: "cid", GITHUB_CLIENT_SECRET: "csecret",
+  GOOGLE_CLIENT_ID: "gid", GOOGLE_CLIENT_SECRET: "gsecret",
+  MICROSOFT_CLIENT_ID: "mid", MICROSOFT_CLIENT_SECRET: "msecret",
+  MADE_ADMINS: "ThyFriendlyFox",
+});
 const ctx = { env, store, net, now };
 const sessions = {};
 
@@ -112,9 +136,9 @@ const call = async (handler, method, path, { as, body, origin, bearer, cookie, e
            cookies: response.headers.getSetCookie?.() || [], headers: Object.fromEntries(response.headers) };
 };
 
-const signIn = async (person) => {
+const signIn = async (person, way = "github") => {
   who = person;
-  const start = await call("auth", "GET", "/api/auth?do=login&next=/%23mine");
+  const start = await call("auth", "GET", `/api/auth?do=login&with=${way}&next=/%23mine`);
   const state = new URL(start.location).searchParams.get("state");
   const stateCookie = start.cookies.find((c) => c.startsWith("made_state=")).split(";")[0];
   const back = await call("auth", "GET", `/api/auth?code=good&state=${state}`, { cookie: stateCookie });
@@ -133,9 +157,33 @@ await step("callback_bad_state", () => call("auth", "GET", "/api/auth?code=good&
 await step("signin_a", () => signIn("a"));
 await step("me_a", () => call("auth", "GET", "/api/auth", { as: "a" }));
 await step("me_tampered", () => call("auth", "GET", "/api/auth", { cookie: `${m.SESSION}=${sessions.a.replace(/.$/, (c) => (c === "A" ? "B" : "A"))}` }));
-await step("user_a", () => store.get("made/users/101.json"));
+await step("user_a", () => store.get("made/users/github-101.json"));
 await signIn("b");
 await signIn("o");
+
+// Google and Microsoft: where each login sends the person, who they are after, and what they may do.
+await step("login_google", () => call("auth", "GET", "/api/auth?do=login&with=google&next=/b/hush"));
+await step("login_microsoft", () => call("auth", "GET", "/api/auth?do=login&with=microsoft"));
+await step("login_nowhere", () => call("auth", "GET", "/api/auth?do=login&with=myspace"));
+await step("login_google_off", () => call("auth", "GET", "/api/auth?do=login&with=google", { envOver: m.environment({ GITHUB_CLIENT_ID: "c", GITHUB_CLIENT_SECRET: "s" }) }));
+await step("me_github_only", () => call("auth", "GET", "/api/auth", { envOver: m.environment({ GITHUB_CLIENT_ID: "c", GITHUB_CLIENT_SECRET: "s" }) }));
+await step("signin_g", () => signIn("g", "google"));
+await step("signin_ms", () => signIn("ms", "microsoft"));
+await step("me_g", () => call("auth", "GET", "/api/auth", { as: "g" }));
+await step("me_ms", () => call("auth", "GET", "/api/auth", { as: "ms" }));
+await step("user_g", () => store.get("made/users/google-1098765432109876543.json"));
+await step("like_g", () => call("made", "POST", "/api/made?do=like", { as: "g", body: { board: "ex-lark" } }));
+await step("add_g", () => call("made", "POST", "/api/made?do=add", { as: "g", body: { repo: "ThyFriendlyFox/lamp", name: "Lamp" } }));
+await step("review_g", () => call("made", "GET", "/api/made?do=review", { as: "g" }));
+// A login the person cancels at the provider: back where they were, with no session.
+const cancelStart = await call("auth", "GET", "/api/auth?do=login&with=microsoft&next=/b/lark");
+const cancelState = new URL(cancelStart.location).searchParams.get("state");
+const cancelCookie = cancelStart.cookies.find((c) => c.startsWith("made_state=")).split(";")[0];
+await step("cancelled", () => call("auth", "GET", `/api/auth?error=access_denied&state=${cancelState}`, { cookie: cancelCookie }));
+// A state cookie of 1 way in does not finish another's.
+const crossStart = await call("auth", "GET", "/api/auth?do=login&with=google");
+const crossState = new URL(crossStart.location).searchParams.get("state");
+await step("cross", () => call("auth", "GET", `/api/auth?code=good&state=${crossState}`, { cookie: `made_state=${crossState}.myspace.Lw` }));
 
 await step("like_out", () => call("made", "POST", "/api/made?do=like", { body: { board: "ex-hush" } }));
 await step("like_a", () => call("made", "POST", "/api/made?do=like", { as: "a", body: { board: "ex-hush" } }));
@@ -189,6 +237,18 @@ await step("boards_listed", () => call("made", "GET", "/api/made?do=boards", { a
 await step("like_listed", () => call("made", "POST", "/api/made?do=like", { as: "b", body: { board: id } }));
 await step("picture", () => call("made", "GET", `/api/made?do=picture&id=${id}`));
 await step("board_listed", () => call("made", "GET", `/api/made?do=board&id=${id}`, { as: "b" }));
+
+// A person's profile: what others see, what they see of their own, and their edit of it.
+await step("profile_by_b", () => call("made", "GET", "/api/made?do=profile&id=github-101", { as: "b" }));
+await step("profile_out", () => call("made", "GET", "/api/made?do=profile&id=github-101"));
+await step("profile_own", () => call("made", "GET", "/api/made?do=profile&id=github-101", { as: "a" }));
+await step("profile_unknown", () => call("made", "GET", "/api/made?do=profile&id=github-999"));
+await step("profile_bad", () => call("made", "GET", "/api/made?do=profile&id=../made/users/github-101"));
+await step("profile_edit_out", () => call("made", "POST", "/api/made?do=profile", { body: { name: "Mallory" } }));
+await step("profile_edit_other_site", () => call("made", "POST", "/api/made?do=profile", { as: "a", origin: "https://evil.example", body: { name: "Mallory" } }));
+await step("profile_edit", () => call("made", "POST", "/api/made?do=profile&id=github-202", { as: "a", body: { name: "  Alice Anders  ", bio: "b".repeat(400) } }));
+await step("profile_after_edit", () => call("made", "GET", "/api/made?do=profile&id=github-101"));
+await step("profile_bob_after", () => call("made", "GET", "/api/made?do=profile&id=github-202"));
 
 // The Gerbers: the workflow takes an example when no board waits, uploads its zip, and the page
 // offers it; a file the workflow did not make, or from no workflow, is refused.
@@ -249,7 +309,12 @@ def run() -> dict:
 
 @needs_node
 def test_sign_in_is_github_with_a_state_and_a_signed_session(run):
-    assert run["me_out"]["data"] == {"configured": True, "user": None, "admin": False}
+    assert run["me_out"]["data"] == {
+        "configured": True,
+        "providers": ["google", "microsoft", "github"],
+        "user": None,
+        "admin": False,
+    }
     assert run["me_off"]["data"]["configured"] is False
     assert run["login_off"]["status"] == 503
     login = run["login"]
@@ -268,11 +333,71 @@ def test_sign_in_is_github_with_a_state_and_a_signed_session(run):
     session = next(c for c in back["cookies"] if c.startswith("made_session="))
     assert "HttpOnly" in session and "Secure" in session and "Max-Age=2592000" in session
     me = run["me_a"]["data"]
-    assert me["user"]["login"] == "Alice" and me["user"]["id"] == "101" and me["admin"] is False
+    assert me["user"]["login"] == "Alice" and me["user"]["id"] == "github-101" and me["admin"] is False
+    assert me["user"]["provider"] == "github"
     assert run["me_tampered"]["data"]["user"] is None
     # GitHub's token is used once and never kept.
     assert "gho_test" not in json.dumps(run["user_a"]) and run["user_a"]["login"] == "Alice"
     assert run["logout"]["status"] == 200 and any("Max-Age=0" in c for c in run["logout"]["cookies"])
+
+
+@needs_node
+def test_sign_in_with_google_and_microsoft_by_their_own_endpoints(run):
+    """The owner's word (2026-11-27): "login with google and login with microsoft and login with
+    github". Each way in sends the person to its own authorize endpoint (its OpenID Connect discovery
+    document's) asking for the name and picture only, takes the code back as a form, and is an account
+    of its own. A way in with no id and secret is not offered."""
+    from urllib.parse import parse_qs, urlparse
+
+    google = urlparse(run["login_google"]["location"])
+    assert f"{google.scheme}://{google.netloc}{google.path}" == "https://accounts.google.com/o/oauth2/v2/auth"
+    asked = parse_qs(google.query)
+    assert (
+        asked["client_id"] == ["gid"]
+        and asked["response_type"] == ["code"]
+        and asked["scope"] == ["openid profile"]
+    )
+    assert asked["redirect_uri"] == ["https://made.via.computer/api/auth"], "1 callback for every way in"
+    microsoft = urlparse(run["login_microsoft"]["location"])
+    assert f"{microsoft.scheme}://{microsoft.netloc}{microsoft.path}" == (
+        "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+    )
+    asked = parse_qs(microsoft.query)
+    assert (
+        asked["client_id"] == ["mid"]
+        and asked["scope"] == ["openid profile"]
+        and asked["response_mode"] == ["query"]
+    )
+    assert "email" not in run["login_google"]["location"] + run["login_microsoft"]["location"]
+    assert run["login_nowhere"]["status"] == 404
+    assert run["login_google_off"]["status"] == 503
+    assert run["me_github_only"]["data"]["providers"] == ["github"]
+    g = run["me_g"]["data"]["user"]
+    assert g == {
+        "id": "google-1098765432109876543",
+        "provider": "google",
+        "login": "ThyFriendlyFox",
+        "avatar": "https://lh3.googleusercontent.com/a/x",
+    }
+    assert run["signin_g"]["back"]["location"] == "/#mine"
+    ms = run["me_ms"]["data"]["user"]
+    assert (
+        ms["id"] == "microsoft-AAAAAAAAAAAAAAAAAAAAAK-xyz_123"
+        and ms["login"] == "Mia Soft"
+        and ms["avatar"] == ""
+    )
+    # No email is kept, and no provider's token.
+    kept = json.dumps(run["user_g"])
+    assert "@" not in kept and "ya29" not in kept
+    # A Google account named as the admin's GitHub login is no admin; it likes, and it adds no board.
+    assert run["me_g"]["data"]["admin"] is False and run["review_g"]["status"] == 403
+    assert run["like_g"]["data"] == {"board": "ex-lark", "liked": True, "count": 1}
+    assert run["add_g"]["status"] == 403 and "GitHub login" in run["add_g"]["data"]["error"]
+    # Cancelled at the provider: back where they were, signed out; a state of no way in is refused.
+    cancelled = run["cancelled"]
+    assert cancelled["status"] == 302 and cancelled["location"] == "/b/lark"
+    assert not any(c.startswith("made_session=") and "Max-Age=0" not in c for c in cancelled["cookies"])
+    assert run["cross"]["status"] == 400
 
 
 @needs_node
@@ -285,7 +410,7 @@ def test_a_like_is_1_for_each_person_and_board(run):
     assert run["like_nothing"]["status"] == 404
     assert run["like_other_site"]["status"] == 403
     boards = run["boards_a"]["data"]
-    assert boards["likes"] == {"ex-hush": 1} and boards["liked"] == ["ex-hush"]
+    assert boards["likes"] == {"ex-hush": 1, "ex-lark": 1} and boards["liked"] == ["ex-hush"]
 
 
 @needs_node
@@ -385,6 +510,36 @@ def test_a_boards_page_reads_it_by_its_name_and_its_drawing_carries_its_colours(
 
 
 @needs_node
+def test_a_profile_shows_a_persons_boards_and_likes_and_they_edit_their_own(run):
+    """The owner's word (2026-11-27): "there needs to be a profile page". Anyone sees a person's name,
+    picture, line, listed boards and likes; the person also sees their boards' states, and edits their
+    own name and line, never another's."""
+    other = run["profile_by_b"]["data"]
+    assert run["profile_out"]["data"] == {**other, "myLiked": []}
+    person = other["person"]
+    assert person["id"] == "github-101" and person["name"] == "Alice" and person["github"] == "Alice"
+    assert person["first"] and person["bio"] == "" and other["own"] is False
+    assert [b["name"] for b in other["boards"]] == ["Desk lamp"] and "status" not in other["boards"][0]
+    assert other["liked"] == {"examples": ["ex-hush"], "boards": []}
+    assert other["counts"] == {"boards": 1, "likes": 1, "received": 1}, "bob liked the lamp"
+    # What bob, who is looking, likes: the lamp (he took back his like of Hush).
+    assert other["myLiked"] == [other["boards"][0]["id"]]
+    own = run["profile_own"]["data"]
+    assert (
+        own["own"] is True and own["boards"][0]["status"] == "green" and own["boards"][0]["approved"] is True
+    )
+    assert run["profile_unknown"]["status"] == 404 and run["profile_bad"]["status"] == 404
+    assert run["profile_edit_out"]["status"] == 401
+    assert run["profile_edit_other_site"]["status"] == 403
+    edited = run["profile_edit"]["data"]
+    assert edited["person"]["id"] == "github-101", "an edit is always of the person's own profile"
+    assert edited["person"]["name"] == "Alice Anders" and len(edited["person"]["bio"]) == 280
+    assert run["profile_after_edit"]["data"]["person"]["name"] == "Alice Anders"
+    assert run["profile_bob_after"]["data"]["person"]["name"] == "bob", "bob's profile is his own still"
+    assert run["profile_bob_after"]["data"]["person"]["github"] == "bob"
+
+
+@needs_node
 def test_the_workflow_makes_each_examples_gerbers_and_the_page_offers_them(run):
     assert run["file_none"]["status"] == 404
     assert run["upload_untaken"]["status"] == 409, "a zip comes only for an example the workflow took"
@@ -438,7 +593,7 @@ def test_a_person_hides_checks_again_and_takes_down_their_board(run):
             ("made/boards/", "made/pictures/", f"made/likes/{run['add']['data']['board']['id']}/")
         )
     ]
-    assert "made/likes/ex-hush/101" in left
+    assert "made/likes/ex-hush/github-101" in left
 
 
 @needs_node

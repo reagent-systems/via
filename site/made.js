@@ -3,15 +3,20 @@
 // boards: adding 1, and hiding, checking again, editing or taking down theirs. The boards' facts are
 // in each card's data-*; the likes, the account and the boards people added come from /api/auth and
 // /api/made (site/api/_made.js). Without this script the page shows the examples in the repository's
-// order; without the API it shows them with no likes and no Log In.
+// order; without the API it shows them with no likes and no Log In. Log In opens a dialog with a
+// button for each way in the API offers: Google, Microsoft and GitHub. Adding a board asks for GitHub.
 //
 // A board's page (made.via.computer/b/<name>, [data-thing]) has the same bar, and its own parts: the
 // pictures with their arrows and thumbnails, the tabs, the like and share buttons, and the Order
 // menu, whose Gerbers show once the check workflow has made them. A board someone added has 1 page,
 // which this script fills from /api/made by the name in the address.
+//
+// A person's profile (made.via.computer/u/<id>, [data-profile]) has the same bar too: this script
+// fills it from /api/made?do=profile with their picture, name, line, boards and likes; on their own
+// profile they edit their name and line and manage their boards.
 (() => {
-  const grid = document.querySelector("[data-grid]");
-  if (!grid) return;
+  // The gallery's grid, or a board page's "More boards"; a profile has grids of its own.
+  const grid = document.querySelector("[data-grid]") || document.createElement("div");
   const none = document.querySelector("[data-none]");
   const search = document.querySelector("[data-search]");
   const field = search?.querySelector("input");
@@ -24,7 +29,10 @@
   const state = { sort: "likes", q: "", category: "", layers: "", multi: false };
   const thingBox = document.querySelector("[data-thing]");
   const onBoard = Boolean(thingBox);
-  const me = { configured: false, user: null, admin: false, liked: new Set() };
+  const profileBox = document.querySelector("[data-profile]");
+  // On a page that is not the gallery, the bar's categories and search lead to the gallery.
+  const away = onBoard || Boolean(profileBox);
+  const me = { configured: false, providers: [], user: null, admin: false, liked: new Set() };
 
   const cards = () => [...grid.querySelectorAll(".thing")];
   const num = (card, key) => Number(card.dataset[key]) || 0;
@@ -78,8 +86,18 @@
     return data;
   };
 
-  const login = (next = "/") => {
-    location.href = `/api/auth?do=login&next=${encodeURIComponent(next)}`;
+  // The Log In dialog: a button for each way in the API offers, each back to `next`. `github` alone is
+  // for adding a board, which comes from the person's own repository on GitHub.
+  const login = (next = location.pathname + location.search, githubOnly = false) => {
+    const dialog = document.getElementById("made-login");
+    if (!dialog || !me.configured) return;
+    for (const a of dialog.querySelectorAll("[data-with]")) {
+      const way = a.dataset.with;
+      a.hidden = !me.providers.includes(way) || (githubOnly && way !== "github");
+      a.href = `/api/auth?do=login&with=${way}&next=${encodeURIComponent(next)}`;
+    }
+    for (const open of document.querySelectorAll("dialog[open]")) if (open !== dialog) open.close();
+    if (!dialog.open) dialog.showModal();
   };
 
   // ---------------------------------------------------------------- likes
@@ -113,9 +131,12 @@
 
   // ---------------------------------------------------------------- boards people added
 
-  const HEART = document.querySelector(".thing-like svg")?.outerHTML || "";
+  // The marks of a card the page drew, or of the examples' cards a profile holds in its template.
+  const drawn = (selector) =>
+    (document.querySelector(selector) || document.querySelector("[data-example-cards]")?.content.querySelector(selector))?.outerHTML;
+  const HEART = drawn(".thing-like svg") || "";
   const CHIP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>';
-  const KEBAB = document.querySelector(".thing-more summary svg")?.outerHTML || "⋮";
+  const KEBAB = drawn(".thing-more summary svg") || "⋮";
 
   // A GitHub avatar at a size: its address with s= set.
   const sized = (address, size) => {
@@ -171,7 +192,7 @@
       </div>
       <div class="thing-by">
         ${b.owner.avatar ? `<img class="thing-face" src="${esc(sized(b.owner.avatar, 80))}" alt="" width="40" height="40">` : `<span class="thing-face" aria-hidden="true">${esc(b.owner.login.slice(0, 2).toUpperCase())}</span>`}
-        <span class="thing-maker">${esc(b.owner.login)}</span>
+        <a class="thing-maker" href="/u/${esc(b.owner.id)}">${esc(b.owner.login)}</a>
         <span class="thing-state" title="${esc(b.verdict)}"><b>GREEN</b></span>
       </div>`;
     if (b.summary) article.querySelector("h2").title = b.summary;
@@ -181,7 +202,13 @@
   const load = async () => {
     try {
       const [who, data] = await Promise.all([api("/api/auth"), api("/api/made?do=boards")]);
-      Object.assign(me, { configured: who.configured, user: who.user, admin: who.admin, liked: new Set(data.liked || []) });
+      Object.assign(me, {
+        configured: who.configured,
+        providers: who.providers || [],
+        user: who.user,
+        admin: who.admin,
+        liked: new Set(data.liked || []),
+      });
       for (const card of cards()) if (num(card, "order") >= 1000) card.remove();
       const here = thingBox?.dataset.thing;
       (data.boards || []).filter((b) => b.id !== here).forEach((b, i) => grid.append(added(b, i)));
@@ -192,6 +219,7 @@
       account();
       show();
       if (onBoard) await board();
+      if (profileBox) await profile();
     } catch {
       // No API: the examples stay as the page drew them.
     }
@@ -205,6 +233,8 @@
     if (loginLink) loginLink.hidden = !me.configured || Boolean(me.user);
     if (menu) {
       menu.hidden = !me.user;
+      const mine = menu.querySelector("[data-my-profile]");
+      if (mine && me.user) mine.href = `/u/${encodeURIComponent(me.user.id)}`;
       const avatar = menu.querySelector("[data-avatar]");
       if (me.user && avatar) {
         const src = sized(me.user.avatar, 64);
@@ -213,7 +243,6 @@
         avatar.alt = me.user.login;
       }
     }
-    if (loginLink) loginLink.href = `/api/auth?do=login&next=${encodeURIComponent(location.pathname)}`;
   };
 
   const STATES = {
@@ -273,6 +302,7 @@
 
   const openAdd = (board) => {
     if (!me.user) return login("/#add-board");
+    if (!board && me.user.provider !== "github") return login("/#add-board", true);
     addForm.reset();
     addForm.dataset.edit = board ? board.id : "";
     addDialog.querySelector("[data-add-title]").textContent = board ? `Edit ${board.name}` : "Add your board";
@@ -388,7 +418,6 @@
   // The Gerbers show in the Order menu and the Files tab once the check workflow has made them.
   const gerbers = (ready) => {
     for (const el of document.querySelectorAll("[data-gerbers], [data-gerbers-row]")) el.hidden = !ready;
-    for (const el of document.querySelectorAll("[data-gerbers-wait]")) el.hidden = ready;
   };
 
   const RAW = "https://raw.githubusercontent.com/";
@@ -464,6 +493,103 @@
     }
   };
 
+
+  // ---------------------------------------------------------------- a person's profile
+
+  const profile = async () => {
+    const id = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
+    let data;
+    try {
+      data = await api(`/api/made?do=profile&id=${encodeURIComponent(id)}`);
+    } catch {
+      document.querySelector("[data-missing]").hidden = false;
+      return;
+    }
+    const p = data.person;
+    document.title = `${p.name} · Made with Via`;
+    const set = (sel, value) => {
+      const el = document.querySelector(sel);
+      if (el) el.textContent = value;
+    };
+    set("[data-name]", p.name);
+    set("[data-bio]", p.bio);
+    const joined = Date.parse(p.first);
+    set("[data-joined]", joined ? `Joined ${new Date(joined).toLocaleDateString("en-US", { month: "long", year: "numeric" })}` : "");
+    const face = document.querySelector("[data-face]");
+    const src = sized(p.avatar, 256);
+    if (src) {
+      face.src = src;
+      face.alt = p.name;
+      face.hidden = false;
+    } else {
+      set("[data-initials]", p.name.slice(0, 2).toUpperCase());
+      document.querySelector("[data-initials]").hidden = false;
+    }
+    const gh = document.querySelector("[data-github]");
+    if (p.github) {
+      gh.href = `https://github.com/${encodeURIComponent(p.github)}`;
+      gh.textContent = `@${p.github} on GitHub`;
+      gh.hidden = false;
+    }
+    set("[data-count-boards]", data.counts.boards);
+    set("[data-count-likes]", data.counts.likes);
+    set("[data-count-received]", data.counts.received);
+    document.querySelector("[data-own]").hidden = !data.own;
+    profileBox.hidden = false;
+    document.querySelector("[data-profile-body]").hidden = false;
+
+    // Their boards: a card for each listed one; on their own profile, each with its state too.
+    const mineGrid = document.querySelector("[data-profile-boards]");
+    mineGrid.replaceChildren(...data.boards.map((b, i) => {
+      const card = added(b, i);
+      if (data.own && b.status) {
+        const state = card.querySelector(".thing-state");
+        state.textContent = stateOf(b);
+        state.dataset.status = b.status;
+        // The green dot is for a board that passed.
+        if (b.status !== "green") card.querySelector(".thing-ok")?.remove();
+      }
+      return card;
+    }));
+    // The boards they like: an example's card from the page's template, a board someone added drawn.
+    const examples = document.querySelector("[data-example-cards]").content;
+    const likedGrid = document.querySelector("[data-profile-likes]");
+    likedGrid.replaceChildren(
+      ...data.liked.examples.map((i) => examples.querySelector(`.thing[data-id="${CSS.escape(i)}"]`)?.cloneNode(true)).filter(Boolean),
+      ...data.liked.boards.map((b, i) => added(b, i)),
+    );
+    const likedCount = likedGrid.children.length;
+    set("[data-tab-boards]", data.boards.length);
+    set("[data-tab-likes]", likedCount);
+    document.querySelector("[data-empty-boards]").hidden = data.boards.length > 0;
+    document.querySelector("[data-empty-likes]").hidden = likedCount > 0;
+    me.liked = new Set(data.myLiked || []);
+    for (const card of document.querySelectorAll("[data-profile-boards] .thing, [data-profile-likes] .thing")) {
+      const cid = card.dataset.id;
+      setLikes(cid, data.likes[cid] || 0, me.liked.has(cid));
+    }
+    // Editing their own name and line.
+    const form = document.querySelector("[data-profile-form]");
+    if (data.own && form) {
+      form.elements.name.value = p.name;
+      form.elements.bio.value = p.bio;
+    }
+  };
+
+  const profileForm = document.querySelector("[data-profile-form]");
+  profileForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const error = profileForm.querySelector("[data-error]");
+    try {
+      await api("/api/made?do=profile", { name: profileForm.elements.name.value, bio: profileForm.elements.bio.value });
+      profileForm.closest("dialog").close();
+      await profile();
+    } catch (e) {
+      error.textContent = e.message;
+      error.hidden = false;
+    }
+  });
+
   // ---------------------------------------------------------------- clicks
 
   document.addEventListener("click", (event) => {
@@ -478,7 +604,7 @@
     }
     if (!button) return;
     const d = button.dataset;
-    if (onBoard && ("category" in d || "multi" in d) && button.closest(".made-bar, .made-panel")) {
+    if (away && ("category" in d || "multi" in d) && button.closest(".made-bar, .made-panel")) {
       const to = new URLSearchParams();
       if (d.category) to.set("category", d.category);
       if ("multi" in d) to.set("multi", "1");
@@ -520,6 +646,8 @@
       navigator.clipboard?.writeText(d.copyLink).then(done, () => {});
       return;
     } else if ("like" in d) return like(button);
+    else if ("login" in d) return login();
+    else if ("editProfile" in d) return document.getElementById("made-profile-edit")?.showModal();
     else if ("openMine" in d) {
       closeMenus();
       return openMine();
@@ -546,10 +674,10 @@
 
   search?.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (onBoard && field.value.trim()) location.href = `/?q=${encodeURIComponent(field.value.trim())}`;
+    if (away && field.value.trim()) location.href = `/?q=${encodeURIComponent(field.value.trim())}`;
   });
   field?.addEventListener("input", () => {
-    if (onBoard) return;
+    if (away) return;
     state.q = field.value.trim().toLowerCase();
     show();
   });
@@ -560,11 +688,11 @@
 
   const params = new URLSearchParams(location.search);
   const asked = params.get("q");
-  if (asked && field && !onBoard) {
+  if (asked && field && !away) {
     field.value = asked;
     state.q = asked.trim().toLowerCase();
   }
-  if (!onBoard) {
+  if (!away) {
     state.category = params.get("category") || "";
     state.multi = params.get("multi") === "1";
   }

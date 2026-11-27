@@ -3607,17 +3607,7 @@ html.dark {
   background: oklch(1 0 0 / 14%);
 }
 
-.made-home {
-  display: none;
-  padding: 0.5rem;
-  font-size: 0.9375rem;
-  font-weight: 500;
-}
 
-.made-home:hover {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
 
 .made-bar .icon-btn {
   color: inherit;
@@ -4097,26 +4087,24 @@ img.thing-face {
   }
 }
 
-@media (min-width: 1280px) {
-  .made-home {
-    display: block;
-  }
-}
 
 /* Logging in, the account's menu, and the 2 dialogs: adding or editing a board, and "My boards". */
 .made-login {
-  display: flex;
+  display: grid;
+  width: 2.75rem;
   height: 2.75rem;
-  align-items: center;
-  white-space: nowrap;
-  padding-inline: 0.75rem;
-  border-radius: 0.625rem;
-  font-size: 0.9375rem;
-  font-weight: 500;
+  place-items: center;
+  border-radius: 999px;
+  transition: background-color 150ms var(--ease);
 }
 
 .made-login:hover {
   background: oklch(1 0 0 / 14%);
+}
+
+.made-login svg {
+  width: 1.875rem;
+  height: 1.875rem;
 }
 
 .made-login[hidden],
@@ -4571,16 +4559,10 @@ img.thing-face {
 }
 
 .made-fab-do [hidden],
-.made-order-note[hidden],
 [data-gerbers-row][hidden] {
   display: none;
 }
 
-.made-order-note {
-  padding: 0.5rem 0.75rem 0.25rem;
-  font-size: 0.8125rem;
-  color: var(--muted-foreground);
-}
 
 .made-viewer {
   display: grid;
@@ -4818,9 +4800,6 @@ img.thing-face {
   line-height: 1.7;
 }
 
-.made-thing-note {
-  color: var(--muted-foreground);
-}
 
 .made-table {
   width: 100%;
@@ -4980,4 +4959,221 @@ main:has(.made-thing-wrap) {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
   }
+}
+
+/* The Log In dialog: a wide button for each way in, its mark at the left (the owner's word,
+   2026-11-27: Google, Microsoft and GitHub). */
+.made-login-dialog {
+  width: min(26rem, calc(100vw - 2rem));
+}
+
+.made-login-list {
+  display: grid;
+  gap: 0.625rem;
+  margin-top: 1.25rem;
+}
+
+.made-login-with {
+  display: flex;
+  height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  border-radius: 0.75rem;
+  box-shadow: inset 0 0 0 1px var(--dot);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  transition: background-color 150ms var(--ease);
+}
+
+.made-login-with:hover {
+  background: var(--secondary);
+}
+
+.made-login-with[hidden] {
+  display: none;
+}
+
+.made-login-with svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+}
+
+
+/* A person's profile (made.via.computer/u/<id>): a white box with their picture, name, GitHub login,
+   when they joined and a line about them, their own buttons at the right, and 3 counts under it;
+   then the tabs of their boards and the boards they like, each a grid of cards. */
+.made-profile-page {
+  padding-bottom: 4rem;
+}
+
+.made-profile[hidden],
+.made-profile-body[hidden] {
+  display: none;
+}
+
+.made-profile {
+  max-width: 1440px;
+  margin: 1.5rem auto 0;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--edge);
+}
+
+@media (min-width: 1000px) {
+  .made-profile {
+    margin-inline: 1.5rem;
+    padding: 2rem;
+  }
+}
+
+@media (min-width: 1488px) {
+  .made-profile {
+    margin-inline: auto;
+  }
+}
+
+.made-profile-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem 1.5rem;
+}
+
+.made-profile-face {
+  width: 6rem;
+  height: 6rem;
+  flex: none;
+  border-radius: 999px;
+  object-fit: cover;
+  background: var(--secondary);
+  box-shadow: 0 0 0 3px var(--card), 0 0 0 4px var(--edge);
+}
+
+.made-profile-face[hidden] {
+  display: none;
+}
+
+.made-profile-initials {
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: 1.75rem;
+  font-weight: 650;
+}
+
+.made-profile-who {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.made-profile-who h1 {
+  font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.made-profile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin-top: 0.25rem;
+  font-size: 0.9375rem;
+  color: var(--muted-foreground);
+}
+
+.made-profile-meta [hidden] {
+  display: none;
+}
+
+.made-profile-bio {
+  max-width: 46rem;
+  margin-top: 0.75rem;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.made-profile-do {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.made-profile-do[hidden] {
+  display: none;
+}
+
+.made-profile-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2.5rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--edge);
+}
+
+.made-profile-counts div {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.made-profile-counts dt {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.made-profile-counts dd {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.made-profile-body {
+  max-width: 1440px;
+  margin: 1.5rem auto 0;
+  padding-inline: 0;
+}
+
+@media (min-width: 1000px) {
+  .made-profile-body {
+    margin-inline: 1.5rem;
+    padding-inline: 0;
+  }
+}
+
+@media (min-width: 1488px) {
+  .made-profile-body {
+    margin-inline: auto;
+  }
+}
+
+.made-profile-tab {
+  display: block;
+}
+
+.made-profile-tab[hidden] {
+  display: none;
+}
+
+.made-profile-tab .made-grid {
+  padding-block: 0;
+}
+
+a.thing-maker:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.thing-state[data-status="waiting"],
+.thing-state[data-status="checking"] {
+  color: var(--muted-foreground);
+}
+
+.thing-state[data-status="red"],
+.thing-state[data-status="error"] {
+  color: var(--status-red);
 }
