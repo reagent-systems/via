@@ -128,6 +128,6 @@ exception to these rules:
   mark: "Ask us for help!", a link to the Discord server. The card's
   other button leads to the guide, `/guide`.
 - The line over the link in the hero, of 2026-11-27, with its exclamation
-  mark: "Start by giving your agent the link!", over `via.computer`, a
-  link to the site, in a box of its own right above the Ubuntu install
-  command, at the owner's word.
+  mark: "Start by giving your agent the link!", over `via.computer` in a
+  code block, not a link, in a box of its own right above the Ubuntu
+  install command, at the owner's word.

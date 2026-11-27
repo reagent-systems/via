@@ -162,14 +162,11 @@
   for (const button of document.querySelectorAll("[data-copy]")) {
     button.addEventListener("click", async () => {
       const pre = (button.closest("[data-copyable]") || button.parentElement).querySelector("pre");
-      // The commands without their prompts, 1 per line; a button with data-copy-text copies that (the
-      // link box copies the whole address it shows as via.computer).
-      const text =
-        button.dataset.copyText ||
-        pre.textContent
-          .split("\n")
-          .map((line) => line.replace(/^\$ /, ""))
-          .join("\n");
+      // The commands without their prompts, 1 per line.
+      const text = pre.textContent
+        .split("\n")
+        .map((line) => line.replace(/^\$ /, ""))
+        .join("\n");
       try {
         await navigator.clipboard.writeText(text);
       } catch {
