@@ -99,15 +99,26 @@ class Project:
 def run(
     cmd: list[str], cwd: Path | None = None, timeout: int = 900, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess:
+    """Run an engine; its output is read as UTF-8, which kicad-cli and ngspice print, never in the
+    locale's code page (cp1252 on a Western Windows). A byte that is no UTF-8 reads as U+FFFD."""
     return subprocess.run(
         [str(c) for c in cmd],
         cwd=str(cwd) if cwd else None,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         check=False,
         env=env,
     )
+
+
+def hostos():
+    """tools/hostos.py: what differs between Linux, macOS and Windows."""
+    sys.path.insert(0, str(SRC_DIR / "tools"))
+    import hostos as module
+
+    return module
 
 
 def tool_version(cmd: list[str], pattern: str = r"\d+(\.\d+)+") -> str | None:
@@ -663,7 +674,11 @@ def link_siblings(deck: Path, where: Path) -> None:
     """Make the other files of a deck's folder reachable from a folder the deck is run from: a file
     the deck reads by a statement the gate does not rewrite (`source print.sp` in `.control`, a
     `file="stim.txt"` of a model) is then found, as it is when the deck runs in place. Files are
-    links and folders are real, so a run that writes a new file writes it in its own folder."""
+    links and folders are real, so a run that writes a new file writes it in its own folder.
+
+    A link is a symlink where the system makes one. Windows refuses symlinks to a user without
+    Developer Mode, so the link is then a hard link, and a copy where neither can be made (another
+    drive, a file system without hard links)."""
     plans = {simcorners().CORNERS_FILE, freqplan().PLAN_FILE, thermal().PLAN_FILE}
     skip = {deck.name, *plans, ".spiceinit", "run"}
     for entry in sorted(deck.parent.iterdir()):
@@ -671,9 +686,22 @@ def link_siblings(deck: Path, where: Path) -> None:
         if entry.name in skip or entry.name.endswith(".expect.json") or target.exists():
             continue
         if entry.is_dir():
-            shutil.copytree(entry, target, copy_function=os.symlink)
+            shutil.copytree(entry, target, copy_function=link_file)
         else:
-            os.symlink(entry, target)
+            link_file(entry, target)
+
+
+def link_file(src, dst) -> None:
+    """`dst` as a symlink to `src`, else a hard link, else a copy: the first the system allows."""
+    try:
+        os.symlink(src, dst)
+        return
+    except OSError:
+        pass
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
 
 
 def run_corners(
@@ -3855,12 +3883,13 @@ def model_rows(
         problems.append(f"{deck.stem}: its models need different ngspice modes: {', '.join(sorted(modes))}")
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    prepared = replace_includes(text, lambda inc: str(replace[inc]) if inc in replace else None)
-    (run_dir / deck.name).write_text(prepared, encoding="utf-8")
+    # Forward slashes on every system: Windows reads them, and the deck is the same text everywhere.
+    prepared = replace_includes(text, lambda inc: replace[inc].as_posix() if inc in replace else None)
+    hostos().write_text(run_dir / deck.name, prepared)
     init = run_dir / ".spiceinit"
     own_init = deck.parent / ".spiceinit"  # what ngspice reads when the deck runs in place
     if modes:
-        init.write_text(f"set ngbehavior={sorted(modes)[0]}\n", encoding="utf-8")
+        hostos().write_text(init, f"set ngbehavior={sorted(modes)[0]}\n")
     elif not listed and own_init.is_file():
         shutil.copyfile(own_init, init)
     elif init.exists():

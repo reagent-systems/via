@@ -1,0 +1,6 @@
+# Git converts no file's line endings, on any system. A checkout on Windows, where Git for Windows sets
+# core.autocrlf=true, then holds the same bytes as one on Linux: `design --check` compares generated
+# files byte for byte, library/sources.csv names each maker's file by its SHA256, and bash scripts stop
+# at a carriage return. Not `text=auto eol=lf`: it would store the 15 files committed with CRLF (3 of
+# them makers' models) again as LF on their next change, and their SHA256 rows would no longer hold.
+* -text

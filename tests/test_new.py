@@ -440,6 +440,80 @@ def test_the_help_of_next_says_exit_1_is_a_step_and_no_error():
     assert re.search(r"\bnew\b.*start a board project in a folder", text)
 
 
+# ------------------------------------------------------------- the steps `next` names with `new`
+# `next` printed `mkdir -p` and `cp` once: Windows has neither. Its steps that make a folder or copy a
+# template deck now run `new`, which does both the same way on every system.
+
+DECKS = ROOT / "templates" / "project" / "sim"
+
+
+def test_new_empty_makes_the_folder_and_writes_nothing_in_it(tmp_path):
+    env, log = stand_ins(tmp_path)
+    board = tmp_path / "boards" / "psu"
+    made = workcenter("new", str(board), "--empty", env=env)
+    assert made.returncode == 0, made.stdout + made.stderr
+    assert board.is_dir() and files(board) == []
+    assert made.stdout.splitlines() == [f"new: made {board}, empty. Next: workcenter next {board}"]
+    again = workcenter("new", str(board), "--empty", env=env)
+    assert again.returncode == 0 and again.stdout.splitlines() == [
+        f"new: {board} is there already; nothing written. Next: workcenter next {board}"
+    ]
+    assert not log.exists()  # no engine started
+
+
+def test_new_empty_refuses_a_file(tmp_path):
+    env, _ = stand_ins(tmp_path)
+    note = tmp_path / "note.txt"
+    note.write_text("x\n", encoding="utf-8")
+    made = workcenter("new", str(note / "board"), "--empty", env=env)
+    assert made.returncode == 1 and "is a file" in made.stdout and not (note / "board").exists()
+
+
+@pytest.mark.parametrize("stem", ["i2c_rise", "load_step"])
+def test_new_deck_copies_the_template_and_its_bounds_byte_for_byte(tmp_path, stem):
+    """Into a folder that holds a design: a deck is added to a board, so the design does not refuse it."""
+    env, _ = stand_ins(tmp_path)
+    board = tmp_path / "board"
+    board.mkdir()
+    (board / "design.py").write_text("# a design\n", encoding="utf-8")
+    made = workcenter("new", str(board), "--deck", stem, env=env)
+    assert made.returncode == 0, made.stdout + made.stderr
+    for ext in (".cir", ".expect.json"):
+        assert (board / "sim" / f"{stem}{ext}").read_bytes() == (DECKS / f"{stem}{ext}").read_bytes()
+    assert files(board) == ["design.py", "sim", f"sim/{stem}.cir", f"sim/{stem}.expect.json"]
+    assert made.stdout.splitlines()[-1] == (
+        f"new: copied the {stem} deck as sim/{stem}.cir. Next: fill it, then workcenter gates {board}"
+    )
+
+
+def test_new_deck_never_replaces_a_file(tmp_path):
+    env, _ = stand_ins(tmp_path)
+    board = tmp_path / "board"
+    (board / "sim").mkdir(parents=True)
+    (board / "sim" / "i2c_rise.cir").write_text("* mine\n", encoding="utf-8")
+    made = workcenter("new", str(board), "--deck", "i2c_rise", env=env)
+    assert made.returncode == 0 and (board / "sim" / "i2c_rise_2.cir").is_file()
+    assert (board / "sim" / "i2c_rise.cir").read_text(encoding="utf-8") == "* mine\n"
+    named = workcenter("new", str(board), "--deck", "i2c_rise", "--as", "i2c_rise", env=env)
+    assert named.returncode == 1
+    assert named.stdout.splitlines() == [f"new: {board}/sim/i2c_rise.cir is there already; nothing written."]
+    assert (board / "sim" / "i2c_rise.cir").read_text(encoding="utf-8") == "* mine\n"
+
+
+def test_new_deck_refuses_a_template_that_is_not_there(tmp_path):
+    env, _ = stand_ins(tmp_path)
+    made = workcenter("new", str(tmp_path / "b"), "--deck", "no_such", env=env)
+    assert made.returncode == 1 and "i2c_rise, load_step" in made.stdout and not (tmp_path / "b").exists()
+
+
+def test_new_takes_one_of_empty_and_deck(tmp_path):
+    env, _ = stand_ins(tmp_path)
+    made = workcenter("new", str(tmp_path / "b"), "--empty", "--deck", "i2c_rise", env=env)
+    assert made.returncode == 2 and not (tmp_path / "b").exists()
+    alone = workcenter("new", str(tmp_path / "b"), "--as", "x", env=env)
+    assert alone.returncode == 1 and "--as names the copy of --deck" in alone.stdout
+
+
 def load_cli():
     loader = importlib.machinery.SourceFileLoader("workcenter_cli_new", str(CLI))
     module = types.ModuleType("workcenter_cli_new")

@@ -105,8 +105,10 @@ gate holds the line to the schematic:
    copy templates/project/sim/i2c_rise.cir` or `not judged: U1 (...) feeds
    the loads ratings.json states ...` is a deck the board asks for. It is a
    warning, and a failure with `--strict`.
-2. Run `workcenter next <project>`. Its RUN line copies the template's deck
-   and its expect file into `sim/`, under a name no file there has. Run it.
+2. Run `workcenter next <project>`. Its RUN line, `workcenter new <project>
+   --deck <template>`, copies the template's deck and its expect file into
+   `sim/`, under a name no file there has. It runs the same on Linux, macOS
+   and Windows. Run it.
 3. Open the copy. Each `* fill:` line names 1 value: write the board's value
    on the line under it, then delete the `* fill:` line. The gate fails a
    deck that still holds 1: `i2c_rise.cir:9: still says fill: ...`.

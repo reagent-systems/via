@@ -2,7 +2,9 @@
 
 Each function reads `sys.platform` when it is called ("linux", "darwin", "win32"), never `os.name`, so a
 test sets the platform with 1 attribute. On Linux each returns what the code returns today; the comment
-of each names the file and line that holds that value at main cea464d. No caller uses this module yet.
+of each names the file and line that holds that value at main cea464d. The callers so far: write_text
+(tools/kicadgen.py, tools/newboard.py, the run decks of tools/workcenter) and installer_command
+(tools/guide.py).
 
 The macOS and Windows values come from vendor documents and build files, named beside each. None was
 seen on a Mac or a Windows machine: each is marked "not confirmed in a run" until a run there shows it.
