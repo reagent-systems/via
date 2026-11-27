@@ -40,6 +40,9 @@ from pathlib import Path
 
 import hostos  # tools/hostos.py, beside this file: the installer each system runs
 
+# The workcenter's checkout, whose installer a hint names: the CLI's SRC_DIR, found the same way.
+SRC_DIR = Path(__file__).resolve().parent.parent
+
 GATES = ".claude/skills/board-gates/SKILL.md"
 DESIGN = ".claude/skills/board-design/SKILL.md"
 SIMULATE = ".claude/skills/simulate/SKILL.md"
@@ -405,9 +408,8 @@ HINTS: list[tuple[str, str, str]] = [
     ),
     (
         r"^sim: thermal: which parts of the board carry a thermal figure is not judged: \S+ is not on PATH",
-        "Install the toolchain: kicad-cli reads the schematic's parts. `workcenter next` on the project "
-        "names this computer's installer, and `workcenter doctor` prints ok after it. Then run the gate "
-        "again.",
+        "Install the toolchain: kicad-cli reads the schematic's parts. Run `{installer}`, then "
+        "`workcenter doctor` prints ok. Then run the gate again.",
         "ee-agent-kit/docs/ENGINES.md",
     ),
     (
@@ -513,10 +515,11 @@ class Step:
 
 
 def hint(gate: str, line: str) -> tuple[str, str]:
-    """What to do about a failure or warning line of a gate, and what to read."""
+    """What to do about a failure or warning line of a gate, and what to read. `{installer}` in a hint
+    is this computer's install line (tools/hostos.py), as `next`'s install step prints it."""
     for pattern, do, read in HINTS:
         if re.search(pattern, f"{gate}: {line}"):
-            return do, read
+            return do.replace("{installer}", hostos.installer_command(SRC_DIR)), read
     raise AssertionError("the last hint matches every line")
 
 

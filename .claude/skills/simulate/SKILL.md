@@ -107,8 +107,9 @@ gate holds the line to the schematic:
    warning, and a failure with `--strict`.
 2. Run `workcenter next <project>`. Its RUN line, `workcenter new <project>
    --deck <template>`, copies the template's deck and its expect file into
-   `sim/`, under a name no file there has. It runs the same on Linux, macOS
-   and Windows. Run it.
+   `sim/`, under a name no file there has. Run it in a Linux or macOS
+   shell, or on Windows in PowerShell or Git Bash. cmd.exe keeps the
+   single quotes around a Windows path, so it does not run there.
 3. Open the copy. Each `* fill:` line names 1 value: write the board's value
    on the line under it, then delete the `* fill:` line. The gate fails a
    deck that still holds 1: `i2c_rise.cir:9: still says fill: ...`.

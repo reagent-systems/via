@@ -582,6 +582,14 @@ def test_installer_command_on_windows_runs_the_powershell_script_in_double_quote
     assert "sudo" not in said and "'" not in said
 
 
+@pytest.mark.parametrize("src", ["C:\\via\\src\\", "C:\\via\\src/", "C:\\via\\src"])
+def test_installer_command_on_windows_puts_1_backslash_before_the_script(hostos, monkeypatch, src):
+    """A source folder given with a separator at its end still names `C:\\via\\src\\install.ps1`."""
+    on(monkeypatch, "win32")
+    said = hostos.installer_command(src)
+    assert said == 'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\via\\src\\install.ps1"'
+
+
 # ------------------------------------------------------------------ the module
 
 # Run in a child process, so this session's import path and modules stay as they are: each pair is

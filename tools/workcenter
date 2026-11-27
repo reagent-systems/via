@@ -678,28 +678,56 @@ def link_siblings(deck: Path, where: Path) -> None:
 
     A link is a symlink where the system makes one. Windows refuses symlinks to a user without
     Developer Mode, so the link is then a hard link, and a copy where neither can be made (another
-    drive, a file system without hard links)."""
+    drive, a file system without hard links).
+
+    `where` is kept from run to run. A symlink to the deck's own file is kept; anything else that
+    holds a sibling's name is made again (link_entry), so each run reads the siblings as they are."""
     plans = {simcorners().CORNERS_FILE, freqplan().PLAN_FILE, thermal().PLAN_FILE}
     skip = {deck.name, *plans, ".spiceinit", "run"}
     for entry in sorted(deck.parent.iterdir()):
-        target = where / entry.name
-        if entry.name in skip or entry.name.endswith(".expect.json") or target.exists():
+        if entry.name in skip or entry.name.endswith(".expect.json"):
             continue
+        link_entry(entry, where / entry.name)
+
+
+def link_entry(entry: Path, target: Path) -> None:
+    """Make `target` reach `entry`: a file as link_file makes it, a folder real with its files so.
+
+    A hard link or a copy holds the bytes of the run that made it (an editor saves a new file), so it
+    is made again. A symlink that does not reach `entry` (it dangles, or names another folder's file)
+    is removed: link_file would otherwise write through it. A symlink to `entry` is kept, as before.
+    A real folder is gone through, so a file added to it is reached too."""
+    if target.is_symlink():
+        if not entry.is_dir() and target.exists() and os.path.samefile(target, entry):
+            return
+        target.unlink()  # removes the link alone, never what it names
+    elif target.is_dir():
         if entry.is_dir():
-            shutil.copytree(entry, target, copy_function=link_file)
-        else:
-            link_file(entry, target)
+            for child in sorted(entry.iterdir()):
+                link_entry(child, target / child.name)
+        return  # a folder where the deck's folder holds a file: a run made it, and it is kept
+    elif target.exists():
+        target.unlink()
+    if entry.is_dir():
+        shutil.copytree(entry, target, copy_function=link_file)
+    else:
+        link_file(entry, target)
 
 
 def link_file(src, dst) -> None:
-    """`dst` as a symlink to `src`, else a hard link, else a copy: the first the system allows."""
+    """`dst` as a symlink to `src`, else a hard link, else a copy: the first the system allows. A name
+    that is taken raises FileExistsError: a copy would write through a symlink there."""
     try:
         os.symlink(src, dst)
         return
+    except FileExistsError:
+        raise
     except OSError:
         pass
     try:
         os.link(src, dst)
+    except FileExistsError:
+        raise
     except OSError:
         shutil.copy2(src, dst)
 
@@ -5234,6 +5262,9 @@ def check_design(args) -> int:
             entry = {"file": f.name, "state": "same"}
             if not mine.is_file():
                 entry["state"] = "missing"
+            elif mine.read_bytes() != written and mine.read_bytes().replace(b"\r\n", b"\n") == written:
+                # A Git checkout with core.autocrlf=true (Git for Windows' default) and no `* -text`.
+                entry.update(state="differs", cause="line ends")
             elif mine.read_bytes() != written:
                 old, new = mine.read_bytes().splitlines(), written.splitlines()
                 pairs = enumerate(zip(old, new, strict=False))
@@ -5253,7 +5284,10 @@ def check_design(args) -> int:
         return verdict
     for f in files:
         print(f"check: {f['state']:8} {f['file']}")
-        if f["state"] == "differs":
+        if f.get("cause") == "line ends":
+            print("         line ends: CRLF where design.py writes LF; Git converted them (core.autocrlf)")
+            print("         write `* -text` in the project's .gitattributes, as `new` does; check out again")
+        elif f["state"] == "differs":
             print(f"         line {f['line']}: project {f['project']!r}")
             print(f"         line {f['line']}: design  {f['design']!r}")
         elif f["state"] == "missing":

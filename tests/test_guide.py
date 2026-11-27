@@ -599,6 +599,17 @@ def test_the_install_step_off_linux_names_that_systems_installer(tmp_path, monke
     assert "sudo" not in step.run and not step.run.endswith("install.sh")
 
 
+@pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+def test_the_hint_for_a_missing_kicad_cli_names_this_systems_installer(monkeypatch, platform):
+    """`next` names the installer only once no earlier step comes first, so the hint names it itself.
+    Review finding F9."""
+    monkeypatch.setattr(sys, "platform", platform)
+    line = "thermal: which parts of the board carry a thermal figure is not judged: kicad-cli is not on PATH"
+    do, _ = guide.hint("sim", line)
+    assert f"`{hostos.installer_command(ROOT)}`" in do
+    assert "{" not in do
+
+
 # ------------------------------------------------------------- the path
 
 

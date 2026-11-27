@@ -125,7 +125,7 @@ def test_an_empty_folder_is_told_new_then_the_design_then_the_route(tmp_path):
     made = run_line(step, env)
     assert made.returncode == 0, made.stdout + made.stderr
     assert made.stdout.splitlines()[-1] == (
-        f"new: 4 files written, 0 kept. Next: edit {board}/design.py, then workcenter next {board}"
+        f"new: 5 files written, 0 kept. Next: edit {board}/design.py, then workcenter next {board}"
     )
     code, step = ask(board, env)
     assert (code, step["next"]) == (1, "Generate the KiCad project from its design file.")
@@ -169,7 +169,17 @@ def test_new_writes_the_template_under_the_folders_name_and_the_headers(tmp_path
     board = tmp_path / "my board"
     made = workcenter("new", str(board), env=env)
     assert made.returncode == 0, made.stdout + made.stderr
-    assert files(board) == [".gitignore", "design.py", "library", "library/sources.csv", "parts.csv"]
+    assert files(board) == [
+        ".gitattributes",
+        ".gitignore",
+        "design.py",
+        "library",
+        "library/sources.csv",
+        "parts.csv",
+    ]
+    # Git converts no file of the project (Git for Windows' core.autocrlf=true included), so a
+    # checkout on Windows holds the bytes `design --check` compares.
+    assert (board / ".gitattributes").read_text(encoding="utf-8").splitlines()[-1] == "* -text"
     ours = (board / "design.py").read_text(encoding="utf-8").splitlines()
     theirs = TEMPLATE.read_text(encoding="utf-8").splitlines()
     changed = [(a.strip(), b.strip()) for a, b in zip(theirs, ours, strict=True) if a != b]
@@ -226,13 +236,14 @@ def test_new_keeps_what_is_there_and_the_library_above(tmp_path):
     assert made.returncode == 0, made.stdout + made.stderr
     assert made.stdout.splitlines() == [
         f"wrote {board}/design.py",
+        f"wrote {board}/.gitattributes",
         f"wrote {board}/parts.csv",
         f"kept  {board}/.gitignore (it is there already)",
         f"kept  {tmp_path}/library/sources.csv (the library above serves this project)",
-        f"new: 2 files written, 1 kept. Next: edit {board}/design.py, then workcenter next {board}",
+        f"new: 3 files written, 1 kept. Next: edit {board}/design.py, then workcenter next {board}",
     ]
     assert (board / ".gitignore").read_text(encoding="utf-8") == "mine\n"
-    assert files(board) == [".gitignore", "design.py", "parts.csv"]
+    assert files(board) == [".gitattributes", ".gitignore", "design.py", "parts.csv"]
 
 
 def test_new_refuses_a_file(tmp_path):
@@ -306,7 +317,7 @@ def test_new_under_a_git_folder_starts_its_own_library(tmp_path):
     (board / ".git").mkdir(parents=True)
     made = workcenter("new", str(board), env=env)
     assert made.returncode == 0, made.stdout + made.stderr
-    assert made.stdout.splitlines()[-1].startswith("new: 4 files written, 0 kept.")
+    assert made.stdout.splitlines()[-1].startswith("new: 5 files written, 0 kept.")
     assert load_cli().find_sources(board) == board / "library" / "sources.csv"
 
 
@@ -504,6 +515,18 @@ def test_new_deck_refuses_a_template_that_is_not_there(tmp_path):
     env, _ = stand_ins(tmp_path)
     made = workcenter("new", str(tmp_path / "b"), "--deck", "no_such", env=env)
     assert made.returncode == 1 and "i2c_rise, load_step" in made.stdout and not (tmp_path / "b").exists()
+
+
+@pytest.mark.parametrize("name", ["../x", "../../x", "a/b", "a b"])
+def test_new_deck_refuses_a_name_that_leaves_sim(tmp_path, name):
+    """`--as` names a file in sim/: a path or a space is refused, and nothing is written. Review
+    finding F7: the check held no test."""
+    env, _ = stand_ins(tmp_path)
+    board = tmp_path / "board"
+    board.mkdir()
+    made = workcenter("new", str(board), "--deck", "i2c_rise", "--as", name, env=env)
+    assert made.returncode == 1 and "letters, digits and _ . - only" in made.stdout
+    assert files(board) == [] and sorted(p.name for p in tmp_path.iterdir()) == ["board", "engines"]
 
 
 def test_new_takes_one_of_empty_and_deck(tmp_path):

@@ -4,6 +4,7 @@ It writes the files `workcenter next` and the commands after it read first:
 
     design.py            templates/project/design.py, with the folder's name and a namespace of its own
     .gitignore           templates/project/gitignore: what the engines and KiCad write
+    .gitattributes       templates/project/gitattributes: `* -text`, so Git converts no line end
     parts.csv            the header `procure` and `sources` read (PARTS_COLUMNS)
     library/sources.csv  the header `fetch --row` appends to (SOURCES_HEADER)
 
@@ -143,6 +144,7 @@ def cmd_new(args, cli) -> int:
     files = {
         "design.py": design_text(board_name(target), uuid.uuid4()),
         ".gitignore": (TEMPLATE / "gitignore").read_text(encoding="utf-8"),
+        ".gitattributes": (TEMPLATE / "gitattributes").read_text(encoding="utf-8"),
         "parts.csv": ",".join(cli.PARTS_COLUMNS) + "\n",
     }
     if above is None:
@@ -178,8 +180,9 @@ def register(sub, cli) -> None:
     """Add `new` to Via's parser."""
     p = sub.add_parser(
         "new",
-        help="start a board project in a folder: design.py from the template, .gitignore, parts.csv and "
-        "library/sources.csv with their headers; refuses a folder that holds a design; runs no engine",
+        help="start a board project in a folder: design.py from the template, .gitignore, .gitattributes, "
+        "parts.csv and library/sources.csv with their headers; refuses a folder that holds a design; runs no "
+        "engine",
     )
     p.add_argument("dir", help="the project's folder (made when it is not there)")
     only = p.add_mutually_exclusive_group()
