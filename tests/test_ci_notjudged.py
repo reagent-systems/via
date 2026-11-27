@@ -45,6 +45,10 @@ GROUPS = {
     "root": re.compile(r"\broot\b|setpriv"),
     "second router": re.compile(r"FreeRouting 2\.5\.0"),
     "image build": re.compile(r"^WORKCENTER_TEST_IMAGE_BUILD is not 1"),
+    # KiCad's Python on Windows is 3.11 (tests/test_kicadchild.py); Ubuntu 24.04 has no python3.11.
+    "kicad python": re.compile(r"^no Python 3\.11 here$"),
+    # install.ps1 run for real: GitHub's windows-latest leg runs it (CI.md, "Windows and macOS").
+    "windows": re.compile(r"Windows only"),
 }
 
 
@@ -276,6 +280,11 @@ def test_image_build():
     pass
 
 
+@pytest.mark.skipif(shutil.which("python3.11") is None, reason="python3.11")
+def test_python311():
+    pass
+
+
 @pytest.mark.skipif(shutil.which("sh") is None, reason="sh")
 def test_sh():
     pass
@@ -284,14 +293,14 @@ def test_sh():
 
 def test_the_plugin_makes_the_process_look_like_githubs_full_runner_whatever_this_machine_is(tmp_path):
     """Each condition of GitHub's full runner, against a machine that is root, has the chip folder, a
-    verilator and a netgen on PATH, FreeRouting 2.5.0 and WORKCENTER_TEST_IMAGE_BUILD=1: every test of
-    the 7 is skipped. A tool GitHub has (sh) stays."""
+    verilator, a netgen and a python3.11 on PATH, FreeRouting 2.5.0 and WORKCENTER_TEST_IMAGE_BUILD=1:
+    every test but 1 is skipped. A tool GitHub has (sh) stays."""
     root = tmp_path / "proj"
     (root / "tests").mkdir(parents=True)
     (root / "tests" / "test_conditions.py").write_text(CONDITIONS, encoding="utf-8")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for name in ("verilator", "netgen"):
+    for name in ("verilator", "netgen", "python3.11"):
         (bin_dir / name).write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         (bin_dir / name).chmod(0o755)
     (tmp_path / "chip").mkdir()
@@ -319,6 +328,7 @@ def test_the_plugin_makes_the_process_look_like_githubs_full_runner_whatever_thi
         "test_chip_folder": "chip",
         "test_freerouting2": "freerouting2",
         "test_image_build": "image build",
+        "test_python311": "python3.11",
         "test_sh": None,
     }
 
