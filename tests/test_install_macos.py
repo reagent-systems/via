@@ -202,6 +202,15 @@ def test_the_script_names_no_url_and_no_checksum():
     assert not re.findall(r"\b[0-9a-f]{64}\b", text)
 
 
+def test_the_dmg_and_the_java_archive_stay_in_the_downloads_folder():
+    """The macOS leg of CI keeps ROOT/downloads between runs (ee-agent-kit/CI.md, "Windows and macOS"):
+    a DMG removed after use leaves the cache nothing, and every run downloads 1.4 GB again."""
+    code = "\n".join(code_lines())
+    assert 'dmg="${ROOT}/downloads/${file}"' in code and 'tgz="${ROOT}/downloads/${file}"' in code
+    assert not re.search(r'\brm\b[^\n]*"\$(dmg|tgz)"', code)
+    assert 'say "kept for a run again: ${dmg}' in code and 'say "kept for a run again: ${tgz}"' in code
+
+
 def test_every_pin_the_script_reads_is_in_the_pins_file():
     keys = sorted(set(re.findall(r"\bpin ([a-z0-9_.]+)", "\n".join(code_lines()))))
     assert len(keys) >= 15, keys

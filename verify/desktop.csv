@@ -22,6 +22,7 @@ tests/test_ci.py,linux,workcenter ci replays GitHub's Ubuntu shell steps
 tests/test_ci_apt_archive.py,linux,CI's apt archive step on Ubuntu
 tests/test_ci_apt_cache.py,linux,CI's apt cache step on Ubuntu
 tests/test_ci_changes.py,posix,not on the desktop list; not run on Windows yet
+tests/test_ci_desktop.py,posix,"it runs the WSL leg's report step in bash, its stand-ins write a first line by hand, and 1 test kills by SIGKILL"
 tests/test_ci_dispatch.py,posix,it runs CI's scripts in bash
 tests/test_ci_kept_logs.py,linux,"CI's kept logs: steps of the Ubuntu jobs, run in bash"
 tests/test_ci_nightly_issue.py,linux,"the nightly's issue, written by an Ubuntu job"

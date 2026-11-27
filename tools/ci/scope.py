@@ -40,7 +40,8 @@ UNKNOWN = "no rule names this path, so it needs the full gate"
 # The desktop scope: install or platform code, which the Windows and macOS legs prove
 # (ee-agent-kit/CI.md, "Windows and macOS"). The installers and their pins, the files a platform
 # difference lives in (tools/hostos.py and the files that call it), the test runner's portable parts and
-# its table, the smoke, this script and its fixtures, and the 2 workflows that hold the legs.
+# its table, the test files of the platform layer, the installers and the pcbnew child, the smoke, this
+# script and its fixtures, and the 2 workflows that hold the legs.
 # tools/workcenter and tools/kicadgen.py are left out: nearly every full change touches them. The cost:
 # a break of either on Windows or macOS shows only on the next push to main, after the merge.
 DESKTOP_FILES = (
@@ -53,9 +54,16 @@ DESKTOP_FILES = (
     "pyproject.toml",
     "requirements-kicad.txt",
     "requirements.txt",
+    "templates/project/gitattributes",
     "tests/conftest.py",
+    "tests/test_desktop.py",
+    "tests/test_hostos.py",
+    "tests/test_install_macos.py",
+    "tests/test_install_windows.py",
+    "tests/test_kicadchild.py",
     "toolchain/desktop.json",
     "tools/ci/desktop_smoke.py",
+    "tools/ci/guard/engine_watch.py",
     "tools/ci/scope.py",
     "tools/enginelock.py",
     "tools/fields.py",

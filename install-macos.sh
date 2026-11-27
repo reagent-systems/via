@@ -385,7 +385,9 @@ step_kicad() {
     [ "$have" = "$ver" ] || die "${cli} version printed '${have}', not ${ver}"
     say "KiCad ${have} at ${KICAD_DIR}"
   fi
-  run rm -f "$dmg"
+  # Kept, as install.ps1 keeps its downloads: a run again uses it after its SHA256 check, and CI keeps
+  # this folder between runs (ee-agent-kit/CI.md, "Windows and macOS").
+  say "kept for a run again: ${dmg} (${bytes} bytes; delete it to free the space)"
 }
 
 step_java() {
@@ -415,7 +417,7 @@ step_java() {
     run mv "$top" "$dir"
     run rm -rf "$new"
     write_file "${dir}/.sha256" "$sha"
-    run rm -f "$tgz"
+    say "kept for a run again: ${tgz}"
   fi
   # tools/routers.py runs the java this file names (install.sh writes it the same way).
   write_file "${ROOT}/java.path" "$java"
