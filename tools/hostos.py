@@ -3,7 +3,8 @@
 Each function reads `sys.platform` when it is called ("linux", "darwin", "win32"), never `os.name`, so a
 test sets the platform with 1 attribute. On Linux each returns what the code returns today; the comment
 of each names the file and line that holds that value at main cea464d. tools/enginelock.py calls
-lock_dir, user_id, lock_file, unlock_file, flock_files and stop_signals; no other caller uses it yet.
+lock_dir, user_id, lock_file, unlock_file, flock_files and stop_signals; tools/routers.py,
+tools/routebench.py and tools/mcpserver.py call it too.
 
 The macOS and Windows values come from vendor documents and build files, named beside each. None was
 seen on a Mac or a Windows machine: each is marked "not confirmed in a run" until a run there shows it.
@@ -38,6 +39,17 @@ BREW_BINS = ("/opt/homebrew/bin", "/usr/local/bin")
 # Where ngspice's Windows archive is unpacked by convention (ngspice-47_64.7z holds a Spice64 folder).
 # Neither the folder nor the console program's name is confirmed in a run.
 WIN_SPICE = Path("C:\\Spice64") / "bin"
+# Apple's /usr/bin/java is a launcher, not a JVM: it runs the JDK JAVA_HOME names, else the one
+# /usr/libexec/java_home prints (Apple's java_home(1) man page). Not confirmed in a run.
+MAC_JAVA_STUB = Path("/usr/bin/java")
+MAC_JAVA_HOME = Path("/usr/libexec/java_home")
+# Oracle's installer for Windows puts launchers in "Common Files\Oracle\Java\javapath" (Oracle's JDK
+# installation guide for Windows). Not confirmed in a run.
+WIN_JAVA_STUBS = "javapath"
+# Windows' CREATE_NEW_PROCESS_GROUP and CTRL_BREAK_EVENT (Microsoft's "Process Creation Flags" and
+# GenerateConsoleCtrlEvent): subprocess and signal name them only on Windows.
+WIN_NEW_GROUP = 0x00000200
+WIN_CTRL_BREAK = 1
 
 
 def _windows() -> bool:
@@ -235,6 +247,63 @@ def awt_lib(java_home: Path | str) -> Path:
     return Path(java_home) / "lib" / "libawt_xawt.so"
 
 
+def java_home(java: Path | str) -> Path:
+    """The JVM folder of a java program: the folder above its bin, links resolved.
+
+    Linux: tools/routers.py:93. macOS: the same for a JDK's own java and Homebrew's links; Apple's
+    /usr/bin/java is a launcher, so its JVM is JAVA_HOME's, else the 1 line /usr/libexec/java_home
+    prints. Windows: the same, except Oracle's launchers in a `javapath` folder, whose JVM is
+    JAVA_HOME's. Where none is named, the launcher's own folder is returned, and the caller finds no JVM
+    there. Not confirmed in a run off Linux."""
+    found = Path(java).resolve()
+    home = found.parent.parent
+    if _mac():
+        stub = found == MAC_JAVA_STUB
+    elif _windows():
+        stub = found.parent.name.lower() == WIN_JAVA_STUBS
+    else:
+        stub = False
+    if not stub:
+        return home
+    named = os.environ.get("JAVA_HOME")
+    if named:
+        return Path(named)
+    if _mac():
+        try:
+            done = subprocess.run([str(MAC_JAVA_HOME)], capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            return home
+        lines = done.stdout.strip().splitlines()
+        if done.returncode == 0 and len(lines) == 1:
+            return Path(lines[0].strip())
+    return home
+
+
+def own_group() -> dict:
+    """Popen's keyword arguments that make the child lead a process group of its own, so kill_tree and
+    stop_tree reach it and what it starts, and a terminal's Ctrl+C does not.
+
+    Linux and macOS: tools/routers.py:266, start_new_session. Windows ignores start_new_session and
+    refuses preexec_fn (Python's subprocess documentation); CREATE_NEW_PROCESS_GROUP makes the group."""
+    if _windows():
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", WIN_NEW_GROUP)}
+    return {"start_new_session": True}
+
+
+def stop_tree(proc: subprocess.Popen) -> None:
+    """Ask `proc` and what it started to stop, as a terminal's stop does; `proc` was started with
+    own_group().
+
+    Linux and macOS: tools/mcpserver.py:498, SIGTERM to the process group; ProcessLookupError when the
+    group is gone. Windows: CTRL_BREAK_EVENT to the console process group `proc` leads (Python's
+    os.kill), which a Python there gets as SIGBREAK. It needs a console the 2 share: with none it raises
+    OSError, and the caller ends the tree with kill_tree. Not confirmed in a run on Windows."""
+    if _windows():
+        os.kill(proc.pid, getattr(signal, "CTRL_BREAK_EVENT", WIN_CTRL_BREAK))
+        return
+    os.killpg(proc.pid, signal.SIGTERM)
+
+
 def kill_tree(proc: subprocess.Popen) -> None:
     """Kill `proc` and every process it started.
 
@@ -276,6 +345,17 @@ def shell_word(word: str) -> str:
     if _windows():
         return subprocess.list2cmdline([word])
     return shlex.quote(word)
+
+
+def signal_ends_reads() -> bool:
+    """Whether a signal ends a read that blocks the main thread, so Python runs its handler at once.
+
+    Linux and macOS: yes, the read returns EINTR (tools/mcpserver.py reads stdin on the main thread at
+    e702b47). Windows: no. The system runs a console control handler (Ctrl+C, Ctrl+Break) on a thread of
+    its own, a read of a pipe has no EINTR, and Python runs the handler only when the read returns
+    (Python's signal documentation). A program that must stop on a signal reads on another thread there.
+    Not confirmed in a run on Windows."""
+    return not _windows()
 
 
 def write_text(path: Path | str, text: str) -> int:
