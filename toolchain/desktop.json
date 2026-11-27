@@ -1,0 +1,88 @@
+{
+  "about": [
+    "The pins the 2 desktop installers read: install-macos.sh, and the Windows installer.",
+    "Each URL and each SHA256 is named here only (tests/test_install_macos.py holds this), except the",
+    "FreeRouting jar's SHA256, which install.sh names too and the test holds equal.",
+    "Each 'source' says where the value was read on 2026-11-27. A 'hashed' source means: the file was",
+    "streamed from that URL through sha256sum on Linux, never saved, never run."
+  ],
+  "kicad": {
+    "version": "10.0.8",
+    "macos": {
+      "file": "kicad-unified-universal-10.0.8.dmg",
+      "url": "https://downloads.kicad.org/kicad/macos/explore/stable/download/kicad-unified-universal-10.0.8.dmg",
+      "mirror": "https://github.com/KiCad/kicad-source-mirror/releases/download/10.0.8/kicad-unified-universal-10.0.8.dmg",
+      "sha256": "501d3e2933a385f1833497469f55326662df7e5d40401239826c40d6fa583f16",
+      "bytes": 1405602755,
+      "folder": "KiCad",
+      "min_macos": "12",
+      "source": "kicad.org/download/macos (version, macOS 12 and newer); hashed from the url; the same SHA256 in Homebrew's cask kicad (formulae.brew.sh/api/cask/kicad.json); the folder is the cask's suite artifact"
+    },
+    "windows_x64": {
+      "file": "kicad-10.0.8-x86_64.exe",
+      "url": "https://downloads.kicad.org/kicad/windows/explore/stable/download/kicad-10.0.8-x86_64.exe",
+      "mirror": "https://github.com/KiCad/kicad-source-mirror/releases/download/10.0.8/kicad-10.0.8-x86_64.exe",
+      "sha256": "5652b9ed52fca4aa63ec2ec61c8bfd4fab4f6a2fbfdb441def2972b0e9b2dfc7",
+      "bytes": 969079176,
+      "user_switch": "/currentuser",
+      "source": "downloads.kicad.org/kicad/windows/explore/stable; hashed from the url; the same SHA256 and the user switch in winget-pkgs manifests/k/KiCad/KiCad/10.0.8/KiCad.KiCad.installer.yaml"
+    }
+  },
+  "ngspice": {
+    "version": "47",
+    "macos_formula": "ngspice",
+    "windows_x64": {
+      "file": "ngspice-47_64.7z",
+      "url": "https://sourceforge.net/projects/ngspice/files/ng-spice-rework/47/ngspice-47_64.7z/download",
+      "sha256": "59225971bd68cdd1199443649aa4615a9e6d684933f205ab49006a3942518f5a",
+      "bytes": 13814879,
+      "source": "hashed from the url (SourceForge, the ngspice project's own file area); the macOS version from formulae.brew.sh/api/formula/ngspice.json (stable 47)"
+    }
+  },
+  "java": {
+    "version": "21.0.13.1+2",
+    "macos_arm64": {
+      "file": "OpenJDK21U-jre_aarch64_mac_hotspot_21.0.13.1_2.tar.gz",
+      "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jre_aarch64_mac_hotspot_21.0.13.1_2.tar.gz",
+      "sha256": "848feb1906c7de79de4f8391636042193fbd46eff86e26299506c4656f62c260",
+      "bytes": 47946379
+    },
+    "macos_x64": {
+      "file": "OpenJDK21U-jre_x64_mac_hotspot_21.0.13.1_2.tar.gz",
+      "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jre_x64_mac_hotspot_21.0.13.1_2.tar.gz",
+      "sha256": "10cee6ba4cd83fd4613a3f0bb3ef9dddd68c68d5f3ccfcc7e456707c9e1eafe0",
+      "bytes": 41907486
+    },
+    "windows_x64": {
+      "file": "OpenJDK21U-jre_x64_windows_hotspot_21.0.13.1_2.zip",
+      "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jre_x64_windows_hotspot_21.0.13.1_2.zip",
+      "sha256": "e15ee1e54a5a3b38027a09cedfa87bc3348d7dd3ce50866dd3d9671d7fffc6c1",
+      "bytes": 49108427
+    },
+    "source": "Eclipse Temurin 21 JRE: api.adoptium.net/v3/assets/latest/21/hotspot?image_type=jre (link, checksum and size of each package)"
+  },
+  "freerouting": {
+    "version": "1.9.0",
+    "url": "https://github.com/freerouting/freerouting/releases/download/v1.9.0/freerouting-1.9.0.jar",
+    "sha256": "9084a4888937a7f31f857ecc12aa7a37407f51160e4d2892dff9c9bb47ae3102",
+    "bytes": 5044336,
+    "source": "install.sh's FREEROUTING_SHA256; hashed again from the url"
+  },
+  "python": {
+    "version": "3.12",
+    "macos_formula": "python@3.12",
+    "windows_x64": {
+      "version": "3.12.10",
+      "file": "python-3.12.10-amd64.exe",
+      "url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe",
+      "sha256": "67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb",
+      "bytes": 26964224,
+      "source": "python.org/downloads/release/python-31210 (Windows installer, 64-bit; the page gives no SHA256, only sigstore); hashed from the url"
+    }
+  },
+  "homebrew": {
+    "install": "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"",
+    "min_macos": "15",
+    "source": "brew.sh, the command on its front page; min_macos is MACOS_OLDEST_SUPPORTED=\"15.0\" in that install.sh (raw.githubusercontent.com/Homebrew/install/HEAD/install.sh, read 2026-11-27), which on an Intel Mac aborts: \"Homebrew on macOS is only supported on Apple Silicon processors!\""
+  }
+}
