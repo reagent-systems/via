@@ -4377,7 +4377,7 @@ class Design:
             (out_dir / rel).parent.mkdir(parents=True, exist_ok=True)
             files[out_dir / rel] = text
         for p, text in files.items():
-            p.write_text(text, encoding="utf-8")
+            hostos.write_text(p, text)  # LF on Windows too: `design --check` compares bytes
         self.stitches = []
         self.filled = {}
         if self.zones:
@@ -4386,7 +4386,7 @@ class Design:
             if self.segments:  # a routed board: tracks cut the pours, stitch the pieces back together
                 added, self.islands = stitch_zones(self, pcb)
                 if added:
-                    pcb.write_text(self.board(), encoding="utf-8")
+                    hostos.write_text(pcb, self.board())
                     self.filled = fill_zones(pcb)
         return list(files)
 
@@ -4537,7 +4537,7 @@ def stitch_zones(design: Design, pcb: Path, rounds: int = 6) -> int:
                 progress = True
         if not progress:
             break
-        pcb.write_text(design.board(), encoding="utf-8")
+        hostos.write_text(pcb, design.board())
         fill_zones(pcb)
     return added, left
 
@@ -4667,7 +4667,8 @@ def drc_report(pcb: Path, kicad_cli: str = "kicad-cli", fill: bool = False) -> d
         proc = subprocess.run(
             [exe, "pcb", "drc", *refill, "--format", "json", "--output", str(out), str(pcb)],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         report = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
@@ -4754,6 +4755,7 @@ def board_copper(path: Path) -> dict:
 
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hostos  # noqa: E402  (tools/hostos.py: every generated text is written LF and UTF-8 on every system)
 import routers  # noqa: E402  (tools/routers.py: the routers behind route())
 
 # A fine-pitch part: 0.5 mm pitch or less (PROCESSES.md P4 step 11). Its nets are the route's second stage.
@@ -4849,7 +4851,7 @@ def route(
         for i, (stage, nets) in enumerate(design.route_stages(), start=1):
             done |= set(nets)
             files = [build_dir / f"{design.name}.{i}-{stage}{ext}" for ext in (".dsn", ".ses", ".log")]
-            files[0].write_text(design.dsn(nets=done), encoding="utf-8")
+            hostos.write_text(files[0], design.dsn(nets=done))
             text = freerouting(*files)
             s, v = design.merge_ses(files[1].read_text(encoding="utf-8"))
             stages.append(
@@ -4865,7 +4867,7 @@ def route(
         dsn, ses, log = files
         segments, vias = sum(s["segments"] for s in stages), sum(s["vias"] for s in stages)
     else:
-        dsn.write_text(design.dsn(seed), encoding="utf-8")
+        hostos.write_text(dsn, design.dsn(seed))
         text = freerouting(dsn, ses, log)
         segments, vias = design.merge_ses(ses.read_text(encoding="utf-8"))
     # FreeRouting 1.9.0 logs no count, and it ends with exit code 0 on a board where it joined nothing
@@ -5061,7 +5063,7 @@ def symbol_add(lib: Path, name: str, pins: list[dict], **props: str) -> Path:
     new = head + "\t" + dumps(symbol_node(name, pins, **props), 1) + "\n)\n"
     part = lib.with_name(lib.name + ".part")
     lib.parent.mkdir(parents=True, exist_ok=True)
-    part.write_text(new, encoding="utf-8", newline="")
+    hostos.write_text(part, new)
     try:
         _find_symbol(parse(new), name)
     except (KeyError, ValueError) as exc:

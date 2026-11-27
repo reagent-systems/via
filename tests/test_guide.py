@@ -32,7 +32,26 @@ CLI = ROOT / "tools" / "workcenter"
 BOARDS = ROOT / "tests" / "boards"
 sys.path.insert(0, str(ROOT / "tools"))
 import guide  # noqa: E402
+import hostos  # noqa: E402
 import kicadgen  # noqa: E402
+
+# What only a POSIX shell runs: a chain, a pipe, a redirection, a substitution, `~`, and the programs
+# Windows lacks. A command `next` prints runs alike in a POSIX shell, Git Bash and PowerShell.
+POSIX_ONLY = re.compile(
+    r"&&|\|\||(?<![<\w])\|(?![\w>])|;|\$\(|(^|\s)\d?>{1,2}\s?\S|2>&1|(^|\s)~/"
+    r"|(^|[\s(])(sudo|mkdir -p|cp|mv|rm|ln|cd|export|chmod|bash|sh|python3)\s"
+)
+# A command a text names in backticks: it starts with a program's name.
+COMMAND_SPAN = re.compile(r"`((?:workcenter|sudo|mkdir|cp|cd|python3?|bash|sh|git|rm|ln|export)\b[^`]*)`")
+
+
+def posix_only(command: str) -> list[str]:
+    return [m.group(0) for m in POSIX_ONLY.finditer(command)]
+
+
+def commands(text: str | None) -> list[str]:
+    return COMMAND_SPAN.findall(text or "")
+
 
 needs_ngspice = engine(pytest.mark.skipif(shutil.which("ngspice") is None, reason="ngspice is not installed"))
 
@@ -518,6 +537,12 @@ def test_no_sentence_of_a_hint_or_of_a_step_is_over_20_words(tmp_path, monkeypat
     texts += [text for step in steps for text in (step.next, step.why, step.done_when)]
     long = [(len(s.split()), s) for text in texts for s in sentences(text) if len(s.split()) > 20]
     assert not long, long
+    # Every command `next` prints runs alike in a POSIX shell, Git Bash and PowerShell, save the
+    # installer's line, which is each system's own (tools/hostos.py, installer_command).
+    installer = hostos.installer_command(cli.SRC_DIR)
+    shell = [(s.run, posix_only(s.run)) for s in steps if s.run and s.run != installer]
+    shell += [(c, posix_only(c)) for s in steps for t in (s.next, s.why, s.done_when) for c in commands(t)]
+    assert len(shell) > 30 and [pair for pair in shell if pair[1]] == []
     tree = ast.parse(Path(guide.__file__).read_text(encoding="utf-8"))
     sites = {
         node.lineno
@@ -525,6 +550,64 @@ def test_no_sentence_of_a_hint_or_of_a_step_is_over_20_words(tmp_path, monkeypat
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Step"
     }
     assert sites == reached, f"no project here is answered by the Step of line {sorted(sites - reached)}"
+
+
+def test_no_hint_names_a_command_only_a_posix_shell_runs():
+    """Windows has no `sudo`, `mkdir -p` or `cp`, and Windows PowerShell 5.1 has no `&&`."""
+    said = [(c, posix_only(c)) for _, do, _ in guide.HINTS for c in commands(do)]
+    assert len(said) >= 3 and [pair for pair in said if pair[1]] == []
+
+
+def test_the_shell_check_finds_what_only_a_posix_shell_runs():
+    for line in (
+        "mkdir -p a/sim && cp x a/sim/x",
+        "sudo /opt/via/install.sh",
+        "workcenter gates . > build/out.txt",
+        "workcenter now . 2>&1",
+        "cd board; workcenter gates .",
+        "export KICAD_CLI=/x",
+        "workcenter gates $(pwd)",
+        "workcenter gates ~/board",
+        "rm -rf build",
+    ):
+        assert posix_only(line), line
+    for line in (
+        "workcenter gates 'a b' --strict",
+        "workcenter new /tmp/x --deck i2c_rise --as i2c_rise_2",
+        "altermod <model> <name>=<value>",
+        "R1 a b 10k tc1=100u",
+    ):
+        assert not posix_only(line), line
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+def test_the_install_step_off_linux_names_that_systems_installer(tmp_path, monkeypatch, platform):
+    """Off Linux the installer is another script, run without sudo (tools/hostos.py)."""
+    cli = load_cli()
+    monkeypatch.setattr(cli, "NGSPICE", "no-such-ngspice")
+    monkeypatch.setattr(cli, "KICAD_CLI", sys.executable)
+    proj = sim_project(tmp_path / "p")
+
+    # shutil.which reads Windows' own API when sys.platform is win32, which Linux lacks: it answers here.
+    def which(name, *rest, **named):
+        return None if name.startswith("no-") else name
+
+    monkeypatch.setattr(shutil, "which", which)
+    monkeypatch.setattr(sys, "platform", platform)
+    step = guide.next_step(cli, str(proj))
+    assert step.next.startswith("Install the toolchain") and step.run == hostos.installer_command(cli.SRC_DIR)
+    assert "sudo" not in step.run and not step.run.endswith("install.sh")
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+def test_the_hint_for_a_missing_kicad_cli_names_this_systems_installer(monkeypatch, platform):
+    """`next` names the installer only once no earlier step comes first, so the hint names it itself.
+    Review finding F9."""
+    monkeypatch.setattr(sys, "platform", platform)
+    line = "thermal: which parts of the board carry a thermal figure is not judged: kicad-cli is not on PATH"
+    do, _ = guide.hint("sim", line)
+    assert f"`{hostos.installer_command(ROOT)}`" in do
+    assert "{" not in do
 
 
 # ------------------------------------------------------------- the path
@@ -592,10 +675,12 @@ def test_a_folder_that_is_not_there_is_created_first(tmp_path):
     new = tmp_path / "boards" / "psu"
     code, step = ask(new)
     assert code == 1 and step["next"] == "Create the project's folder: it does not exist yet."
-    assert step["run"] == f"mkdir -p {new}" and step["why"] == f"{new}: not found"
+    assert step["run"] == f"workcenter new {new} --empty" and step["why"] == f"{new}: not found"
     assert step["done_when"] == f"`workcenter next {new}` names another step"
     assert not new.parent.exists()  # the command writes nothing
-    new.mkdir(parents=True)  # what the RUN line does
+    made = run_line(step)  # `mkdir -p` was the line: Windows has no -p, and cmd.exe's mkdir no `/`
+    assert made.returncode == 0, made.stdout + made.stderr
+    assert new.is_dir() and list(new.iterdir()) == []
     code, step = ask(new)
     assert code == 1 and step["next"].startswith("Start a board project")
 

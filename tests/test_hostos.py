@@ -750,6 +750,40 @@ def test_shell_word_on_windows_puts_a_path_with_a_space_in_double_quotes(hostos,
     assert hostos.shell_word(pip) == f'"{pip}"'
 
 
+# ------------------------------------------------------------------ installer_command
+
+
+def test_installer_command_on_linux_is_todays_line_of_next(hostos, monkeypatch):
+    """tools/guide.py:834 at cea464d: `sudo <src>/install.sh`."""
+    on(monkeypatch, "linux")
+    src = Path("/opt/workcenters/ee/src")
+    assert hostos.installer_command(src) == "sudo /opt/workcenters/ee/src/install.sh"
+
+
+def test_installer_command_on_macos_needs_no_sudo_and_quotes_a_space(hostos, monkeypatch):
+    on(monkeypatch, "darwin")
+    src = Path("/Users/ada/Library/Application Support/via/src")
+    assert hostos.installer_command(src) == f"'{src}/install-macos.sh'"
+    assert hostos.installer_command(Path("/opt/via")) == "/opt/via/install-macos.sh"
+
+
+def test_installer_command_on_windows_runs_the_powershell_script_in_double_quotes(hostos, monkeypatch):
+    """Double quotes hold a path in cmd.exe and in PowerShell alike; a Windows file name holds none."""
+    on(monkeypatch, "win32")
+    src = "C:\\Users\\Ada Lovelace\\AppData\\Local\\Via\\src"
+    said = hostos.installer_command(src)
+    assert said == f'powershell -NoProfile -ExecutionPolicy Bypass -File "{src}\\install.ps1"'
+    assert "sudo" not in said and "'" not in said
+
+
+@pytest.mark.parametrize("src", ["C:\\via\\src\\", "C:\\via\\src/", "C:\\via\\src"])
+def test_installer_command_on_windows_puts_1_backslash_before_the_script(hostos, monkeypatch, src):
+    """A source folder given with a separator at its end still names `C:\\via\\src\\install.ps1`."""
+    on(monkeypatch, "win32")
+    said = hostos.installer_command(src)
+    assert said == 'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\via\\src\\install.ps1"'
+
+
 # ------------------------------------------------------------------ the module
 
 # Run in a child process, so this session's import path and modules stay as they are: each pair is
@@ -865,6 +899,7 @@ def test_every_function_answers_on_every_platform(hostos, monkeypatch, tmp_path,
     assert signal.SIGTERM in hostos.stop_signals()
     assert isinstance(hostos.java_home(sys.executable), Path)
     assert set(hostos.own_group()) <= {"start_new_session", "creationflags"}
+    assert isinstance(hostos.installer_command(tmp_path), str)
 
 
 # ------------------------------------------------------------------ the engine lock's file lock

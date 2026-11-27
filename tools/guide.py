@@ -38,6 +38,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import hostos  # tools/hostos.py, beside this file: the installer each system runs
+
+# The workcenter's checkout, whose installer a hint names: the CLI's SRC_DIR, found the same way.
+SRC_DIR = Path(__file__).resolve().parent.parent
+
 GATES = ".claude/skills/board-gates/SKILL.md"
 DESIGN = ".claude/skills/board-design/SKILL.md"
 SIMULATE = ".claude/skills/simulate/SKILL.md"
@@ -403,8 +408,8 @@ HINTS: list[tuple[str, str, str]] = [
     ),
     (
         r"^sim: thermal: which parts of the board carry a thermal figure is not judged: \S+ is not on PATH",
-        "Install the toolchain: kicad-cli reads the schematic's parts (`sudo install.sh` at the "
-        "workcenter's root; `workcenter doctor` prints ok). Then run the gate again.",
+        "Install the toolchain: kicad-cli reads the schematic's parts. Run `{installer}`, then "
+        "`workcenter doctor` prints ok. Then run the gate again.",
         "ee-agent-kit/docs/ENGINES.md",
     ),
     (
@@ -510,10 +515,11 @@ class Step:
 
 
 def hint(gate: str, line: str) -> tuple[str, str]:
-    """What to do about a failure or warning line of a gate, and what to read."""
+    """What to do about a failure or warning line of a gate, and what to read. `{installer}` in a hint
+    is this computer's install line (tools/hostos.py), as `next`'s install step prints it."""
     for pattern, do, read in HINTS:
         if re.search(pattern, f"{gate}: {line}"):
-            return do, read
+            return do.replace("{installer}", hostos.installer_command(SRC_DIR)), read
     raise AssertionError("the last hint matches every line")
 
 
@@ -724,18 +730,15 @@ DECK_STEPS = {  # a template of templates/project/sim/ -> what to do once it is 
 
 def copy_deck(cli, project, quoted: str, stem: str, line: str, gates: str) -> Step:
     """The step for a circuit the SIM gate found no deck for: copy the template's deck and its bounds
-    under a name sim/ does not hold yet (tools/simneeds.py), then write the board's values into them."""
+    under a name sim/ does not hold yet (tools/simneeds.py), then write the board's values into them.
+    `new --deck` copies on every system; `mkdir -p` and `cp` run in a POSIX shell alone."""
     import simneeds
 
     name = simneeds.free_name(project.dir / "sim", stem)
-    src = cli.SRC_DIR / "templates" / "project" / "sim"
-    copies = " && ".join(
-        f"cp {shlex.quote(str(src / f'{stem}{ext}'))} {quoted}/sim/{name}{ext}"
-        for ext in (".cir", ".expect.json")
-    )
+    named = "" if name == stem else f" --as {name}"
     return Step(
         DECK_STEPS[stem],
-        f"mkdir -p {quoted}/sim && {copies}",
+        f"workcenter new {quoted} --deck {stem}{named}",
         f"SIM: {line}",
         f'{SIMULATE}, "Decks a board asks for"',
         f"sim/{name}.cir holds no `* fill:` line, and `{gates} --strict` runs it and asks for no deck "
@@ -782,7 +785,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
                 return to_folder(path, f"{why}; a project is named by its folder")
             return Step(
                 "Create the project's folder: it does not exist yet.",
-                f"mkdir -p {quoted}",
+                f"{wc} new {quoted} --empty",
                 why,
                 done_when=again,
             )
@@ -831,7 +834,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
     if absent:
         return Step(
             "Install the toolchain: a gate cannot run without its engine.",
-            f"sudo {cli.SRC_DIR / 'install.sh'}",
+            hostos.installer_command(cli.SRC_DIR),
             f"{', '.join(absent)} is not on PATH",
             "ee-agent-kit/docs/ENGINES.md",
             f"`{wc} doctor` prints ok or degraded",

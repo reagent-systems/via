@@ -1,0 +1,5 @@
+# `workcenter new` writes this file as the project's .gitattributes.
+# Git converts no file's line endings, on any system. Git for Windows sets core.autocrlf=true; without
+# this line a checkout there writes CRLF into the generated KiCad files, and `workcenter design --check`
+# finds every one of them different from design.py.
+* -text

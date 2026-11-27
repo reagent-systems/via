@@ -125,7 +125,7 @@ def test_an_empty_folder_is_told_new_then_the_design_then_the_route(tmp_path):
     made = run_line(step, env)
     assert made.returncode == 0, made.stdout + made.stderr
     assert made.stdout.splitlines()[-1] == (
-        f"new: 4 files written, 0 kept. Next: edit {board}/design.py, then workcenter next {board}"
+        f"new: 5 files written, 0 kept. Next: edit {board}/design.py, then workcenter next {board}"
     )
     code, step = ask(board, env)
     assert (code, step["next"]) == (1, "Generate the KiCad project from its design file.")
@@ -169,7 +169,17 @@ def test_new_writes_the_template_under_the_folders_name_and_the_headers(tmp_path
     board = tmp_path / "my board"
     made = workcenter("new", str(board), env=env)
     assert made.returncode == 0, made.stdout + made.stderr
-    assert files(board) == [".gitignore", "design.py", "library", "library/sources.csv", "parts.csv"]
+    assert files(board) == [
+        ".gitattributes",
+        ".gitignore",
+        "design.py",
+        "library",
+        "library/sources.csv",
+        "parts.csv",
+    ]
+    # Git converts no file of the project (Git for Windows' core.autocrlf=true included), so a
+    # checkout on Windows holds the bytes `design --check` compares.
+    assert (board / ".gitattributes").read_text(encoding="utf-8").splitlines()[-1] == "* -text"
     ours = (board / "design.py").read_text(encoding="utf-8").splitlines()
     theirs = TEMPLATE.read_text(encoding="utf-8").splitlines()
     changed = [(a.strip(), b.strip()) for a, b in zip(theirs, ours, strict=True) if a != b]
@@ -226,13 +236,14 @@ def test_new_keeps_what_is_there_and_the_library_above(tmp_path):
     assert made.returncode == 0, made.stdout + made.stderr
     assert made.stdout.splitlines() == [
         f"wrote {board}/design.py",
+        f"wrote {board}/.gitattributes",
         f"wrote {board}/parts.csv",
         f"kept  {board}/.gitignore (it is there already)",
         f"kept  {tmp_path}/library/sources.csv (the library above serves this project)",
-        f"new: 2 files written, 1 kept. Next: edit {board}/design.py, then workcenter next {board}",
+        f"new: 3 files written, 1 kept. Next: edit {board}/design.py, then workcenter next {board}",
     ]
     assert (board / ".gitignore").read_text(encoding="utf-8") == "mine\n"
-    assert files(board) == [".gitignore", "design.py", "parts.csv"]
+    assert files(board) == [".gitattributes", ".gitignore", "design.py", "parts.csv"]
 
 
 def test_new_refuses_a_file(tmp_path):
@@ -306,7 +317,7 @@ def test_new_under_a_git_folder_starts_its_own_library(tmp_path):
     (board / ".git").mkdir(parents=True)
     made = workcenter("new", str(board), env=env)
     assert made.returncode == 0, made.stdout + made.stderr
-    assert made.stdout.splitlines()[-1].startswith("new: 4 files written, 0 kept.")
+    assert made.stdout.splitlines()[-1].startswith("new: 5 files written, 0 kept.")
     assert load_cli().find_sources(board) == board / "library" / "sources.csv"
 
 
@@ -438,6 +449,92 @@ def test_the_help_of_next_says_exit_1_is_a_step_and_no_error():
     proc = subprocess.run([sys.executable, str(CLI), "--help"], capture_output=True, text=True, check=False)
     text = " ".join(proc.stdout.split())
     assert re.search(r"\bnew\b.*start a board project in a folder", text)
+
+
+# ------------------------------------------------------------- the steps `next` names with `new`
+# `next` printed `mkdir -p` and `cp` once: Windows has neither. Its steps that make a folder or copy a
+# template deck now run `new`, which does both the same way on every system.
+
+DECKS = ROOT / "templates" / "project" / "sim"
+
+
+def test_new_empty_makes_the_folder_and_writes_nothing_in_it(tmp_path):
+    env, log = stand_ins(tmp_path)
+    board = tmp_path / "boards" / "psu"
+    made = workcenter("new", str(board), "--empty", env=env)
+    assert made.returncode == 0, made.stdout + made.stderr
+    assert board.is_dir() and files(board) == []
+    assert made.stdout.splitlines() == [f"new: made {board}, empty. Next: workcenter next {board}"]
+    again = workcenter("new", str(board), "--empty", env=env)
+    assert again.returncode == 0 and again.stdout.splitlines() == [
+        f"new: {board} is there already; nothing written. Next: workcenter next {board}"
+    ]
+    assert not log.exists()  # no engine started
+
+
+def test_new_empty_refuses_a_file(tmp_path):
+    env, _ = stand_ins(tmp_path)
+    note = tmp_path / "note.txt"
+    note.write_text("x\n", encoding="utf-8")
+    made = workcenter("new", str(note / "board"), "--empty", env=env)
+    assert made.returncode == 1 and "is a file" in made.stdout and not (note / "board").exists()
+
+
+@pytest.mark.parametrize("stem", ["i2c_rise", "load_step"])
+def test_new_deck_copies_the_template_and_its_bounds_byte_for_byte(tmp_path, stem):
+    """Into a folder that holds a design: a deck is added to a board, so the design does not refuse it."""
+    env, _ = stand_ins(tmp_path)
+    board = tmp_path / "board"
+    board.mkdir()
+    (board / "design.py").write_text("# a design\n", encoding="utf-8")
+    made = workcenter("new", str(board), "--deck", stem, env=env)
+    assert made.returncode == 0, made.stdout + made.stderr
+    for ext in (".cir", ".expect.json"):
+        assert (board / "sim" / f"{stem}{ext}").read_bytes() == (DECKS / f"{stem}{ext}").read_bytes()
+    assert files(board) == ["design.py", "sim", f"sim/{stem}.cir", f"sim/{stem}.expect.json"]
+    assert made.stdout.splitlines()[-1] == (
+        f"new: copied the {stem} deck as sim/{stem}.cir. Next: fill it, then workcenter gates {board}"
+    )
+
+
+def test_new_deck_never_replaces_a_file(tmp_path):
+    env, _ = stand_ins(tmp_path)
+    board = tmp_path / "board"
+    (board / "sim").mkdir(parents=True)
+    (board / "sim" / "i2c_rise.cir").write_text("* mine\n", encoding="utf-8")
+    made = workcenter("new", str(board), "--deck", "i2c_rise", env=env)
+    assert made.returncode == 0 and (board / "sim" / "i2c_rise_2.cir").is_file()
+    assert (board / "sim" / "i2c_rise.cir").read_text(encoding="utf-8") == "* mine\n"
+    named = workcenter("new", str(board), "--deck", "i2c_rise", "--as", "i2c_rise", env=env)
+    assert named.returncode == 1
+    assert named.stdout.splitlines() == [f"new: {board}/sim/i2c_rise.cir is there already; nothing written."]
+    assert (board / "sim" / "i2c_rise.cir").read_text(encoding="utf-8") == "* mine\n"
+
+
+def test_new_deck_refuses_a_template_that_is_not_there(tmp_path):
+    env, _ = stand_ins(tmp_path)
+    made = workcenter("new", str(tmp_path / "b"), "--deck", "no_such", env=env)
+    assert made.returncode == 1 and "i2c_rise, load_step" in made.stdout and not (tmp_path / "b").exists()
+
+
+@pytest.mark.parametrize("name", ["../x", "../../x", "a/b", "a b"])
+def test_new_deck_refuses_a_name_that_leaves_sim(tmp_path, name):
+    """`--as` names a file in sim/: a path or a space is refused, and nothing is written. Review
+    finding F7: the check held no test."""
+    env, _ = stand_ins(tmp_path)
+    board = tmp_path / "board"
+    board.mkdir()
+    made = workcenter("new", str(board), "--deck", "i2c_rise", "--as", name, env=env)
+    assert made.returncode == 1 and "letters, digits and _ . - only" in made.stdout
+    assert files(board) == [] and sorted(p.name for p in tmp_path.iterdir()) == ["board", "engines"]
+
+
+def test_new_takes_one_of_empty_and_deck(tmp_path):
+    env, _ = stand_ins(tmp_path)
+    made = workcenter("new", str(tmp_path / "b"), "--empty", "--deck", "i2c_rise", env=env)
+    assert made.returncode == 2 and not (tmp_path / "b").exists()
+    alone = workcenter("new", str(tmp_path / "b"), "--as", "x", env=env)
+    assert alone.returncode == 1 and "--as names the copy of --deck" in alone.stdout
 
 
 def load_cli():

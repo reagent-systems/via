@@ -4,7 +4,8 @@ Each function reads `sys.platform` when it is called ("linux", "darwin", "win32"
 test sets the platform with 1 attribute. On Linux each returns what the code returns today; the comment
 of each names the file and line that holds that value at main cea464d. tools/enginelock.py calls
 lock_dir, user_id, lock_file, unlock_file, flock_files and stop_signals; tools/routers.py,
-tools/routebench.py and tools/mcpserver.py call it too.
+tools/routebench.py and tools/mcpserver.py call it too; write_text is called by tools/kicadgen.py,
+tools/newboard.py and the run decks of tools/workcenter, and installer_command by tools/guide.py.
 
 The macOS and Windows values come from vendor documents and build files, named beside each. None was
 seen on a Mac or a Windows machine: each is marked "not confirmed in a run" until a run there shows it.
@@ -356,6 +357,21 @@ def signal_ends_reads() -> bool:
     (Python's signal documentation). A program that must stop on a signal reads on another thread there.
     Not confirmed in a run on Windows."""
     return not _windows()
+
+
+def installer_command(src: Path | str) -> str:
+    """The command line that installs the toolchain from the checkout at `src`, as `next` prints it.
+
+    Linux: tools/guide.py:834, `sudo <src>/install.sh`. macOS: install-macos.sh, which asks before it
+    uses sudo itself (winmac plan, piece E). Windows: install.ps1 run by Windows PowerShell, which every
+    Windows 10 and 11 has (winmac plan, piece F2); the path is in double quotes, which cmd.exe and
+    PowerShell both read and which no Windows file name holds. Neither script exists yet."""
+    if _windows():
+        script = str(src).rstrip("\\/") + "\\install.ps1"
+        return f'powershell -NoProfile -ExecutionPolicy Bypass -File "{script}"'
+    if _mac():
+        return shlex.quote(f"{src}/install-macos.sh")
+    return f"sudo {Path(src) / 'install.sh'}"
 
 
 def write_text(path: Path | str, text: str) -> int:
