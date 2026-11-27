@@ -12,6 +12,11 @@ tests/test_docs.py uses; it imports them from here, so the 2 cannot read a block
 Each judged path prints 1 line, `<answer>  <path>: <why>`; the last line is the answer alone. A path
 no rule names is full; a diff git cannot read is full. Exit code 0 for either answer, 2 for misuse.
 The GitHub workflow and the Makefile both call this script. Standard library only.
+
+It also answers whether the change asks CI's Windows and macOS legs: a path of install or platform code
+(DESKTOP_FILES, or a file under DESKTOP_FOLDERS) prints `desktop  <path>: <why>` before the last line,
+and so do a run with no base and a diff git cannot read. `--desktop` asks the legs whatever the paths (a
+push to main). With `--github-output` it writes desktop=yes or desktop=no beside scope=.
 """
 
 from __future__ import annotations
@@ -31,6 +36,51 @@ FAST, FULL = "fast", "full"
 ENGINE_FOLDERS = ("tests", "examples", "templates", "third_party", ".claude")
 DOCUMENT_SUFFIXES = (".md", ".html")
 UNKNOWN = "no rule names this path, so it needs the full gate"
+
+# The desktop scope: install or platform code, which the Windows and macOS legs prove
+# (ee-agent-kit/CI.md, "Windows and macOS"). The installers and their pins, the files a platform
+# difference lives in (tools/hostos.py and the files that call it), the test runner's portable parts and
+# its table, the smoke, this script and its fixtures, and the 2 workflows that hold the legs.
+# tools/workcenter and tools/kicadgen.py are left out: nearly every full change touches them. The cost:
+# a break of either on Windows or macOS shows only on the next push to main, after the merge.
+DESKTOP_FILES = (
+    ".gitattributes",
+    ".github/workflows/ci.yml",
+    ".github/workflows/nightly.yml",
+    "install-macos.sh",
+    "install.ps1",
+    "install.sh",
+    "pyproject.toml",
+    "requirements-kicad.txt",
+    "requirements.txt",
+    "tests/conftest.py",
+    "toolchain/desktop.json",
+    "tools/ci/desktop_smoke.py",
+    "tools/ci/scope.py",
+    "tools/enginelock.py",
+    "tools/fields.py",
+    "tools/guide.py",
+    "tools/hostos.py",
+    "tools/image.py",
+    "tools/kicadchild.py",
+    "tools/mcpserver.py",
+    "tools/newboard.py",
+    "tools/routebench.py",
+    "tools/routers.py",
+    "verify/desktop.csv",
+    "verify/shards.csv",
+    "verify/testshards.py",
+    "workcenter.cmd",
+)
+# The fixtures tools/ci/desktop_smoke.py runs.
+DESKTOP_FOLDERS = (
+    "tests/boards/fail-drc-clearance/",
+    "tests/boards/fail-sim-spec/",
+    "tests/boards/pass-first-design/",
+    "tests/boards/route-me/",
+)
+DESKTOP = "desktop"
+DESKTOP_WHY = "install or platform code, so the Windows and macOS legs run"
 
 
 # ---------------------------------------------------------------- the readers test_docs.py uses
@@ -147,28 +197,43 @@ def shown(path: str) -> str:
     return os.fsencode(path).decode("utf-8", errors="backslashreplace")
 
 
-def decide(repo: Path, base: str | None, head: str | None, paths: list[str] | None) -> list[tuple[str, str]]:
-    """The judged lines as (answer, `<path>: <why>`), in the order of answer and path, the widest
-    answer last on its own."""
+def is_desktop(path: str) -> bool:
+    """Whether a path is install or platform code, which the Windows and macOS legs prove."""
+    return path in DESKTOP_FILES or path.startswith(DESKTOP_FOLDERS)
+
+
+def decide(
+    repo: Path, base: str | None, head: str | None, paths: list[str] | None, desktop: bool = False
+) -> list[tuple[str, str]]:
+    """The judged lines as (answer, `<path>: <why>`), in the order of answer and path, then the desktop
+    lines as ("desktop", `<path>: <why>`), the widest answer last on its own. `desktop`: the run asks
+    the Windows and macOS legs whatever its paths."""
     lines: list[tuple[str, str, str]] = []
+    asks: list[tuple[str, str]] = []
     if paths is not None:
         lines = [(*judge(p, None, text_at(repo, None, p), texts=False), p) for p in paths]
+        asks = [(p, DESKTOP_WHY) for p in sorted(set(paths)) if is_desktop(p)]
     elif not base:
         lines = [(FULL, "no base to compare with", "(no base)")]
+        asks = [("(no base)", "no base to compare with")]
     else:
         found, said = changed_paths(repo, base, head)
         if found is None:
             lines = [(FULL, f"git cannot read the change from {base}: {said}", "(diff)")]
+            asks = [("(diff)", f"git cannot read the change from {base}: {said}")]
         elif not found:
             lines = [(FAST, "the 2 commits hold the same files", "(no path)")]
         else:
             ref = head or None
             lines = [(*judge(p, text_at(repo, base, p), text_at(repo, ref, p), texts=True), p) for p in found]
+            asks = [(p, DESKTOP_WHY) for p in found if is_desktop(p)]
+    if desktop and not asks:
+        asks = [("(asked)", "the run asks the Windows and macOS legs whatever its paths")]
     judged = [
         (answer, f"{shown(path)}: {why}") for answer, why, path in sorted(lines, key=lambda x: (x[0], x[2]))
     ]
     answer = FULL if any(a == FULL for a, _ in judged) else FAST
-    return [*judged, (answer, "")]
+    return [*judged, *((DESKTOP, f"{shown(p)}: {why}") for p, why in asks), (answer, "")]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -178,7 +243,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--head", help="the commit the change ends at (default: the working tree)")
     parser.add_argument("--paths", nargs="+", help="judge these paths by their rules, without a diff")
     parser.add_argument(
-        "--github-output", action="store_true", help="also append scope=<answer> to $GITHUB_OUTPUT"
+        "--desktop",
+        action="store_true",
+        help="ask the Windows and macOS legs whatever the paths (a push to main)",
+    )
+    parser.add_argument(
+        "--github-output",
+        action="store_true",
+        help="also append scope=<answer> and desktop=yes|no to $GITHUB_OUTPUT",
     )
     args = parser.parse_args(argv)
     if (args.base is None) == (args.paths is None):
@@ -187,14 +259,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.github_output and not output:
         print("scope.py: --github-output needs $GITHUB_OUTPUT, the file GitHub reads", file=sys.stderr)
         return 2
-    lines = decide(args.repo, args.base, args.head, args.paths)
+    lines = decide(args.repo, args.base, args.head, args.paths, args.desktop)
     for answer, line in lines[:-1]:
         print(f"{answer}  {line}")
     answer = lines[-1][0]
     print(answer)
+    asked = "yes" if any(a == DESKTOP for a, _ in lines) else "no"
     if args.github_output:
         with open(output, "a", encoding="utf-8") as out:
-            out.write(f"scope={answer}\n")
+            out.write(f"scope={answer}\ndesktop={asked}\n")
     return 0
 
 

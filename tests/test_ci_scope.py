@@ -20,6 +20,44 @@ SCOPE = ROOT / "tools" / "ci" / "scope.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 UNKNOWN = "no rule names this path, so it needs the full gate"
 SAME = "a document; its shown runs are as they were"
+DESKTOP = "install or platform code, so the Windows and macOS legs run"
+# The paths of the desktop scope, named here a second time on purpose: a path dropped from scope.py, or
+# one added there, fails this test until the list below and ee-agent-kit/CI.md say the same.
+DESKTOP_FILES = (
+    ".gitattributes",
+    ".github/workflows/ci.yml",
+    ".github/workflows/nightly.yml",
+    "install-macos.sh",
+    "install.ps1",
+    "install.sh",
+    "pyproject.toml",
+    "requirements-kicad.txt",
+    "requirements.txt",
+    "tests/conftest.py",
+    "toolchain/desktop.json",
+    "tools/ci/desktop_smoke.py",
+    "tools/ci/scope.py",
+    "tools/enginelock.py",
+    "tools/fields.py",
+    "tools/guide.py",
+    "tools/hostos.py",
+    "tools/image.py",
+    "tools/kicadchild.py",
+    "tools/mcpserver.py",
+    "tools/newboard.py",
+    "tools/routebench.py",
+    "tools/routers.py",
+    "verify/desktop.csv",
+    "verify/shards.csv",
+    "verify/testshards.py",
+    "workcenter.cmd",
+)
+DESKTOP_FOLDERS = (
+    "tests/boards/fail-drc-clearance/",
+    "tests/boards/fail-sim-spec/",
+    "tests/boards/pass-first-design/",
+    "tests/boards/route-me/",
+)
 
 # A README as the root's is written: prose, a shown run of the gates with its printed lines, prose after
 # it, and a quick start whose commands the document tests run.
@@ -219,6 +257,7 @@ def test_a_list_of_paths_is_judged_by_folder_and_kind_alone():
         "full  examples/rosetta/README.md: a command reads the files under examples/",
         "full  templates/project/gates.md: a command reads the files under templates/",
         "full  tests/boards/README.md: a command reads the files under tests/",
+        f"desktop  .github/workflows/ci.yml: {DESKTOP}",
         "full",
     ]
 
@@ -227,11 +266,16 @@ def test_without_a_base_or_with_a_base_git_cannot_read_the_change_is_full(repo, 
     """The nightly run and a run by hand have no base. A base the shallow clone does not hold cannot
     be read. Neither is judged as fast."""
     _, lines = scope("--repo", repo, "--base", "")
-    assert lines == ["full  (no base): no base to compare with", "full"]
+    assert lines == [
+        "full  (no base): no base to compare with",
+        "desktop  (no base): no base to compare with",
+        "full",
+    ]
     code, lines = scope("--repo", repo, "--base", "0" * 40, "--head", "HEAD")
     assert code == 0
     assert lines[0].startswith(f"full  (diff): git cannot read the change from {'0' * 40}: ")
-    assert lines[-1] == "full"
+    assert lines[1].startswith(f"desktop  (diff): git cannot read the change from {'0' * 40}: ")
+    assert lines[-1] == "full" and len(lines) == 3
 
 
 def test_without_a_head_the_working_tree_is_the_change_with_its_new_files(repo):
@@ -300,9 +344,118 @@ def test_no_change_is_fast_and_the_answer_goes_to_the_github_output(repo, tmp_pa
         "--repo", repo, "--base", base, "--head", base, "--github-output", env={"GITHUB_OUTPUT": str(out)}
     )
     assert lines == ["fast  (no path): the 2 commits hold the same files", "fast"]
-    assert out.read_text(encoding="utf-8") == "scope=fast\n"
+    assert out.read_text(encoding="utf-8") == "scope=fast\ndesktop=no\n"
     code, lines = scope("--repo", repo, "--paths", "README.md", "--github-output", env={"GITHUB_OUTPUT": ""})
     assert code == 2 and lines[-1] == "scope.py: --github-output needs $GITHUB_OUTPUT, the file GitHub reads"
+
+
+# ---------------------------------------------------------------- the desktop scope
+
+
+def test_the_desktop_scope_names_its_paths_and_no_other():
+    """scope.py's list is the list here, file by file and folder by folder."""
+    sys.path.insert(0, str(SCOPE.parent))
+    try:
+        import scope as module
+    finally:
+        sys.path.remove(str(SCOPE.parent))
+    assert module.DESKTOP_FILES == DESKTOP_FILES
+    assert module.DESKTOP_FOLDERS == DESKTOP_FOLDERS
+
+
+def test_each_path_of_install_or_platform_code_asks_the_desktop_legs(tmp_path):
+    """Each named file, and a file inside each named fixture, prints its desktop line and writes
+    desktop=yes; the fast or full answer is the one it had before."""
+    for path in (*DESKTOP_FILES, *(f"{folder}design.py" for folder in DESKTOP_FOLDERS)):
+        out = tmp_path / "out"
+        out.unlink(missing_ok=True)
+        code, lines = scope(
+            "--repo", ROOT, "--paths", path, "--github-output", env={"GITHUB_OUTPUT": str(out)}
+        )
+        assert code == 0, lines
+        assert lines[-2] == f"desktop  {path}: {DESKTOP}", lines
+        assert lines[-1] == "full" and lines[0].startswith(f"full  {path}: "), lines
+        assert out.read_text(encoding="utf-8") == "scope=full\ndesktop=yes\n", path
+
+
+def test_a_path_given_twice_asks_the_desktop_legs_once():
+    code, lines = scope("--repo", ROOT, "--paths", "install.sh", "install.ps1", "install.sh")
+    assert code == 0, lines
+    assert [line for line in lines if line.startswith("desktop")] == [
+        f"desktop  install.ps1: {DESKTOP}",
+        f"desktop  install.sh: {DESKTOP}",
+    ]
+
+
+def test_paths_beside_the_desktop_scope_do_not_ask_it(tmp_path):
+    """Code that every full change touches (the CLI, the generator), another fixture, another workflow,
+    a document, the site: full or fast as before, and desktop=no. Their cost: a break of the CLI or the
+    generator on Windows or macOS shows on the next push to main, after the merge."""
+    others = (
+        "tools/workcenter",
+        "tools/kicadgen.py",
+        "tools/ci/nightly_issue.py",
+        "tests/test_gates.py",
+        "tests/boards/pass-rc-divider/rc_divider.kicad_pcb",
+        "tests/boards/route-me-too/x.kicad_pcb",
+        ".github/workflows/image.yml",
+        "verify/shards.csv.orig",
+        "install.sh.orig",
+        "toolchain/other.json",
+        "ee-agent-kit/CI.md",
+        "site/index.html",
+    )
+    out = tmp_path / "out"
+    code, lines = scope(
+        "--repo", ROOT, "--paths", *others, "--github-output", env={"GITHUB_OUTPUT": str(out)}
+    )
+    assert code == 0, lines
+    assert not [line for line in lines if line.startswith("desktop")], lines
+    assert out.read_text(encoding="utf-8") == "scope=full\ndesktop=no\n"
+
+
+def test_a_diff_that_touches_an_installer_asks_the_desktop_legs(repo, tmp_path):
+    """From git, as the scope job reads a pull request: 1 desktop path among others."""
+    base = git(repo, "rev-parse", "HEAD")
+    head = commit(
+        repo, {"install.ps1": "Write-Host via\n", "ee-agent-kit/ROADMAP.md": "# Roadmap\n"}, "installer"
+    )
+    out = tmp_path / "out"
+    _, lines = scope(
+        "--repo", repo, "--base", base, "--head", head, "--github-output", env={"GITHUB_OUTPUT": str(out)}
+    )
+    assert lines == [
+        f"fast  ee-agent-kit/ROADMAP.md: {SAME}",
+        f"full  install.ps1: {UNKNOWN}",
+        f"desktop  install.ps1: {DESKTOP}",
+        "full",
+    ]
+    assert out.read_text(encoding="utf-8") == "scope=full\ndesktop=yes\n"
+
+
+def test_a_run_that_asks_the_desktop_legs_gets_them_whatever_its_paths(repo, tmp_path):
+    """A push to main runs the legs on every change (the owner's cadence): the scope job passes
+    --desktop, and a change of prose alone still writes desktop=yes."""
+    base = git(repo, "rev-parse", "HEAD")
+    head = commit(repo, {"ee-agent-kit/ROADMAP.md": "# Roadmap\n\n### 1. Renamed\n"}, "prose")
+    out = tmp_path / "out"
+    _, lines = scope(
+        "--repo",
+        repo,
+        "--base",
+        base,
+        "--head",
+        head,
+        "--desktop",
+        "--github-output",
+        env={"GITHUB_OUTPUT": str(out)},
+    )
+    assert lines == [
+        f"fast  ee-agent-kit/ROADMAP.md: {SAME}",
+        "desktop  (asked): the run asks the Windows and macOS legs whatever its paths",
+        "fast",
+    ]
+    assert out.read_text(encoding="utf-8") == "scope=fast\ndesktop=yes\n"
 
 
 # ---------------------------------------------------------------- the workflow, by its parsed structure
@@ -325,10 +478,13 @@ def test_the_workflow_is_1_workflow_whose_first_job_alone_decides_the_scope():
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}
     assert all("paths" not in (t or {}) and "paths-ignore" not in (t or {}) for t in triggers.values())
     jobs = flow["jobs"]
-    assert list(jobs) == ["scope", "fast", "full", "verdict"]
+    assert list(jobs) == ["scope", "fast", "full", "desktop", "desktop-wsl", "verdict"]
     assert "tools/ci/scope.py" in run_lines(jobs["scope"])
     assert [name for name, job in jobs.items() if "scope.py" in run_lines(job)] == ["scope"]
-    assert jobs["scope"]["outputs"] == {"scope": "${{ steps.scope.outputs.scope }}"}
+    assert jobs["scope"]["outputs"] == {
+        "scope": "${{ steps.scope.outputs.scope }}",
+        "desktop": "${{ steps.scope.outputs.desktop }}",
+    }
     assert jobs["fast"]["needs"] == "scope" and jobs["full"]["needs"] == "scope"
     # The fast job runs on every change, beside the full one: a test that needs KiCad's files and
     # does not say so fails on the pull request that adds it, not on main's next fast push (P12).
@@ -354,38 +510,67 @@ def test_the_fast_job_installs_no_engine_and_the_full_job_is_the_gate_of_today()
 
 
 def test_the_last_job_always_runs_and_passes_only_when_the_asked_jobs_passed(tmp_path):
-    """The verdict job needs all 3, runs with `if: always()`, and its 1 step is run here with each
-    answer: green only when the fast job succeeded and, for a full change, the full job too. A skipped
-    job is not a success, and a scope job that failed leaves no answer."""
+    """The verdict job needs the 4 jobs it judges, runs with `if: always()`, and its 1 step is run here
+    with each answer: green only when the fast job succeeded, for a full change the full job too, and
+    when the scope asked the desktop legs, both of them. A skipped job is not a success, and a scope job
+    that failed leaves no answer. The WSL leg is experimental: verdict does not wait for it, and the leg
+    reports its own state (tests/test_ci_desktop.py)."""
     jobs = workflow()["jobs"]
     verdict = jobs["verdict"]
-    assert verdict["needs"] == ["scope", "fast", "full"] and verdict["if"] == "always()"
+    assert verdict["needs"] == ["scope", "fast", "full", "desktop"]
+    assert verdict["if"] == "always()"
     (step,) = verdict["steps"]
     script = tmp_path / "verdict.sh"
     script.write_text(step["run"], encoding="utf-8")
     assert step["env"] == {
         "SCOPE": "${{ needs.scope.outputs.scope }}",
+        "DESKTOP_ASKED": "${{ needs.scope.outputs.desktop }}",
         "FAST": "${{ needs.fast.result }}",
         "FULL": "${{ needs.full.result }}",
+        "DESKTOP": "${{ needs.desktop.result }}",
     }
     cases = {
-        ("fast", "success", "skipped"): 0,
-        ("full", "success", "success"): 0,
-        ("fast", "failure", "skipped"): 1,
-        ("full", "success", "failure"): 1,
+        ("fast", "no", "success", "skipped", "skipped"): 0,
+        ("full", "no", "success", "success", "skipped"): 0,
+        ("fast", "no", "failure", "skipped", "skipped"): 1,
+        ("full", "no", "success", "failure", "skipped"): 1,
         # a red fast job makes a full change red too: the full job has KiCad, the fast one has not
-        ("full", "failure", "success"): 1,
-        ("full", "skipped", "success"): 1,
-        ("full", "cancelled", "success"): 1,
-        ("fast", "skipped", "success"): 1,
-        ("full", "success", "skipped"): 1,
-        ("full", "success", "cancelled"): 1,
-        ("", "skipped", "skipped"): 1,
+        ("full", "no", "failure", "success", "skipped"): 1,
+        ("full", "no", "skipped", "success", "skipped"): 1,
+        ("full", "no", "cancelled", "success", "skipped"): 1,
+        ("fast", "no", "skipped", "success", "skipped"): 1,
+        ("full", "no", "success", "skipped", "skipped"): 1,
+        ("full", "no", "success", "cancelled", "skipped"): 1,
+        ("", "no", "skipped", "skipped", "skipped"): 1,
+        # the desktop legs, asked: both legs green, or red
+        ("full", "yes", "success", "success", "success"): 0,
+        ("fast", "yes", "success", "skipped", "success"): 0,
+        ("full", "yes", "success", "success", "failure"): 1,
+        ("full", "yes", "success", "success", "skipped"): 1,
+        ("full", "yes", "success", "success", "cancelled"): 1,
+        ("full", "yes", "success", "failure", "success"): 1,
+        # not asked: a desktop result does not count (a run by hand of 1 job never happens here)
+        ("full", "no", "success", "success", "failure"): 0,
+        # a scope job that wrote a scope and no desktop answer
+        ("full", "", "success", "success", "success"): 1,
+        ("full", "maybe", "success", "success", "success"): 1,
     }
-    for (asked, fast, full), code in cases.items():
-        env = {**os.environ, "SCOPE": asked, "FAST": fast, "FULL": full}
+    for (asked, desk, fast, full, desktop), code in cases.items():
+        env = {
+            **os.environ,
+            "SCOPE": asked,
+            "DESKTOP_ASKED": desk,
+            "FAST": fast,
+            "FULL": full,
+            "DESKTOP": desktop,
+        }
         ran = subprocess.run(["bash", "-e", str(script)], env=env, capture_output=True, text=True)
-        assert ran.returncode == code, (asked, fast, full, ran.stdout, ran.stderr)
+        assert ran.returncode == code, (asked, desk, fast, full, desktop, ran.stdout, ran.stderr)
+        said = ran.stdout.splitlines()[0]
+        assert said == (
+            f"scope: {asked or 'none'}; desktop asked: {desk or 'none'}; fast: {fast}; full: {full}; "
+            f"desktop: {desktop}"
+        ), said
 
 
 def test_the_nightly_run_stays_the_full_gate():

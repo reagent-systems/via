@@ -14,11 +14,14 @@ jobs:
   # fast or full. A run with no base or a base it cannot read is full. A run by hand
   # (workflow_dispatch: `gh workflow run ci.yml --ref <branch>`) gates a candidate with no pull
   # request; it is given no base, so it is always full (ee-agent-kit/CI.md, "Where the health gate runs").
+  # It also answers desktop=yes or no: yes for a change to install or platform code (scope.py's
+  # DESKTOP_FILES and DESKTOP_FOLDERS), for a run with no base, and for every push to main (--desktop).
   scope:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       scope: ${{ steps.scope.outputs.scope }}
+      desktop: ${{ steps.scope.outputs.desktop }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,13 +32,13 @@ jobs:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
         run: |
-          base=""
+          base="" desktop=""
           case "$EVENT" in
             pull_request) base=$(git rev-parse HEAD^1) ;;
-            push) git fetch --no-tags --depth=1 origin "$BEFORE" || true; base="$BEFORE" ;;
+            push) git fetch --no-tags --depth=1 origin "$BEFORE" || true; base="$BEFORE"; desktop=yes ;;
             workflow_dispatch) base="" ;;
           esac
-          python3 tools/ci/scope.py --base "$base" --head HEAD --github-output
+          python3 tools/ci/scope.py --base "$base" --head HEAD ${desktop:+--desktop} --github-output
 
   # Every change: no toolchain; shellcheck, the site's build, the tests that start no engine, and the
   # kit's checks (make verify-site). It runs beside `full` too: its runner has no KiCad, so a test that
@@ -232,11 +235,155 @@ jobs:
             *) echo "no path was decided"; exit 1 ;;
           esac
 
+  # Windows and macOS (ee-agent-kit/CI.md, "Windows and macOS"): on a pull request that touches install
+  # or platform code, on every push to main, on a run by hand; nightly.yml runs the same steps each
+  # night (tests/test_ci_desktop.py holds the 2 copies equal). Each leg installs with the installer a
+  # person runs, keeps what the installer left in its downloads folder by the hash of
+  # toolchain/desktop.json (on Windows the Java, ngspice, 7-Zip and FreeRouting files; on macOS nothing
+  # yet: install-macos.sh deletes the DMG and the Java archive after use), and runs
+  # tools/ci/desktop_smoke.py with the venv's Python the installer made. The limit, 60 minutes, is a
+  # first bound with no run measured: the macOS DMG alone is 1,405,602,755 bytes, and the Linux full
+  # job's install bound is 2523 s of its 45 minutes (tests/test_install_apt.py). After the first runs it
+  # becomes 1.5 x the longest measured leg, as for `fast`.
+  desktop:
+    needs: scope
+    if: needs.scope.outputs.desktop == 'yes'
+    name: desktop ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      # The installers download into the root's downloads folder and check each file by its SHA256
+      # before use. install.ps1 keeps its files there; winget's KiCad and Python are not there.
+      # install-macos.sh (wip/wmac 42bc45c) deletes the DMG and the Java archive after use, so the macOS
+      # folder is empty after a good install until it keeps them. A pull request's run restores and never
+      # saves; a push to main, a night and a run by hand save after a good install. Neither cache step
+      # fails the run.
+      - name: Restore the downloads kept by an earlier run
+        uses: actions/cache/restore@v4
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: ${{ runner.os == 'macOS' && '~/Library/Application Support/via/downloads' || '~\AppData\Local\Via\downloads' }}
+          key: via-desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('toolchain/desktop.json') }}
+      - name: Install Via with install-macos.sh, as a person does
+        id: install-macos
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          ./install-macos.sh --yes
+      - name: Install Via with install.ps1, as a person does
+        id: install-windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Yes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Join-Path $env:LOCALAPPDATA 'Via\bin')
+      - name: Save the downloads for later runs
+        if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (steps.install-macos.outcome == 'success' || steps.install-windows.outcome == 'success')
+        uses: actions/cache/save@v4
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: ${{ runner.os == 'macOS' && '~/Library/Application Support/via/downloads' || '~\AppData\Local\Via\downloads' }}
+          key: via-desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('toolchain/desktop.json') }}
+      - name: The smoke on macOS
+        id: smoke-macos
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          "$HOME/Library/Application Support/via/venv/bin/python" tools/ci/desktop_smoke.py --work "$RUNNER_TEMP/desktop-smoke"
+      - name: The smoke on Windows
+        id: smoke-windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & (Join-Path $env:LOCALAPPDATA 'Via\venv\Scripts\python.exe') tools/ci/desktop_smoke.py --work (Join-Path $env:RUNNER_TEMP 'desktop-smoke')
+      # A red smoke keeps its work folder (the fixtures' copies with what the gates wrote, the tests'
+      # logs) for 7 days. Never on success.
+      - uses: actions/upload-artifact@v4
+        if: failure() && (steps.smoke-macos.outcome == 'failure' || steps.smoke-windows.outcome == 'failure')
+        with:
+          name: desktop-smoke-${{ matrix.os }}
+          path: ${{ runner.temp }}/desktop-smoke
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # The WSL route on windows-latest: Ubuntu 24.04 in WSL 2, the commit cloned inside it, the unchanged
+  # install.sh with CI's 3 bounds, then the same smoke. Experimental, so its state is reported, never
+  # assumed: only 1 user report says `wsl --install` works on GitHub's Windows runners, and it may need
+  # a restart the runner cannot give. No job reads its result: a job marked continue-on-error may hand
+  # `success` to a job that needs it, even when it failed (users' reports; GitHub's documentation of the
+  # needs context is silent). So each step carries its own continue-on-error and an id, and the last
+  # step prints each step's outcome into the log and the job's summary, and fails unless all 3 passed.
+  # The job's continue-on-error keeps that red, and a timeout, out of the workflow's result; `verdict`
+  # does not wait for it. The limit: install.sh's worst case is 2523 s (tests/test_install_apt.py), and
+  # the WSL install and the smoke come on top of it.
+  desktop-wsl:
+    needs: scope
+    if: needs.scope.outputs.desktop == 'yes'
+    name: desktop windows-latest WSL (experimental)
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ubuntu 24.04 in WSL
+        id: wsl
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          wsl --install -d Ubuntu-24.04 --no-launch
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # An older store package registers on its first launch; with --root it makes no user.
+          if (Get-Command ubuntu2404.exe -ErrorAction SilentlyContinue) {
+            ubuntu2404.exe install --root
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          wsl --list --verbose
+      - name: Clone this commit inside WSL and run install.sh
+        id: install
+        if: steps.wsl.outcome == 'success'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $sha = git rev-parse HEAD
+          wsl -d Ubuntu-24.04 -u root --cd "$env:GITHUB_WORKSPACE" -- bash -euc "git config --global --add safe.directory '*'; git clone -q . /root/via; git -C /root/via checkout -q --detach $sha; cd /root/via; env REQUIRE_FREEROUTING=1 APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570 APT_OTHER_TIMEOUT=300 ./install.sh"
+      - name: The smoke inside WSL
+        id: smoke
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        shell: pwsh
+        run: wsl -d Ubuntu-24.04 -u root --cd /root/via -- /opt/workcenters/ee/venv/bin/python tools/ci/desktop_smoke.py --work /root/desktop-smoke
+      # A step's outcome is its result before continue-on-error (GitHub's steps context); `none` is a
+      # step that never ended, as on a timeout.
+      - name: The WSL route's state
+        id: report
+        if: always()
+        shell: bash
+        env:
+          WSL: ${{ steps.wsl.outcome }}
+          INSTALL: ${{ steps.install.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+        run: |
+          line="wsl (experimental, not required): wsl --install: ${WSL:-none}; install.sh: ${INSTALL:-none}; smoke: ${SMOKE:-none}"
+          echo "$line"
+          echo "$line" >> "$GITHUB_STEP_SUMMARY"
+          test "$WSL/$INSTALL/$SMOKE" = success/success/success
+
   # Always runs, so a required check always resolves: green only when fast passed on every change,
-  # and full passed as well for a full change. A skipped job is not a pass, and a failed scope job
-  # leaves no answer.
+  # full passed as well for a full change, and both desktop legs passed when the scope asked them. A
+  # skipped job is not a pass, and a failed scope job leaves no answer. It does not wait for the WSL leg,
+  # which reports its own state.
   verdict:
-    needs: [scope, fast, full]
+    needs: [scope, fast, full, desktop]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 2
@@ -244,12 +391,21 @@ jobs:
       - name: The asked jobs passed
         env:
           SCOPE: ${{ needs.scope.outputs.scope }}
+          DESKTOP_ASKED: ${{ needs.scope.outputs.desktop }}
           FAST: ${{ needs.fast.result }}
           FULL: ${{ needs.full.result }}
+          DESKTOP: ${{ needs.desktop.result }}
         run: |
-          echo "scope: ${SCOPE:-none}; fast: $FAST; full: $FULL"
+          echo "scope: ${SCOPE:-none}; desktop asked: ${DESKTOP_ASKED:-none}; fast: $FAST; full: $FULL; desktop: $DESKTOP"
+          ok=yes
           case "$SCOPE" in
-            fast) test "$FAST" = success ;;
-            full) test "$FAST" = success && test "$FULL" = success ;;
-            *) echo "the scope job gave no answer"; exit 1 ;;
+            fast) [ "$FAST" = success ] || ok=no ;;
+            full) { [ "$FAST" = success ] && [ "$FULL" = success ]; } || ok=no ;;
+            *) echo "the scope job gave no answer"; ok=no ;;
           esac
+          case "$DESKTOP_ASKED" in
+            yes) [ "$DESKTOP" = success ] || ok=no ;;
+            no) ;;
+            *) echo "the scope job gave no desktop answer"; ok=no ;;
+          esac
+          test "$ok" = yes
