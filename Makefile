@@ -1,5 +1,6 @@
 # Via — canonical commands. ee-agent-kit/AGENTS.md names these.
-VENV_PY := /opt/workcenters/ee/venv/bin/python
+# tools/hostos.py names the venv's Python of the default root: /opt/workcenters/ee/venv/bin/python on Linux.
+VENV_PY := $(shell python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import hostos; print(hostos.venv_python(hostos.default_root()))' '$(CURDIR)/tools' 2>/dev/null || echo /opt/workcenters/ee/venv/bin/python)
 PY := $(shell test -x $(VENV_PY) && echo $(VENV_PY) || echo python3)
 
 SCOPE_BASE ?= origin/main

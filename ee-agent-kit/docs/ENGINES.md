@@ -14,6 +14,16 @@ the KiCad PPA by `install.sh`, in a machine or in the container image.
 KICAD_CLI=kicad-cli   # default
 ```
 
+With `KICAD_CLI` unset, Via looks on PATH first, then where KiCad's install puts the program
+(`tools/hostos.py`): on macOS `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli`, on Windows
+`bin\kicad-cli.exe` under `%ProgramFiles%\KiCad\10.0`, then under `%LOCALAPPDATA%\Programs\KiCad\10.0`.
+On Linux it looks on PATH alone, as before. When none is there, `workcenter doctor` says where it looked
+under the `kicad-cli` row. Its `kicad-python` row names the Python that imports KiCad's `pcbnew` (on
+Linux Via's venv's, on macOS the one in KiCad's bundle, on Windows `bin\python.exe` of the install),
+and its `pcbnew` row asks that Python to import it, as a child process. Without pcbnew Via is
+`degraded`: `design --route` leaves out stitching and pours. None of the macOS or Windows paths has been
+seen in a run on those systems.
+
 Reports are JSON (`--format json`). Exit code 5 with
 `--exit-code-violations` means "ran, found violations"; the CLI parses
 the report rather than trusting the code.
@@ -27,6 +37,10 @@ deck's `.control` block prints. Installed from the Ubuntu archive.
 ```sh
 NGSPICE=ngspice       # default
 ```
+
+With `NGSPICE` unset, Via looks on PATH first, then on macOS in Homebrew's `/opt/homebrew/bin` and
+`/usr/local/bin`, and on Windows for `ngspice_con`, then `ngspice`, on PATH and in `C:\Spice64\bin`
+(`tools/hostos.py`). `workcenter doctor` says where it looked when it finds none.
 
 ## FreeRouting
 
@@ -82,7 +96,9 @@ FREEROUTING2_JAVA=/opt/workcenters/ee/java25/bin/java              # default
 
 `tools/kicadgen.py` is not an engine but the way designs reach the
 engines without a GUI. It parses the KiCad symbol and footprint libraries
-(`KICAD_SYMBOL_DIR`, `KICAD_FOOTPRINT_DIR`), flattens derived symbols,
+(`KICAD_SYMBOL_DIR`, `KICAD_FOOTPRINT_DIR`; on macOS and Windows then KiCad's own
+`KICAD10_SYMBOL_DIR`, `KICAD10_FOOTPRINT_DIR`; then the install's folders, `/usr/share/kicad` on
+Linux, through `tools/hostos.py`), flattens derived symbols,
 strips the KiCad 10 library tokens the 9.0 file formats do not know, and
 writes the schematic (stub wires and labels, power symbols, PWR_FLAG
 pairs, no-connects with KiCad's `unconnected-(...)` pad nets), the board

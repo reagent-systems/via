@@ -43,8 +43,14 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-SYMBOL_DIR = Path(os.environ.get("KICAD_SYMBOL_DIR", "/usr/share/kicad/symbols"))
-FOOTPRINT_DIR = Path(os.environ.get("KICAD_FOOTPRINT_DIR", "/usr/share/kicad/footprints"))
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hostos  # noqa: E402  (tools/hostos.py: the platform differences, standard library only)
+
+# KICAD_SYMBOL_DIR and KICAD_FOOTPRINT_DIR first, then (on macOS and Windows) KiCad's own KICAD10_
+# variables, then the install's folders: /usr/share/kicad on Linux.
+SYMBOL_DIR = hostos.kicad_dirs()["symbols"]
+FOOTPRINT_DIR = hostos.kicad_dirs()["footprints"]
 # Fabrication houses' published limits as KiCad design rules, one .kicad_dru each (rules/README.md).
 FAB_DIR = Path(__file__).resolve().parent.parent / "rules"
 

@@ -67,6 +67,12 @@ def case(tmp_path: Path, which: str) -> tuple[dict, dict]:
     root, log = tmp_path / "root", tmp_path / "java-calls.log"
     root.mkdir()
     log.write_text("", encoding="utf-8")
+    # A venv Python that answers nothing: doctor's pcbnew row asks it, never this test's own Python,
+    # which imports KiCad's pcbnew (an engine start).
+    venv_py = root / "venv" / "bin" / "python"
+    venv_py.parent.mkdir(parents=True)
+    venv_py.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    venv_py.chmod(0o755)
     path_dir = tmp_path / "path"
     path_dir.mkdir()
     javas = {}
