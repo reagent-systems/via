@@ -529,16 +529,21 @@ def _stop_group(proc: subprocess.Popen) -> bool:
     except ProcessLookupError:
         return False
     except OSError:
-        _kill_group(proc)
+        return _kill_group(proc)
     return True
 
 
 def _kill_group(proc: subprocess.Popen) -> bool:
     """End the command's group: SIGKILL on Linux and macOS, `taskkill /T /F` on Windows
-    (hostos.kill_tree). False when the group is gone."""
+    (hostos.kill_tree). False when the group is gone. macOS's killpg answers EPERM, not ESRCH, when the
+    group holds only its ended leader (XNU, read, not run on macOS): a command that has ended is gone."""
     try:
         hostos.kill_tree(proc)
     except ProcessLookupError:
+        return False
+    except PermissionError:
+        if proc.poll() is None:
+            raise
         return False
     return True
 
@@ -628,7 +633,33 @@ def cmd_mcp(args) -> int:
     # (hostos.stop_signals). SIGINT is a terminal's Ctrl-C: the same stop, exit 130, and no traceback.
     for signum in (*hostos.stop_signals(), signal.SIGINT):
         signal.signal(signum, stopped)
-    return server.serve(sys.stdin.buffer)
+    if hostos.signal_ends_reads():
+        return server.serve(sys.stdin.buffer)
+    return _serve_beside(server, sys.stdin.buffer)
+
+
+def _serve_beside(server: Server, stream) -> int:
+    """Windows: read on another thread, so the main thread waits where a signal reaches it.
+
+    There a Ctrl+C or Ctrl+Break does not end a read of a pipe, and Python runs `stopped` on the main
+    thread only (hostos.signal_ends_reads). An MCP host keeps stdin open, so a read on the main thread
+    held the stop until the host wrote a line. The main thread waits in steps of 0.25 s and runs the
+    handler between them. The reader still holds stdin when the handler has stopped every command, so
+    the server leaves at once (os._exit), without the interpreter's shutdown, which would wait on it."""
+    answer: list[int] = []
+    reader = threading.Thread(target=lambda: answer.append(server.serve(stream)), daemon=True)
+    reader.start()
+    try:
+        while reader.is_alive():
+            reader.join(0.25)
+    except SystemExit as stop:
+        for out in (sys.stdout, sys.stderr):
+            try:
+                out.flush()
+            except (OSError, ValueError):
+                pass  # the host closed it: nothing more reaches it
+        os._exit(stop.code)
+    return answer[0] if answer else 1
 
 
 def register(sub, cli) -> None:

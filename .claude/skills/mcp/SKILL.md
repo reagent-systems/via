@@ -54,7 +54,8 @@ later does not. stdio only: no HTTP, no authentication.
    - On Windows, the line `On Windows this server sets no guard: a server
      ended by force (taskkill /F, Task Manager) leaves its commands
      running.` The server works; stop it by closing its stdin, or with
-     Ctrl+Break or Ctrl+C.
+     Ctrl+Break or Ctrl+C in its console. A SIGTERM from a host ends it by
+     force there and leaves its commands running.
 3. Give the host the server's command line. A host takes a command and its
    arguments; name the CLI by its full path, since a host may start it from
    any folder: `python3 <workcenter>/tools/workcenter mcp <project>`.
@@ -112,7 +113,7 @@ which:
 |---|---|
 | Each command leads a session of its own. | Each command leads a process group of its own (`CREATE_NEW_PROCESS_GROUP`). |
 | A stop is SIGTERM to the command's group, then SIGKILL after 10 s. | A stop is Ctrl+Break to the command's group, then `taskkill /T /F` after 10 s. With no console shared with the command, `taskkill /T /F` at once. |
-| The server stops on SIGTERM, SIGHUP and SIGINT. | The server stops on SIGTERM, SIGBREAK (Ctrl+Break) and SIGINT (Ctrl+C). |
+| The server stops on SIGTERM, SIGHUP and SIGINT. | The server stops when its stdin closes, and on Ctrl+Break (SIGBREAK) or Ctrl+C (SIGINT) to its console, also while its stdin is open: it reads stdin on another thread. A "SIGTERM" from another process is a forced end there, as `taskkill /F` is (Python's `os.kill` ends the process with TerminateProcess), so its commands keep running. A host stops the server by closing its stdin. |
 | On Linux the command's first step sets PR_SET_PDEATHSIG, so a SIGKILL to the server stops it. | No first step and no guard: a server ended by force leaves its commands running. The server says so in 1 line on stderr and in its `initialize` instructions. |
 
 Every Windows cell is held by tests on a stand-in for Windows on Linux
@@ -137,4 +138,5 @@ and its queue, a reused id, a line too deep or too long, the default `build`
 held inside ROOT, and `erc` and `drc` answering the same lines and exit codes
 as the commands. On a stand-in for Windows: the server starts and says it
 sets no guard, a command's group, a cancel by Ctrl+Break, `taskkill /T /F`
-with no console and after the grace, and the signals it stops on.
+with no console and after the grace, the signals it stops on, a stop by
+signal while its stdin is open, and an exit 0 when its stdin closes.

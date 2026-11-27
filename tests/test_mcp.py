@@ -956,8 +956,10 @@ def _on_windows(monkeypatch, tmp_path: Path, console: bool = True):
     from winstandin import windows
 
     seen = windows(monkeypatch, tmp_path / "win")
+    seen.dlopens = []
 
-    def no_dlopen(*_args, **_kw):
+    def no_dlopen(*args, **kw):
+        seen.dlopens.append((args, kw))
         raise TypeError("expected str, bytes or os.PathLike object, not NoneType")
 
     monkeypatch.setattr(ctypes, "CDLL", no_dlopen)
@@ -978,10 +980,11 @@ def test_on_windows_the_server_starts_and_says_in_1_line_that_it_sets_no_guard(t
     ended by force leaves its commands running. Before this, ctypes.CDLL(None) was asked there."""
     import mcpserver
 
-    _on_windows(monkeypatch, tmp_path)
+    seen, _ = _on_windows(monkeypatch, tmp_path)
     out = Collector()
     server = mcpserver.Server(tmp_path, out=out)
     assert server.guarded is False
+    assert seen.dlopens == [], seen.dlopens
     server.handle(b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}')
     said = out.inbox.get(timeout=5)["result"]["instructions"]
     assert mcpserver.UNGUARDED_WINDOWS in said and mcpserver.UNGUARDED not in said, said
@@ -1056,6 +1059,116 @@ def test_on_windows_cmd_mcp_catches_term_break_and_int_and_asks_for_no_hup(tmp_p
     assert caught == [signal.SIGTERM, 21, signal.SIGINT], caught
     err = capsys.readouterr().err
     assert err == f"workcenter mcp: {mcpserver.UNGUARDED_WINDOWS}\n", err
+
+
+# The server under a stand-in for how Windows delivers Ctrl+C and Ctrl+Break: the system runs the console
+# control handler on a thread of its own, and the main thread, blocked in a read of a pipe, is not
+# interrupted (no EINTR there; Python's signal documentation). Here the main thread blocks each signal
+# it handles, so Linux delivers it to another thread (pthread_sigmask(2)), and Python runs the handler
+# only when the main thread next runs Python code. Not run on Windows.
+WINDOWS_SIGNALS = """\
+import os, signal, sys, threading, time, types
+sys.path.insert(0, {tools!r})
+import mcpserver
+sys.platform = "win32"
+signal.SIGBREAK = signal.SIGTTIN
+threading.Thread(target=time.sleep, args=(3600,), daemon=True).start()
+real = signal.signal
+
+def install(signum, handler):
+    real(signum, handler)
+    signal.pthread_sigmask(signal.SIG_BLOCK, {{signum}})
+    if signum == signal.SIGINT:
+        print("armed", file=sys.stderr, flush=True)
+
+signal.signal = install
+sys.exit(mcpserver.cmd_mcp(types.SimpleNamespace(root={root!r})))
+"""
+
+
+@pytest.mark.parametrize("signum,code", [(2, 130), (15, 143)])
+def test_on_windows_a_signal_stops_the_server_while_its_stdin_is_open(tmp_path, signum, code):
+    """An MCP host keeps the server's stdin open. On Windows a Ctrl+C or a Ctrl+Break must still stop it
+    at once, not when the host next writes a line. Before this the stand-in was still running 5 s after
+    the signal. SIGTERM stands for SIGBREAK here, which Linux lacks."""
+    script = tmp_path / "server.py"
+    script.write_text(WINDOWS_SIGNALS.format(tools=str(ROOT / "tools"), root=str(tmp_path)), encoding="utf-8")
+    env = dict(os.environ, WORKCENTER_LOCK_DIR=str(tmp_path / "locks"))
+    proc = subprocess.Popen(
+        [sys.executable, str(script)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+    try:
+        lines = []
+        while not lines or lines[-1] != b"armed\n":
+            line = proc.stderr.readline()
+            assert line, (lines, proc.wait(timeout=5))
+            lines.append(line)
+        time.sleep(0.5)  # the server waits on its reader by now, as it does under a host
+        proc.send_signal(signum)
+        try:
+            got = proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pytest.fail("the server was still running 5 s after the signal, its stdin open")
+        assert got == code, (got, proc.stderr.read())
+        err = proc.stderr.read().decode()
+        assert "Traceback" not in err and "Fatal" not in err, err
+    finally:
+        proc.kill()
+        proc.wait()
+        proc.stdin.close()
+        proc.stdout.close()
+        proc.stderr.close()
+
+
+def test_on_windows_the_server_answers_and_exits_0_when_its_stdin_closes(tmp_path):
+    """The read on another thread changes nothing else: the server answers a line and exits 0 when the
+    host closes its stdin."""
+    script = tmp_path / "server.py"
+    script.write_text(WINDOWS_SIGNALS.format(tools=str(ROOT / "tools"), root=str(tmp_path)), encoding="utf-8")
+    env = dict(os.environ, WORKCENTER_LOCK_DIR=str(tmp_path / "locks"))
+    done = subprocess.run(
+        [sys.executable, str(script)],
+        input=b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n',
+        capture_output=True,
+        env=env,
+        timeout=30,
+    )
+    assert done.returncode == 0, done
+    assert json.loads(done.stdout) == {"jsonrpc": "2.0", "id": 1, "result": {}}, done.stdout
+
+
+def test_on_macos_a_stop_of_a_command_that_has_ended_is_no_error(monkeypatch):
+    """XNU's killpg answers EPERM, not ESRCH, when the group holds only its ended leader (read, not run
+    on macOS). A cancel or stop_all that comes between the command's last line and its reaping then got
+    PermissionError from the stop and again from the kill, and nothing caught it. Now a command that has
+    ended is gone; a PermissionError for one still running is raised as before."""
+    import mcpserver
+
+    ended = subprocess.Popen([sys.executable, "-c", "pass"])
+    os.waitid(os.P_PID, ended.pid, os.WEXITED | os.WNOWAIT)  # ended, not reaped: a zombie
+    running = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    real_killpg = os.killpg
+
+    def killpg(pid, sig):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(os, "killpg", killpg)
+    try:
+        mcpserver.stop(ended)
+        assert mcpserver._kill_group(ended) is False
+        assert ended.returncode == 0
+        with pytest.raises(PermissionError):
+            mcpserver._kill_group(running)
+    finally:
+        monkeypatch.setattr(os, "killpg", real_killpg)
+        running.kill()
+        running.wait()
+        ended.wait()
 
 
 def test_a_root_that_is_the_whole_disk_or_home_is_refused(tmp_path):

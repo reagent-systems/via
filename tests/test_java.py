@@ -677,7 +677,9 @@ def test_a_jdk_without_its_systems_awt_library_is_refused_by_that_library(tmp_pa
     on(monkeypatch, platform)
     want = Path(java).resolve().parent.parent / AWT[platform]
     why = routers.java_refusal(str(java))
-    assert why.startswith(f"{want.parent} has no {want.name}: "), why
+    # Off Linux the reason is not Linux's: apt's openjdk-21-jre is no advice on macOS or Windows.
+    reason = routers.NO_AWT_LINUX if platform == "linux" else routers.NO_AWT
+    assert why == f"{want.parent} has no {want.name}: {reason}", why
 
 
 def test_on_linux_the_refusal_is_the_words_of_before(tmp_path, monkeypatch):
@@ -711,4 +713,46 @@ def test_on_macos_the_usr_bin_java_launcher_is_followed_to_its_jdk(tmp_path, mon
     assert routers.java_refusal(str(stub)) == ""
     monkeypatch.setenv("JAVA_HOME", str(tmp_path / "no-jdk"))
     why = routers.java_refusal(str(stub))
-    assert why.startswith(f"{tmp_path / 'no-jdk' / 'lib'} has no libawt_lwawt.dylib: "), why
+    assert why == f"{stub.resolve()} leads to {tmp_path / 'no-jdk'}, which is no JDK: {routers.NO_JDK}", why
+
+
+def launcher(path: Path) -> Path:
+    """A java that only starts another one: it lies in no JDK, so the folder above it holds no release
+    file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+@pytest.mark.parametrize(
+    "platform,where",
+    [
+        ("win32", "scoop/shims/java.exe"),
+        ("win32", "Common Files/Oracle/Java/javapath/java.exe"),
+        ("darwin", "home/.asdf/shims/java"),
+        ("darwin", "usr/bin/java"),
+    ],
+)
+def test_off_linux_a_java_that_leads_to_no_jdk_is_refused_as_such(tmp_path, monkeypatch, platform, where):
+    """A launcher with no JDK behind it: Scoop's and asdf's shims, Oracle's javapath without JAVA_HOME,
+    Apple's /usr/bin/java with no JDK installed (java_home exits 1). Before this the refusal said the
+    folder had no AWT library: a Java runtime without AWT, which it is not. Now it says that no JDK lies
+    there and how to name one."""
+    java = launcher(tmp_path / where)
+    tool = launcher(tmp_path / "usr/libexec/java_home")
+    on(monkeypatch, platform)
+    monkeypatch.setattr(routers.hostos, "MAC_JAVA_STUB", (tmp_path / "usr/bin/java").resolve())
+    monkeypatch.setattr(routers.hostos, "MAC_JAVA_HOME", tool)
+    monkeypatch.delenv("JAVA_HOME", raising=False)
+    home = java.resolve().parent.parent
+    why = routers.java_refusal(str(java))
+    assert why == f"{java.resolve()} leads to {home}, which is no JDK: {routers.NO_JDK}", why
+
+
+def test_on_linux_a_java_with_no_jdk_behind_it_keeps_the_words_of_before(tmp_path, monkeypatch):
+    """Linux's refusal does not change: the folder above the java's bin, and apt's advice."""
+    java = launcher(tmp_path / "usr/local/bin/java")
+    monkeypatch.setattr(sys, "platform", "linux")
+    lib = java.resolve().parent.parent / "lib"
+    assert routers.java_refusal(str(java)) == f"{lib} has no libawt_xawt.so: {routers.NO_AWT_LINUX}"

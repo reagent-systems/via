@@ -56,6 +56,10 @@ NO_AWT_LINUX = (
 )
 # On macOS and Windows every JDK build has AWT; a runtime cut down without it (jlink) has none.
 NO_AWT = f"a Java runtime without AWT cannot draw FreeRouting 1.9.0's window (a JDK {JAVA_MIN} has it)"
+# Off Linux a java may only start another: Scoop's and asdf's shims, Oracle's javapath without JAVA_HOME,
+# Apple's /usr/bin/java with no JDK installed. The folder it leads to holds no `release` file, which a
+# JDK's or a Java runtime's top folder holds (release_major reads it). JAVA names a java on every system.
+NO_JDK = f"set JAVA to the java of a JDK {JAVA_MIN}"
 
 
 def java_major(exe: str) -> int | None:
@@ -105,6 +109,8 @@ def java_refusal(exe: str) -> str:
     home = hostos.java_home(found)
     awt = hostos.awt_lib(home)
     if not awt.is_file():
+        if not sys.platform.startswith("linux") and not (home / "release").is_file():
+            return f"{Path(found).resolve()} leads to {home}, which is no JDK: {NO_JDK}"
         why = NO_AWT_LINUX if sys.platform.startswith("linux") else NO_AWT
         return f"{awt.parent} has no {awt.name}: {why}"
     # The JVM's release file when it has one; else its java is asked (`-version`).
