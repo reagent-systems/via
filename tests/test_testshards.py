@@ -279,7 +279,9 @@ def test_the_gate_prints_each_shards_time_and_the_slowest_files(tmp_path):
     for name in ("1", "2"):
         assert f"shard {name}: exit 0," in proc.stdout
     assert "slowest files:" in proc.stdout
-    assert os.path.join("tests", "test_p.py") in proc.stdout
+    # The runner names a file as its table does, with `/` on every system (run 46067841222, Windows:
+    # `0.0 s  tests/test_p.py (shard 1)`).
+    assert "tests/test_p.py (shard " in proc.stdout
 
 
 def red_line(stdout: str) -> str:
@@ -700,7 +702,8 @@ def test_a_failing_assertions_message_its_line_and_its_output_are_in_the_gates_o
     assert re.search(failed, proc.stdout, re.M)
     block = reason(proc.stdout, f"why: tests/test_s.py::test_planted, failed at call (shard {shard}):")
     assert "E       AssertionError: the planted message" in block, proc.stdout
-    assert "tests/test_s.py:12: AssertionError" in block, proc.stdout
+    # pytest's own report names the file by the system's path (Windows: `tests\test_s.py:12`).
+    assert f"{os.path.join('tests', 'test_s.py')}:12: AssertionError" in block, proc.stdout
     assert ">       assert x == 2, 'the planted message'" in block, proc.stdout
     assert "the divider gave 3.1 V" in block, proc.stdout
 
@@ -848,7 +851,7 @@ def test_a_long_report_is_cut_to_its_first_and_last_lines_and_a_long_line_to_its
     block = reason(proc.stdout, f"why: tests/test_s.py::test_deep, failed at call (shard {shard}):")
     assert len(block) == testshards.HEAD + 1 + testshards.TAIL, proc.stdout
     assert re.fullmatch(r"\[\.\.\. \d+ lines cut here\]", block[testshards.HEAD]), block
-    assert "tests/test_s.py:3: ValueError" in block, block
+    assert f"{os.path.join('tests', 'test_s.py')}:3: ValueError" in block, block
     (long,) = [line for line in block if "xxxxxxxxxx" in line]
     assert re.fullmatch(rf".{{{testshards.WIDTH}}} \[\.\.\. \d+ characters cut\]", long), long
 
