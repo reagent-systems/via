@@ -1,7 +1,9 @@
 # Via — canonical commands. ee-agent-kit/AGENTS.md names these.
 # tools/hostos.py names the venv's Python of the default root: /opt/workcenters/ee/venv/bin/python on Linux.
 VENV_PY := $(shell python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import hostos; print(hostos.venv_python(hostos.default_root()))' '$(CURDIR)/tools' 2>/dev/null || echo /opt/workcenters/ee/venv/bin/python)
-PY := $(shell test -x $(VENV_PY) && echo $(VENV_PY) || echo python3)
+# make has no quoting: a path with a space (macOS's "Application Support") is put in quotes for the shell.
+VENV_PY_WORD := $(if $(word 2,$(VENV_PY)),'$(VENV_PY)',$(VENV_PY))
+PY := $(if $(shell test -x $(VENV_PY_WORD) && echo yes),$(VENV_PY_WORD),python3)
 
 SCOPE_BASE ?= origin/main
 

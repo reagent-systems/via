@@ -621,7 +621,10 @@ def test_shell_word_on_windows_puts_a_path_with_a_space_in_double_quotes(hostos,
 # ------------------------------------------------------------------ the module
 
 # Run in a child process, so this session's import path and modules stay as they are: each pair is
-# (what the code holds today, what hostos returns on Linux).
+# (what the code held at main cea464d, written out as it was there, what hostos or its caller returns on
+# Linux now). The callers take these values from hostos, so comparing with them would compare hostos with
+# itself: the first of each pair is cea464d's own expression (tools/workcenter:40-44 and 70,
+# tools/routers.py:31 and 49, tools/kicadgen.py:46-47, tools/enginelock.py:132 and 466).
 TODAY = """
 import importlib.machinery, importlib.util, json, os, signal, sys
 from pathlib import Path
@@ -637,22 +640,35 @@ class P:
 sent = []
 os.killpg = lambda pid, sig: sent.append([pid, int(sig)])
 hostos.kill_tree(P())
-home = Path("/java/home")
-root = os.environ.get("WORKCENTER_ROOT", str(hostos.default_root()))
-models = os.environ.get("KICAD10_3DMODEL_DIR", wc.DEFAULT_3DMODEL_DIR)
+env = os.environ.get
+root = env("WORKCENTER_ROOT", "/opt/workcenters/ee")
+venv_py = root + "/venv/bin/python"
+kicad_py = venv_py if os.path.exists(venv_py) else sys.executable
+symbols = env("KICAD_SYMBOL_DIR", "/usr/share/kicad/symbols")
+footprints = env("KICAD_FOOTPRINT_DIR", "/usr/share/kicad/footprints")
+models = env("KICAD10_3DMODEL_DIR", "/usr/share/kicad/3dmodels")
+lock = f"/tmp/workcenter-lock-{os.getuid()}"
 pairs = {
-    "default_root": [str(wc.WC_ROOT), root],
-    "routers_root": [str(routers.WC_ROOT), root],
-    "lock_dir": [str(enginelock.lock_dir()), str(hostos.lock_dir())],
-    "venv_python": [str(wc.WC_ROOT / "venv" / "bin" / "python"), str(hostos.venv_python(wc.WC_ROOT))],
-    "kicad_python": [wc.venv_python(), hostos.kicad_python()],
-    "kicad_cli": [[wc.KICAD_CLI], hostos.kicad_cli_candidates()],
-    "ngspice": [[wc.NGSPICE], hostos.ngspice_candidates()],
-    "symbols": [str(kicadgen.SYMBOL_DIR), str(hostos.kicad_dirs()["symbols"])],
-    "footprints": [str(kicadgen.FOOTPRINT_DIR), str(hostos.kicad_dirs()["footprints"])],
+    "default_root": [root, env("WORKCENTER_ROOT", str(hostos.default_root()))],
+    "wc_root": [root, str(wc.WC_ROOT)],
+    "routers_root": [root, str(routers.WC_ROOT)],
+    "lock_dir": [lock, str(hostos.lock_dir())],
+    "enginelock_dir": [lock, str(enginelock.lock_dir())],
+    "venv_python": [venv_py, str(hostos.venv_python(root))],
+    "kicad_python": [kicad_py, hostos.kicad_python()],
+    "wc_venv_python": [kicad_py, wc.venv_python()],
+    "kicad_cli": [[env("KICAD_CLI", "kicad-cli")], hostos.kicad_cli_candidates()],
+    "wc_kicad_cli": [env("KICAD_CLI", "kicad-cli"), wc.KICAD_CLI],
+    "ngspice": [[env("NGSPICE", "ngspice")], hostos.ngspice_candidates()],
+    "wc_ngspice": [env("NGSPICE", "ngspice"), wc.NGSPICE],
+    "symbols": [symbols, str(hostos.kicad_dirs()["symbols"])],
+    "kicadgen_symbols": [symbols, str(kicadgen.SYMBOL_DIR)],
+    "footprints": [footprints, str(hostos.kicad_dirs()["footprints"])],
+    "kicadgen_footprints": [footprints, str(kicadgen.FOOTPRINT_DIR)],
     "3dmodels": [models, str(hostos.kicad_dirs()["3dmodels"])],
-    "awt_lib": [str(home / routers.AWT_X11), str(hostos.awt_lib(home))],
-    "stop_signals": [[int(s) for s in enginelock._STOPS], [int(s) for s in hostos.stop_signals()]],
+    "wc_3dmodels": ["/usr/share/kicad/3dmodels", wc.DEFAULT_3DMODEL_DIR],
+    "awt_lib": ["/java/home/lib/libawt_xawt.so", str(hostos.awt_lib(Path("/java/home")))],
+    "stop_signals": [[int(signal.SIGTERM), int(signal.SIGHUP)], [int(s) for s in hostos.stop_signals()]],
     "kill_tree": [[[1, int(signal.SIGKILL)]], sent],
 }
 print(json.dumps(pairs))
@@ -681,7 +697,7 @@ def test_on_linux_hostos_returns_what_the_code_returns_today(tmp_path, venv, nam
     )
     assert proc.returncode == 0, proc.stderr
     pairs = json.loads(proc.stdout)
-    assert len(pairs) == 13
+    assert len(pairs) == 21
     today = {name: pair[0] for name, pair in pairs.items()}
     assert today == {name: pair[1] for name, pair in pairs.items()}
 

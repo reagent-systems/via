@@ -5747,8 +5747,11 @@ def installed(
 
 
 def requirements_fix(venv: Path, src: Path) -> str:
-    """The 1 command that puts the venv right: install.sh's own (its venv step), never run here."""
-    return f"{venv_program(venv, 'pip')} install -q -r {src}/requirements.txt"
+    """The 1 command that puts the venv right: install.sh's own (its venv step), never run here. Each path
+    is quoted for the system's shell where it needs it (macOS's root holds a space); on Linux it is as
+    before."""
+    pip = hostos.shell_word(str(venv_program(venv, "pip")))
+    return f"{pip} install -q -r {hostos.shell_word(f'{src}/requirements.txt')}"
 
 
 def requirements_row(req_file: Path, paths: list[Path], own: list[Path], env: dict, fix: str) -> dict:
@@ -6097,14 +6100,21 @@ PCBNEW_PROBE = (
 
 def kicad_python_rows() -> dict[str, dict]:
     """The `kicad-python` row (the Python hostos names for KiCad's pcbnew) and the `pcbnew` row (that
-    Python imports it, run as a child). pcbnew absent degrades Via: `design --route` then leaves out
-    stitching and pours. A probe that does not answer is said under the row, never a traceback."""
+    Python imports it, run as a child). Both are advisory, so Linux's verdict is as before the rows were
+    added: without pcbnew `design --route` leaves out stitching and pours, and the row says why. A probe
+    that does not answer is said under the row, never a traceback."""
     py = hostos.kicad_python()
     if py is None:
         why = "no KiCad install found: set KICAD_CLI to the whole path of its kicad-cli"
         return {
             "kicad-python": {"required": False, "advisory": True, "ok": False, "path": None, "lines": [why]},
-            "pcbnew": {"required": False, "ok": False, "path": None, "lines": ["no KiCad Python to ask"]},
+            "pcbnew": {
+                "required": False,
+                "advisory": True,
+                "ok": False,
+                "path": None,
+                "lines": ["no KiCad Python to ask"],
+            },
         }
     said: dict = {}
     try:
@@ -6126,7 +6136,13 @@ def kicad_python_rows() -> dict[str, dict]:
     pcbnew = said.get("pcbnew") if isinstance(said.get("pcbnew"), str) else None
     rows = {
         "kicad-python": {"required": False, "advisory": True, "ok": version is not None, "path": py},
-        "pcbnew": {"required": False, "ok": pcbnew is not None, "version": pcbnew, "path": py},
+        "pcbnew": {
+            "required": False,
+            "advisory": True,
+            "ok": pcbnew is not None,
+            "version": pcbnew,
+            "path": py,
+        },
     }
     rows["kicad-python"]["version"] = version
     if version is None:
@@ -6137,10 +6153,11 @@ def kicad_python_rows() -> dict[str, dict]:
 
 
 def engine_row(version: str | None, ok: bool, program: str, candidates: list[str]) -> dict:
-    """kicad-cli's or ngspice's row: the whole path when an install's was taken over PATH, and where
-    doctor looked when it found none."""
+    """kicad-cli's or ngspice's row. Where more than 1 place was searched (macOS and Windows with the
+    variable unset), `path` is the whole path of the program found, on PATH or in an install. With 1
+    candidate (Linux, or the variable set) the row is as before. Where none answered, where doctor looked."""
     row = {"required": True, "ok": ok, "version": version}
-    if os.path.dirname(program) and version is not None:
+    if len(candidates) > 1 and os.path.dirname(program) and version is not None:
         row["path"] = program
     if version is None:
         row["lines"] = [looked_line(candidates)]
@@ -6150,7 +6167,7 @@ def engine_row(version: str | None, ok: bool, program: str, candidates: list[str
 def xvfb_row() -> dict:
     """Xvfb draws renders headless on Linux and in the image. Off Linux the row does not apply: it is
     advisory and degrades nothing."""
-    if sys.platform in ("darwin", "win32"):
+    if not sys.platform.startswith("linux"):
         line = f"not applicable on {sys.platform}: renders through Xvfb run on Linux and in the image"
         return {"required": False, "advisory": True, "ok": False, "applicable": False, "line": line}
     return {"required": False, "ok": shutil.which("Xvfb") is not None}
@@ -6162,7 +6179,8 @@ def cmd_doctor(args) -> int:
     py = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     openems = fields().OpenEMS.version()
     node = tool_version(["node", "--version"], r"(?<=v)\d+(\.\d+)+")
-    symbols = hostos.kicad_dirs()["symbols"]
+    # The install's own library, whatever KICAD_SYMBOL_DIR says: /usr/share/kicad/symbols on Linux, as before.
+    symbols = hostos.kicad_share() / "symbols"
     kicad_ok = bool(kicad and kicad.startswith("10."))
     checks = {
         "kicad-cli": engine_row(kicad, kicad_ok, KICAD_CLI, KICAD_CLI_CANDIDATES),

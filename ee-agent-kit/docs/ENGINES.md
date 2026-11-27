@@ -17,12 +17,19 @@ KICAD_CLI=kicad-cli   # default
 With `KICAD_CLI` unset, Via looks on PATH first, then where KiCad's install puts the program
 (`tools/hostos.py`): on macOS `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli`, on Windows
 `bin\kicad-cli.exe` under `%ProgramFiles%\KiCad\10.0`, then under `%LOCALAPPDATA%\Programs\KiCad\10.0`.
-On Linux it looks on PATH alone, as before. When none is there, `workcenter doctor` says where it looked
-under the `kicad-cli` row. Its `kicad-python` row names the Python that imports KiCad's `pcbnew` (on
-Linux Via's venv's, on macOS the one in KiCad's bundle, on Windows `bin\python.exe` of the install),
-and its `pcbnew` row asks that Python to import it, as a child process. Without pcbnew Via is
-`degraded`: `design --route` leaves out stitching and pours. None of the macOS or Windows paths has been
-seen in a run on those systems.
+On Linux it looks on PATH alone, as before. Where it looked in more than 1 place, the `kicad-cli` row of
+`workcenter doctor` names the whole path of the program it found; when none is there, the row says
+where it looked. Its `kicad-python` row names the Python that imports KiCad's `pcbnew` (on Linux Via's
+venv's, on macOS the one in KiCad's bundle, on Windows `bin\python.exe` of the install), and its
+`pcbnew` row asks that Python to import it, as a child process. Both rows are advisory: without pcbnew
+the row says why, and `design --route` leaves out stitching and pours. The `symbols` row reads the
+install's own `symbols` folder, whatever `KICAD_SYMBOL_DIR` says.
+
+On macOS and Windows, KiCad's Python and library folders are looked for in the install that
+`KICAD_CLI` names, then in the default install (`/Applications`, `%ProgramFiles%`,
+`%LOCALAPPDATA%\Programs`), not beside a kicad-cli found on PATH. With KiCad in another place, set
+`KICAD_CLI` to the whole path of its kicad-cli. None of the macOS or Windows paths has been seen in a
+run on those systems.
 
 Reports are JSON (`--format json`). Exit code 5 with
 `--exit-code-violations` means "ran, found violations"; the CLI parses

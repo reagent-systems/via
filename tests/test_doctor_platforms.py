@@ -17,6 +17,7 @@ from __future__ import annotations
 import importlib.machinery
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -51,7 +52,9 @@ ROWS_TODAY = [
     "node",
 ]
 
-pytestmark = pytest.mark.skipif(os.name != "posix", reason="the made-up engines are shell scripts")
+# Only the tests that run a made-up engine, make or a child that sets the platform skip off posix: the
+# unit tests of find_program, looked_line, venv_program, requirements_fix and the rows run on Windows too.
+posix = pytest.mark.skipif(os.name != "posix", reason="the made-up engines are shell scripts")
 
 
 def load_cli_module():
@@ -151,6 +154,7 @@ def test_a_single_candidate_is_kept_as_written_found_or_not(tmp_path, monkeypatc
     assert wc.find_program([str(tmp_path / "absent")]) == str(tmp_path / "absent")
 
 
+@posix
 def test_the_name_on_path_wins_over_an_install(tmp_path, monkeypatch):
     on_path = kicad_cli(tmp_path / "bin" / "kicad-cli")
     installed = kicad_cli(tmp_path / "app" / "kicad-cli")
@@ -158,6 +162,7 @@ def test_the_name_on_path_wins_over_an_install(tmp_path, monkeypatch):
     assert wc.find_program(["kicad-cli", str(installed)]) == str(on_path)
 
 
+@posix
 def test_an_install_is_taken_when_path_lacks_the_name(tmp_path, monkeypatch):
     installed = kicad_cli(tmp_path / "app" / "kicad-cli")
     monkeypatch.setenv("PATH", str(tmp_path / "bin"))
@@ -190,8 +195,26 @@ def test_a_venv_program_on_windows_is_an_exe_in_scripts(monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
     assert wc.venv_program(Path("/w/venv"), "python") == Path("/w/venv/Scripts/python.exe")
     assert wc.requirements_fix(Path("/w/venv"), Path("/s")) == (
-        "/w/venv/Scripts/pip.exe install -q -r /s/requirements.txt"
+        f"{Path('/w/venv/Scripts/pip.exe')} install -q -r {Path('/s')}/requirements.txt"
     )
+
+
+def test_the_requirements_fix_on_macos_quotes_a_root_with_a_space(monkeypatch):
+    """macOS's default root is in "Application Support": the command must still paste as 1 program."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    venv = Path("/Users/a/Library/Application Support/via/venv")
+    src = Path("/Users/a/my boards/via")
+    fix = wc.requirements_fix(venv, src)
+    pip, req = str(venv / "bin" / "pip"), f"{src}/requirements.txt"
+    assert fix == f"'{pip}' install -q -r '{req}'"
+    assert shlex.split(fix) == [pip, "install", "-q", "-r", req]
+
+
+def test_the_requirements_fix_on_windows_double_quotes_a_user_folder_with_a_space(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    venv = Path("/Users/John Smith/AppData/Local/Via/venv")
+    pip = str(venv / "Scripts" / "pip.exe")
+    assert wc.requirements_fix(venv, Path("/s")) == f'"{pip}" install -q -r {Path("/s")}/requirements.txt'
 
 
 def test_venv_python_is_the_roots_venv_on_each_platform(tmp_path, monkeypatch):
@@ -209,6 +232,15 @@ def test_a_row_that_does_not_apply_reads_n_a():
     assert wc.doctor_checks_degraded({"xvfb": row}) == []
 
 
+@pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+def test_an_engine_row_names_a_path_only_where_more_than_1_place_was_searched(platform):
+    """Linux has 1 candidate, so a KICAD_CLI or NGSPICE set to a whole path leaves the row as today's."""
+    row = wc.engine_row("10.0.8", True, "/usr/bin/kicad-cli", ["/usr/bin/kicad-cli"])
+    assert row == {"required": True, "ok": True, "version": "10.0.8"}
+    row = wc.engine_row("47", True, "/opt/homebrew/bin/ngspice", ["ngspice", "/opt/homebrew/bin/ngspice"])
+    assert row == {"required": True, "ok": True, "version": "47", "path": "/opt/homebrew/bin/ngspice"}
+
+
 # ------------------------------------------------------------------ doctor on Linux
 
 
@@ -222,6 +254,10 @@ def linux_machine(tmp_path: Path) -> dict[str, str]:
     return {"WORKCENTER_ROOT": str(root), "KICAD_SYMBOL_DIR": str(tmp_path / "symbols")}
 
 
+LINUX_SYMBOLS = Path("/usr/share/kicad/symbols")
+
+
+@posix
 def test_doctor_on_linux_keeps_todays_rows_and_adds_kicad_python_and_pcbnew(tmp_path):
     said = doctor_json(tmp_path, "linux", linux_machine(tmp_path))
     rows = said["checks"]
@@ -235,21 +271,69 @@ def test_doctor_on_linux_keeps_todays_rows_and_adds_kicad_python_and_pcbnew(tmp_
     assert rows["venv"] == {"required": False, "ok": True, "path": str(tmp_path / "root" / "venv")}
     assert rows["kicad-python"]["path"] == py and rows["kicad-python"]["ok"] is True
     assert rows["kicad-python"]["version"] == ".".join(map(str, sys.version_info[:3]))
-    assert rows["pcbnew"] == {"required": False, "ok": True, "version": "10.0.8", "path": py}
-    assert rows["symbols"] == {"required": False, "ok": True, "path": str(tmp_path / "symbols")}
+    assert rows["pcbnew"] == {
+        "required": False,
+        "advisory": True,
+        "ok": True,
+        "version": "10.0.8",
+        "path": py,
+    }
+    # Today's row: the install's folder, whatever KICAD_SYMBOL_DIR says (linux_machine sets it).
+    ok = (LINUX_SYMBOLS / "Device.kicad_sym").is_file()
+    assert rows["symbols"] == {"required": False, "ok": ok, "path": str(LINUX_SYMBOLS)}
 
 
-def test_doctor_on_linux_without_pcbnew_is_degraded_and_says_why(tmp_path):
+@posix
+def test_doctor_on_linux_without_pcbnew_keeps_its_verdict_and_says_why(tmp_path):
+    """pcbnew is advisory: a Linux machine without it (a Flatpak KiCad) says why, and is not degraded
+    by it, as before the row was added."""
     env = linux_machine(tmp_path)
+    with_pcbnew = doctor_json(tmp_path, "linux", env)
     a_python(tmp_path / "root" / "venv" / "bin" / "python", tmp_path / "mods", pcbnew=None)
     said = doctor_json(tmp_path, "linux", env)
     row = said["checks"]["pcbnew"]
-    assert row["ok"] is False and row["required"] is False
-    assert "pcbnew" in said["degraded"] and "pcbnew" not in said["missing_required"]
+    assert row["ok"] is False and row["required"] is False and row["advisory"] is True
+    assert said["degraded"] == with_pcbnew["degraded"] and said["status"] == with_pcbnew["status"]
+    assert "pcbnew" not in said["degraded"] and "pcbnew" not in said["missing_required"]
     assert row["lines"] == ["ModuleNotFoundError: No module named 'pcbnew'"]
     assert said["checks"]["kicad-python"]["ok"] is True
 
 
+@posix
+def test_doctor_on_linux_with_engines_named_by_whole_path_keeps_todays_rows(tmp_path):
+    env = linux_machine(tmp_path)
+    env["KICAD_CLI"] = str(tmp_path / "bin" / "kicad-cli")
+    env["NGSPICE"] = str(tmp_path / "bin" / "ngspice")
+    rows = doctor_json(tmp_path, "linux", env)["checks"]
+    assert rows["kicad-cli"] == {"required": True, "ok": True, "version": "10.0.8"}
+    assert rows["ngspice"] == {"required": True, "ok": True, "version": "42"}
+
+
+@posix
+def test_doctor_says_why_when_kicads_python_does_not_run(tmp_path):
+    env = linux_machine(tmp_path)
+    py = tmp_path / "root" / "venv" / "bin" / "python"
+    py.chmod(0o644)
+    rows = doctor_json(tmp_path, "linux", env)["checks"]
+    for name in ("kicad-python", "pcbnew"):
+        assert rows[name]["ok"] is False
+        assert rows[name]["lines"][0].startswith(f"{py} did not run: "), rows[name]
+        assert "Permission denied" in rows[name]["lines"][0]
+
+
+@posix
+def test_doctor_takes_a_probe_that_prints_no_object_as_no_answer(tmp_path):
+    env = linux_machine(tmp_path)
+    program(tmp_path / "root" / "venv" / "bin" / "python", "echo '[1, 2]'")
+    said = doctor_json(tmp_path, "linux", env)
+    rows = said["checks"]
+    assert rows["kicad-python"]["ok"] is False and rows["kicad-python"]["lines"] == ["[1, 2]"]
+    assert rows["pcbnew"]["ok"] is False and rows["pcbnew"]["lines"] == ["[1, 2]"]
+    # Both advisory: a KiCad Python that answers nothing degrades nothing.
+    assert "kicad-python" not in said["degraded"] and "pcbnew" not in said["degraded"]
+
+
+@posix
 def test_doctor_on_linux_without_engines_says_where_it_looked(tmp_path):
     env = linux_machine(tmp_path)
     (tmp_path / "bin" / "kicad-cli").unlink()
@@ -276,23 +360,28 @@ def mac_machine(tmp_path: Path) -> dict[str, str]:
     return {"KICAD_CLI": str(app / "Contents" / "MacOS" / "kicad-cli")}
 
 
+@posix
 def test_doctor_on_macos_reads_kicads_bundle_and_the_users_root(tmp_path):
     said = doctor_json(tmp_path, "darwin", mac_machine(tmp_path))
     rows = said["checks"]
     app = tmp_path / "Applications" / "KiCad" / "KiCad.app"
     via = tmp_path / "home" / "Library" / "Application Support" / "via"
     assert said["root"] == str(via)
-    assert rows["kicad-cli"] == {
-        "required": True,
-        "ok": True,
-        "version": "10.0.8",
-        "path": str(app / "Contents" / "MacOS" / "kicad-cli"),
-    }
+    # KICAD_CLI names the bundle's program, so it is the 1 candidate and the row is as on Linux; ngspice
+    # was searched for on PATH and in Homebrew's folders, so its row names the program found.
+    assert rows["kicad-cli"] == {"required": True, "ok": True, "version": "10.0.8"}
     brew = str(tmp_path / "bin" / "ngspice")
     assert rows["ngspice"] == {"required": True, "ok": True, "version": "47", "path": brew}
     assert rows["venv"] == {"required": False, "ok": True, "path": str(via / "venv")}
     assert rows["kicad-python"]["path"] == str(app / BUNDLED) and rows["kicad-python"]["ok"] is True
-    assert rows["pcbnew"] == {"required": False, "ok": True, "version": "10.0.8", "path": str(app / BUNDLED)}
+    bundled = str(app / BUNDLED)
+    assert rows["pcbnew"] == {
+        "required": False,
+        "advisory": True,
+        "ok": True,
+        "version": "10.0.8",
+        "path": bundled,
+    }
     assert rows["symbols"] == {
         "required": False,
         "ok": True,
@@ -302,6 +391,20 @@ def test_doctor_on_macos_reads_kicads_bundle_and_the_users_root(tmp_path):
     assert "xvfb" not in said["degraded"] and "xvfb" not in said["missing_required"]
 
 
+@posix
+def test_doctor_on_macos_reads_the_bundles_symbols_not_this_machines(tmp_path):
+    """The row asks the install's folder: a bundle without Device.kicad_sym is absent, whatever
+    /usr/share/kicad holds on the machine that runs the test."""
+    env = mac_machine(tmp_path)
+    shutil.rmtree(tmp_path / "Applications" / "KiCad" / "KiCad.app" / "Contents" / "SharedSupport")
+    row = doctor_json(tmp_path, "darwin", env)["checks"]["symbols"]
+    assert row["ok"] is False
+    assert row["path"] == str(
+        tmp_path / "Applications" / "KiCad" / "KiCad.app" / "Contents" / "SharedSupport" / "symbols"
+    )
+
+
+@posix
 def test_doctor_text_on_macos_marks_xvfb_n_a(tmp_path):
     proc = doctor(tmp_path, "darwin", mac_machine(tmp_path), "doctor")
     assert "Traceback" not in proc.stderr, proc.stderr
@@ -310,6 +413,7 @@ def test_doctor_text_on_macos_marks_xvfb_n_a(tmp_path):
     assert "Linux" in line[0]
 
 
+@posix
 @pytest.mark.skipif(
     any(Path(p).exists() for p in (MAC_CLI, "/opt/homebrew/bin/ngspice", "/usr/local/bin/ngspice")),
     reason="this machine has a program where a Mac's install would put it",
@@ -323,7 +427,12 @@ def test_doctor_on_macos_without_kicad_says_where_it_looked(tmp_path):
         "looked on PATH for ngspice, then at /opt/homebrew/bin/ngspice, then at /usr/local/bin/ngspice"
     ]
     assert rows["kicad-python"]["ok"] is False and rows["kicad-python"]["path"] is None
-    assert rows["pcbnew"]["ok"] is False
+    assert rows["kicad-python"]["lines"] == [
+        "no KiCad install found: set KICAD_CLI to the whole path of its kicad-cli"
+    ]
+    assert rows["pcbnew"]["ok"] is False and rows["pcbnew"]["lines"] == ["no KiCad Python to ask"]
+    # Both are advisory: without KiCad the kicad-cli row already fails Via; these 2 add no degraded row.
+    assert "kicad-python" not in said["degraded"] and "pcbnew" not in said["degraded"]
     assert said["status"] == "fail"
 
 
@@ -343,6 +452,7 @@ def windows_machine(tmp_path: Path) -> dict[str, str]:
     return {"ProgramFiles": str(tmp_path / "pf"), "LOCALAPPDATA": str(tmp_path / "local"), "PATHEXT": ".exe"}
 
 
+@posix
 def test_doctor_on_windows_reads_the_machine_install_and_localappdata(tmp_path):
     said = doctor_json(tmp_path, "win32", windows_machine(tmp_path))
     rows = said["checks"]
@@ -360,12 +470,23 @@ def test_doctor_on_windows_reads_the_machine_install_and_localappdata(tmp_path):
     assert rows["venv"] == {"required": False, "ok": True, "path": str(via / "venv")}
     py = str(kicad / "bin" / "python.exe")
     assert rows["kicad-python"]["path"] == py and rows["kicad-python"]["ok"] is True
-    assert rows["pcbnew"] == {"required": False, "ok": True, "version": "10.0.8", "path": py}
+    assert rows["pcbnew"] == {
+        "required": False,
+        "advisory": True,
+        "ok": True,
+        "version": "10.0.8",
+        "path": py,
+    }
     assert rows["symbols"]["path"] == str(kicad / "share" / "kicad" / "symbols") and rows["symbols"]["ok"]
     assert rows["xvfb"]["applicable"] is False
     assert said["missing_required"] == []
+    # The venv's Scripts\python.exe is asked: the row is the check's, not the stub of a venv that is absent.
+    req = rows["requirements"]
+    assert req["path"] == str(ROOT / "requirements.txt")
+    assert "missing" in req and "not_checked" not in req, req
 
 
+@posix
 def test_doctor_on_windows_takes_kicad_cli_on_path_before_the_install(tmp_path):
     env = windows_machine(tmp_path)
     on_path = kicad_cli(tmp_path / "bin" / "kicad-cli.exe", "10.0.9")
@@ -373,6 +494,7 @@ def test_doctor_on_windows_takes_kicad_cli_on_path_before_the_install(tmp_path):
     assert rows["kicad-cli"] == {"required": True, "ok": True, "version": "10.0.9", "path": str(on_path)}
 
 
+@posix
 def test_doctor_on_windows_without_kicad_says_where_it_looked(tmp_path):
     env = windows_machine(tmp_path)
     shutil.rmtree(tmp_path / "pf")
@@ -405,6 +527,7 @@ def run_on(platform: str, code: str, env: dict[str, str]) -> str:
     return proc.stdout.strip()
 
 
+@posix
 @pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
 def test_kicadgen_reads_its_library_folders_from_hostos(tmp_path, platform):
     env = {"HOME": str(tmp_path), "ProgramFiles": str(tmp_path / "pf"), "LOCALAPPDATA": str(tmp_path / "l")}
@@ -424,17 +547,53 @@ def test_kicadgen_reads_its_library_folders_from_hostos(tmp_path, platform):
 SHOW_SYMBOLS = "import kicadgen; print(kicadgen.SYMBOL_DIR)"
 
 
+@posix
 def test_kicadgen_on_linux_reads_no_kicad10_library_variable(tmp_path):
     """Linux keeps today's value: KICAD10_SYMBOL_DIR is KiCad's, and Via reads KICAD_SYMBOL_DIR there."""
     said = run_on("linux", SHOW_SYMBOLS, {"KICAD10_SYMBOL_DIR": str(tmp_path)})
     assert said == "/usr/share/kicad/symbols"
 
 
+@posix
 def test_kicadgen_on_macos_reads_kicad10_symbol_dir(tmp_path):
     said = run_on("darwin", SHOW_SYMBOLS, {"KICAD10_SYMBOL_DIR": str(tmp_path)})
     assert said == str(tmp_path)
 
 
+SHOW_3DMODELS = (
+    "import importlib.machinery, types\n"
+    f"cli = {str(CLI)!r}\n"
+    "wc = types.ModuleType('wc'); wc.__file__ = cli; sys.modules['wc'] = wc\n"
+    "importlib.machinery.SourceFileLoader('wc', cli).exec_module(wc)\n"
+    "print(wc.DEFAULT_3DMODEL_DIR)"
+)
+
+
+@posix
+@pytest.mark.parametrize(
+    ("platform", "models"),
+    [
+        ("linux", "/usr/share/kicad/3dmodels"),
+        ("darwin", "/Applications/KiCad/KiCad.app/Contents/SharedSupport/3dmodels"),
+    ],
+)
+def test_the_default_3dmodel_dir_is_the_installs_whatever_kicad10_3dmodel_dir_says(
+    tmp_path, platform, models
+):
+    """KICAD10_3DMODEL_DIR is read where the bodies are used; the default it falls back on never reads it."""
+    env = {"HOME": str(tmp_path), "KICAD10_3DMODEL_DIR": str(tmp_path / "m")}
+    assert run_on(platform, SHOW_3DMODELS, env) == models
+
+
+@pytest.mark.parametrize("platform", ["freebsd14", "cygwin", "darwin", "win32"])
+def test_the_xvfb_row_is_n_a_off_linux(monkeypatch, platform):
+    monkeypatch.setattr(sys, "platform", platform)
+    row = wc.xvfb_row()
+    assert row["applicable"] is False and row["advisory"] is True
+    assert row["line"].startswith(f"not applicable on {platform}: ")
+
+
+@posix
 @pytest.mark.parametrize(
     ("platform", "root"),
     [
@@ -463,6 +622,7 @@ def test_the_openems_and_image_paths_follow_the_default_root(tmp_path, platform,
     assert openems == f"{root}/openems/bin/openEMS"
 
 
+@posix
 @pytest.mark.parametrize(
     ("platform", "venv_py"),
     [
@@ -481,7 +641,55 @@ def test_the_makefile_takes_its_venv_python_from_hostos(tmp_path, platform, venv
     assert said == venv_py.format(home=tmp_path / "h", local=tmp_path / "l")
 
 
-@pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
+def make(*argv: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["make", "-s", "-C", str(ROOT), "-f", "Makefile", *argv],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+needs_make = pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
+# make's own text of PY, as each recipe gets it; a shell's echo would take quotes off. The recipe expands
+# it after the Makefile is read (an --eval outside a recipe runs before).
+SHOW_PY = ["--eval", "show-py: ; $(info [$(PY)])", "show-py"]
+
+
+@posix
+@needs_make
+def test_the_makefile_runs_a_venv_python_whose_path_holds_a_space(tmp_path):
+    """macOS's default root is in "Application Support"; make has no quoting of its own, so PY is
+    quoted for the shell and each $(PY) recipe runs that 1 program."""
+    py = program(
+        tmp_path / "Application Support" / "via" / "venv" / "bin" / "python", 'echo "venv python $*"'
+    )
+    proc = make(f"VENV_PY={py}", "--eval", "run-py: ; @$(PY) --version", "run-py")
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "venv python --version"
+    assert proc.stderr == ""
+
+
+@posix
+@needs_make
+def test_the_makefile_keeps_a_plain_venv_python_as_written(tmp_path):
+    """On Linux PY is today's text, so every recipe's command line is today's."""
+    py = program(tmp_path / "venv" / "bin" / "python", "exit 0")
+    proc = make(f"VENV_PY={py}", *SHOW_PY)
+    assert proc.stdout.strip() == f"[{py}]", proc.stderr
+
+
+@posix
+@needs_make
+def test_the_makefile_falls_back_to_python3_without_the_venv(tmp_path):
+    for absent in (tmp_path / "venv" / "bin" / "python", tmp_path / "Application Support" / "python"):
+        proc = make(f"VENV_PY={absent}", *SHOW_PY)
+        assert proc.stdout.strip() == "[python3]", proc.stderr
+        assert proc.stderr == ""
+
+
+@posix
+@needs_make
 def test_the_makefile_on_this_machine_names_todays_venv_python(tmp_path):
     show = ["--eval", "show-venv: ; @echo $(VENV_PY)", "show-venv"]
     proc = subprocess.run(
