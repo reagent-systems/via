@@ -737,7 +737,11 @@ def test_a_project_whose_engine_is_absent_is_told_to_install_it(tmp_path):
     code, step = ask(proj, env={"NGSPICE": str(tmp_path / "no-such-ngspice")})
     assert code == 1 and step["next"].startswith("Install the toolchain")
     assert step["why"] == f"{tmp_path / 'no-such-ngspice'} is not on PATH"
-    assert step["run"] == f"sudo {ROOT / 'install.sh'}"
+    # The host's installer (run 46067841222: install-macos.sh on macOS, install.ps1 on Windows);
+    # tests/test_hostos.py holds each system's line, and Linux's is today's.
+    assert step["run"] == hostos.installer_command(ROOT)
+    if sys.platform == "linux":
+        assert step["run"] == f"sudo {ROOT / 'install.sh'}"
 
 
 def test_the_gates_run_first_and_again_when_an_input_is_newer(tmp_path):

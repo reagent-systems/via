@@ -20,7 +20,7 @@ import signal
 import subprocess
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 from conftest import posix_only, stand_in
@@ -837,6 +837,19 @@ def test_installer_command_on_macos_needs_no_sudo_and_quotes_a_space(hostos, mon
     src = Path("/Users/ada/Library/Application Support/via/src")
     assert hostos.installer_command(src) == f"'{src}/install-macos.sh'"
     assert hostos.installer_command(Path("/opt/via")) == "/opt/via/install-macos.sh"
+
+
+@pytest.mark.parametrize(
+    ("platform", "said"), [("linux", "sudo /opt/via/install.sh"), ("darwin", "/opt/via/install-macos.sh")]
+)
+def test_installer_command_for_linux_and_macos_writes_the_path_with_slashes(
+    hostos, monkeypatch, platform, said
+):
+    """A Path made on Windows prints `\\opt\\via`: a line for sh is written with `/` whatever the host
+    (run 46067841222, Windows: `'\\opt\\via/install-macos.sh'`, `sudo \\opt\\...\\install.sh`)."""
+    on(monkeypatch, platform)
+    assert hostos.installer_command(PureWindowsPath("\\opt\\via")) == said
+    assert hostos.installer_command(PureWindowsPath("\\opt\\via\\")) == said
 
 
 def test_installer_command_on_windows_runs_the_powershell_script_in_double_quotes(hostos, monkeypatch):

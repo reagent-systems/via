@@ -27,7 +27,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterable
-from pathlib import Path
+from pathlib import Path, PurePath
 
 # The KiCad 10 application bundle the official DMG and the Homebrew cask `kicad` install
 # (https://www.kicad.org/download/macos/, https://formulae.brew.sh/api/cask/kicad.json). Not confirmed
@@ -371,13 +371,15 @@ def installer_command(src: Path | str) -> str:
     uses sudo itself (winmac plan, piece E). Windows: install.ps1 run by Windows PowerShell, which every
     Windows 10 and 11 has (winmac plan, piece F2); the path is in double quotes, which cmd.exe and
     PowerShell both read and which no Windows file name holds. Both scripts sit at the checkout's root;
-    neither has run on its system yet."""
+    neither has run on its system yet. A line for sh is written with `/` whatever the host: a path a
+    test makes on Windows for macOS prints `\\opt\\via` (run 46067841222)."""
     if _windows():
         script = str(src).rstrip("\\/") + "\\install.ps1"
         return f'powershell -NoProfile -ExecutionPolicy Bypass -File "{script}"'
+    folder = PurePath(src).as_posix().rstrip("/")
     if _mac():
-        return shlex.quote(f"{src}/install-macos.sh")
-    return f"sudo {Path(src) / 'install.sh'}"
+        return shlex.quote(f"{folder}/install-macos.sh")
+    return f"sudo {folder}/install.sh"
 
 
 def program_name(word: str, known: Iterable[str] = ()) -> str:
