@@ -454,10 +454,10 @@ def test_java_home_on_macos_follows_the_usr_bin_stub_to_java_home(hostos, monkey
     assert hostos.java_home(stub) == tmp_path / "named"
 
 
-@pytest.mark.parametrize("said", ["exit 1", "echo a; echo b", "", "missing"])
+@pytest.mark.parametrize("said", ["exit 1", "echo /x; exit 1", "echo a; echo b", "", "missing"])
 def test_java_home_on_macos_keeps_usr_when_java_home_names_no_jdk(hostos, monkeypatch, tmp_path, said):
     """No JDK installed: java_home exits 1 ("Unable to locate a Java Runtime"). The folder stays the
-    stub's, so the caller names what is missing there."""
+    stub's, so the caller names what is missing there. A line it prints before it fails names no JDK."""
     on(monkeypatch, "darwin")
     stub = program(tmp_path / "usr" / "bin" / "java").resolve()
     monkeypatch.setattr(hostos, "MAC_JAVA_STUB", stub)
@@ -539,6 +539,24 @@ def test_stop_signals_leave_out_a_signal_the_python_lacks(hostos, monkeypatch):
     on(monkeypatch, "win32")
     monkeypatch.delattr(signal, "SIGBREAK", raising=False)
     assert hostos.stop_signals() == (signal.SIGTERM,)
+
+
+# ------------------------------------------------------------------ signal_ends_reads
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_on_posix_a_signal_ends_a_read_so_its_handler_runs(hostos, monkeypatch, platform):
+    """tools/mcpserver.py:631 at e702b47 reads stdin on the main thread: a signal there interrupts the
+    read (EINTR) and Python runs the handler at once."""
+    on(monkeypatch, platform)
+    assert hostos.signal_ends_reads() is True
+
+
+def test_on_windows_a_signal_does_not_end_a_read(hostos, monkeypatch):
+    """Windows runs a console control handler on a thread of its own, and a read on a pipe has no
+    EINTR: Python's handler waits until the read returns."""
+    on(monkeypatch, "win32")
+    assert hostos.signal_ends_reads() is False
 
 
 # ------------------------------------------------------------------ kill_tree

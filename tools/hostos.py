@@ -323,6 +323,17 @@ def stop_signals() -> tuple[int, ...]:
     return tuple(getattr(signal, name) for name in names if hasattr(signal, name))
 
 
+def signal_ends_reads() -> bool:
+    """Whether a signal ends a read that blocks the main thread, so Python runs its handler at once.
+
+    Linux and macOS: yes, the read returns EINTR (tools/mcpserver.py reads stdin on the main thread at
+    e702b47). Windows: no. The system runs a console control handler (Ctrl+C, Ctrl+Break) on a thread of
+    its own, a read of a pipe has no EINTR, and Python runs the handler only when the read returns
+    (Python's signal documentation). A program that must stop on a signal reads on another thread there.
+    Not confirmed in a run on Windows."""
+    return not _windows()
+
+
 def write_text(path: Path | str, text: str) -> int:
     """Write `text` to `path` as UTF-8 with "\\n" line ends on every system; the count of characters.
 
