@@ -18,8 +18,10 @@ install:            ## install or update every engine (root)
 doctor:             ## report engine status; the "build" of this repo is a working toolchain
 	python3 tools/workcenter doctor
 
+# install.ps1 is PowerShell, which shellcheck does not read: tests/test_install_windows.py holds its shape
+# here, and PowerShell's own parser reads it where pwsh is installed (the Windows leg; ee-agent-kit/CI.md).
 lint:               ## shellcheck + ruff, read-only
-	shellcheck install.sh verify/verify.sh environment/setup.sh site/build.sh ee-agent-kit/lead/gate-and-push.sh tools/ci/apt_archive.sh tools/ci/apt_cache.sh
+	shellcheck install.sh install-macos.sh verify/verify.sh environment/setup.sh site/build.sh ee-agent-kit/lead/gate-and-push.sh tools/ci/apt_archive.sh tools/ci/apt_cache.sh
 	$(PY) -m ruff check tools tests verify ee-agent-kit/lead
 	$(PY) -m ruff format --check tools tests verify ee-agent-kit/lead
 

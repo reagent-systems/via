@@ -155,7 +155,13 @@ def assert_nothing_written(tmp_path: Path) -> None:
 
 
 def test_shellcheck_reads_the_script_clean():
-    """shellcheck as the Makefile's lint line runs it: no options, the script's own shebang."""
+    """shellcheck as the Makefile's lint line runs it: no options, the script's own shebang. The
+    Makefile's lint line and verify.sh's lint step name the script."""
+    for path in (ROOT / "Makefile", ROOT / "verify" / "verify.sh"):
+        lines = [
+            x for x in path.read_text(encoding="utf-8").splitlines() if x.strip().startswith("shellcheck ")
+        ]
+        assert any("install-macos.sh" in x.split() for x in lines), path
     if shutil.which("shellcheck") is None:
         pytest.skip("shellcheck is not on PATH")
     ran = subprocess.run(["shellcheck", str(SCRIPT)], capture_output=True, text=True)

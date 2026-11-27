@@ -428,6 +428,9 @@ def test_a_route_whose_only_java_cannot_draw_says_which_java_and_why(tmp_path):
     the record names such a JVM and PATH has no java: `design --route --json` exits 2 with a summary whose
     route names the java, the record and the missing library, and runs no router."""
     java = stand_in(tmp_path / "jvm" / "java-21-openjdk-amd64" / "bin" / "java", HEADLESS_JAVA)
+    # A Java runtime's top folder holds `release`: off Linux the check then names the missing library,
+    # not "no JDK" (tools/routers.py java_refusal). Linux's words do not read it.
+    (java.parent.parent / "release").write_text('JAVA_VERSION="21.0.13"\n', encoding="utf-8")
     root = tmp_path / "root"
     root.mkdir()
     (root / "java.path").write_text(f"{java}\n", encoding="utf-8")
@@ -451,7 +454,9 @@ def test_a_route_whose_only_java_cannot_draw_says_which_java_and_why(tmp_path):
     assert r.returncode == 2, r.stdout + r.stderr
     said = summary["route"]["skip"]
     assert f"{java} (recorded by install.sh in {root / 'java.path'}) cannot run FreeRouting 1.9.0" in said
-    assert "libawt_xawt.so" in said, said
+    # This system's AWT library (tools/hostos.py awt_lib).
+    awt = {"darwin": "libawt_lwawt.dylib", "win32": "awt.dll"}.get(sys.platform, "libawt_xawt.so")
+    assert awt in said, said
 
 
 # ------------------------------------------------------------------ the pull

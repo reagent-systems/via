@@ -26,6 +26,7 @@ FIXTURE = ROOT / "tests" / "boards" / "pass-first-design"
 PANEL = ROOT / "tests" / "samples" / "fab" / "panel.json"
 sys.path.insert(0, str(ROOT / "tools"))
 import fabfiles  # noqa: E402
+import hostos  # noqa: E402
 
 needs_kicad = engine(
     pytest.mark.skipif(shutil.which("kicad-cli") is None, reason="kicad-cli is not installed")
@@ -34,7 +35,8 @@ PARTS = {"C1": "top", "J1": "top", "R1": "top", "R2": "top"}
 
 
 def kikit_python() -> str | None:
-    venv = Path(os.environ.get("WORKCENTER_ROOT", "/opt/workcenters/ee")) / "venv" / "bin" / "python"
+    # The venv's Python of the root, by this system's layout (tools/hostos.py).
+    venv = hostos.venv_python(Path(os.environ.get("WORKCENTER_ROOT", hostos.default_root())))
     for py in (os.environ.get("KIKIT_PYTHON"), str(venv)):
         if py and Path(py).exists():
             probe = subprocess.run(
