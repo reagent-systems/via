@@ -207,6 +207,11 @@ def test_the_fix_is_the_command_install_sh_runs():
     text = (ROOT / "install.sh").read_text(encoding="utf-8")
     assert '"${venv}/bin/pip" install -q -r "${SRC_DIR}/requirements.txt"' in text
     venv = Path("/w/venv")
+    if sys.platform == "win32":
+        # A venv on Windows keeps pip in Scripts\pip.exe, and a Path prints `\` (run 46067841222).
+        said = f"{venv / 'Scripts' / 'pip.exe'} install -q -r {Path('/s')}/requirements.txt"
+        assert wc.requirements_fix(venv, Path("/s")) == said
+        return
     assert wc.requirements_fix(venv, Path("/s")) == "/w/venv/bin/pip install -q -r /s/requirements.txt"
 
 
