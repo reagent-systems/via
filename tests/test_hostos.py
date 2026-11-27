@@ -37,6 +37,7 @@ READS = (
     "KICAD10_3DMODEL_DIR",
     "LOCALAPPDATA",
     "ProgramFiles",
+    "JAVA_HOME",
 )
 BUNDLED_PYTHON = Path("Contents/Frameworks/Python.framework/Versions/Current/bin/python3")
 MAC_SHARED = Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport")
@@ -405,6 +406,118 @@ def test_awt_lib_on_windows_is_awt_dll_in_bin(hostos, monkeypatch, tmp_path):
     assert hostos.awt_lib(tmp_path) == tmp_path / "bin" / "awt.dll"
 
 
+# ------------------------------------------------------------------ java_home
+
+
+def program(path: Path, text: str = "") -> Path:
+    """A file that can run: a stand-in java, or a stand-in /usr/libexec/java_home."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+@pytest.mark.parametrize("platform", PLATFORMS)
+def test_java_home_is_the_folder_above_bin_with_links_resolved(hostos, monkeypatch, tmp_path, platform):
+    """routers.py:93 on Linux: /usr/bin/java -> /etc/alternatives/java -> the JVM's bin/java. Homebrew's
+    openjdk on macOS links its bin/java the same way into the bundle's Contents/Home."""
+    on(monkeypatch, platform)
+    home = tmp_path / "jvm" / "java-21-openjdk-amd64"
+    java = program(home / "bin" / "java")
+    (tmp_path / "alternatives").mkdir()
+    (tmp_path / "alternatives" / "java").symlink_to(java)
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "java").symlink_to(tmp_path / "alternatives" / "java")
+    assert hostos.java_home(tmp_path / "bin" / "java") == home.resolve()
+    assert hostos.java_home(str(java)) == home.resolve()
+
+
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_java_home_reads_no_java_home_variable_off_the_launchers(hostos, monkeypatch, tmp_path, platform):
+    on(monkeypatch, platform)
+    monkeypatch.setenv("JAVA_HOME", str(tmp_path / "elsewhere"))
+    java = program(tmp_path / "jdk" / "bin" / "java")
+    assert hostos.java_home(java) == (tmp_path / "jdk").resolve()
+
+
+def test_java_home_on_macos_follows_the_usr_bin_stub_to_java_home(hostos, monkeypatch, tmp_path):
+    """Apple's /usr/bin/java is a launcher, not a JVM: the folder above it is /usr. It runs the JDK that
+    JAVA_HOME names, else the one /usr/libexec/java_home picks (Apple's java_home(1))."""
+    on(monkeypatch, "darwin")
+    stub = program(tmp_path / "usr" / "bin" / "java").resolve()
+    monkeypatch.setattr(hostos, "MAC_JAVA_STUB", stub)
+    jdk = tmp_path / "Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"
+    tool = program(tmp_path / "usr" / "libexec" / "java_home", f"#!/bin/sh\necho '{jdk}'\n")
+    monkeypatch.setattr(hostos, "MAC_JAVA_HOME", tool)
+    assert hostos.java_home(stub) == jdk
+    monkeypatch.setenv("JAVA_HOME", str(tmp_path / "named"))
+    assert hostos.java_home(stub) == tmp_path / "named"
+
+
+@pytest.mark.parametrize("said", ["exit 1", "echo a; echo b", "", "missing"])
+def test_java_home_on_macos_keeps_usr_when_java_home_names_no_jdk(hostos, monkeypatch, tmp_path, said):
+    """No JDK installed: java_home exits 1 ("Unable to locate a Java Runtime"). The folder stays the
+    stub's, so the caller names what is missing there."""
+    on(monkeypatch, "darwin")
+    stub = program(tmp_path / "usr" / "bin" / "java").resolve()
+    monkeypatch.setattr(hostos, "MAC_JAVA_STUB", stub)
+    tool = tmp_path / "usr" / "libexec" / "java_home"
+    if said != "missing":
+        program(tool, f"#!/bin/sh\n{said}\n")
+    monkeypatch.setattr(hostos, "MAC_JAVA_HOME", tool)
+    assert hostos.java_home(stub) == stub.parent.parent
+
+
+def test_java_home_on_windows_follows_oracles_javapath_to_java_home(hostos, monkeypatch, tmp_path):
+    """Oracle's installer puts launchers in Common Files\\Oracle\\Java\\javapath; the JDK is the one
+    JAVA_HOME names. Without it the folder stays the launcher's."""
+    on(monkeypatch, "win32")
+    java = program(tmp_path / "Common Files" / "Oracle" / "Java" / "javapath" / "java.exe")
+    assert hostos.java_home(java) == (tmp_path / "Common Files" / "Oracle" / "Java").resolve()
+    monkeypatch.setenv("JAVA_HOME", str(tmp_path / "jdk-21"))
+    assert hostos.java_home(java) == tmp_path / "jdk-21"
+
+
+# ------------------------------------------------------------------ own_group and stop_tree
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_own_group_on_posix_is_a_new_session(hostos, monkeypatch, platform):
+    """routers.py:266, routebench.py:249, mcpserver.py:439."""
+    on(monkeypatch, platform)
+    assert hostos.own_group() == {"start_new_session": True}
+
+
+def test_own_group_on_windows_is_a_new_process_group(hostos, monkeypatch):
+    """start_new_session does nothing on Windows; CREATE_NEW_PROCESS_GROUP (0x200, Microsoft's process
+    creation flags) makes the child lead a group that Ctrl+Break can reach alone."""
+    on(monkeypatch, "win32")
+    monkeypatch.delattr(subprocess, "CREATE_NEW_PROCESS_GROUP", raising=False)
+    assert hostos.own_group() == {"creationflags": 0x200}
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_stop_tree_on_posix_sends_sigterm_to_the_group(hostos, monkeypatch, platform):
+    """mcpserver.py:498 and :517."""
+    on(monkeypatch, platform)
+    sent = []
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: sent.append((pid, sig)))
+    hostos.stop_tree(Proc())
+    assert sent == [(4242, signal.SIGTERM)]
+
+
+def test_stop_tree_on_windows_sends_ctrl_break_to_the_group(hostos, monkeypatch):
+    """CTRL_BREAK_EVENT is 1 (Microsoft's GenerateConsoleCtrlEvent); os.kill sends it to the process
+    group the pid leads (Python's os.kill)."""
+    on(monkeypatch, "win32")
+    monkeypatch.delattr(os, "killpg")
+    monkeypatch.delattr(signal, "CTRL_BREAK_EVENT", raising=False)
+    sent = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    hostos.stop_tree(Proc())
+    assert sent == [(4242, 1)]
+
+
 # ------------------------------------------------------------------ stop_signals
 
 
@@ -653,3 +766,5 @@ def test_every_function_answers_on_every_platform(hostos, monkeypatch, tmp_path,
     assert set(hostos.kicad_dirs()) == {"symbols", "footprints", "3dmodels"}
     assert isinstance(hostos.awt_lib(tmp_path), Path)
     assert signal.SIGTERM in hostos.stop_signals()
+    assert isinstance(hostos.java_home(sys.executable), Path)
+    assert set(hostos.own_group()) <= {"start_new_session", "creationflags"}
