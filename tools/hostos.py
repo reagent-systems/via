@@ -5,9 +5,10 @@ test sets the platform with 1 attribute. On Linux each returns what the code ret
 of each names the file and line that holds that value at main cea464d. tools/workcenter, kicadgen.py,
 fields.py and image.py read the root, the engines and KiCad's folders from it, and tools/kicadchild.py
 KiCad's Python. tools/enginelock.py calls
-lock_dir, user_id, lock_file, unlock_file, flock_files and stop_signals; tools/routers.py,
+lock_dir, user_id, lock_file, unlock_file, flock_files, stop_signals and shell_line; tools/routers.py,
 tools/routebench.py and tools/mcpserver.py call it too; write_text is called by tools/kicadgen.py,
-tools/newboard.py and the run decks of tools/workcenter, and installer_command by tools/guide.py. The
+tools/newboard.py and the run decks of tools/workcenter, installer_command by tools/guide.py, and
+shell_word by tools/guide.py, tools/newboard.py and the lines tools/workcenter prints. The
 test runner (verify/testshards.py: kill_tree, stop_signals) and the engine guard of the tests
 (tools/ci/guard/engine_watch.py: program_name) call it as well.
 
@@ -351,6 +352,13 @@ def shell_word(word: str) -> str:
     if _windows():
         return subprocess.list2cmdline([word])
     return shlex.quote(word)
+
+
+def shell_line(words: Iterable[str]) -> str:
+    """A command of `words`, each quoted by shell_word: shlex.join on Linux and macOS. Run 46067841222
+    showed what sh's quoting gives on Windows: `workcenter next 'D:\\a\\...\\board'`, whose quotes
+    cmd.exe keeps as part of the name."""
+    return " ".join(shell_word(word) for word in words)
 
 
 def signal_ends_reads() -> bool:

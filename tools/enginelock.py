@@ -46,7 +46,6 @@ import contextlib
 import datetime
 import json
 import os
-import shlex
 import signal
 import stat
 import subprocess
@@ -635,7 +634,7 @@ def for_command(args: argparse.Namespace, argv: list[str]):
     """The lock for 1 `workcenter` command line: taken when the command is long, else nothing."""
     if not is_long(args):
         return contextlib.nullcontext()
-    return take(shlex.join(["workcenter", *argv]))
+    return take(hostos.shell_line(["workcenter", *argv]))
 
 
 def status_line(st: dict) -> str:
@@ -677,7 +676,7 @@ def _act(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     cmd = args.cmd[1:] if args.cmd[:1] == ["--"] else args.cmd
     if not cmd:
         parser.error("hold needs a command after --")
-    with take(args.what or shlex.join(cmd)):
+    with take(args.what or hostos.shell_line(cmd)):
         try:
             code = subprocess.run(cmd, pass_fds=pass_fds()).returncode
             # A command that died of a signal exits as a shell reports it: 128 and the signal.

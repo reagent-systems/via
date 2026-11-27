@@ -822,6 +822,31 @@ def test_shell_word_on_windows_puts_a_path_with_a_space_in_double_quotes(hostos,
     assert hostos.shell_word(pip) == f'"{pip}"'
 
 
+def test_shell_word_on_windows_leaves_a_drive_path_as_written(hostos, monkeypatch):
+    """Run 46067841222, Windows: next, new and the gates' ratings line printed
+    `'D:\\a\\_temp\\...\\board'` (sh's quotes, which cmd.exe keeps as part of the name) where the
+    path needs none."""
+    on(monkeypatch, "win32")
+    assert hostos.shell_word("D:\\a\\_temp\\board") == "D:\\a\\_temp\\board"
+
+
+@pytest.mark.parametrize(
+    ("platform", "line"),
+    [
+        ("linux", "workcenter sim '/home/a b/board' --out /tmp/o"),
+        ("darwin", "workcenter sim '/home/a b/board' --out /tmp/o"),
+        ("win32", 'workcenter sim "/home/a b/board" --out /tmp/o'),
+    ],
+)
+def test_shell_line_quotes_each_word_as_shell_word_does(hostos, monkeypatch, platform, line):
+    """A whole command line, as the engine lock names its holder: shlex.join on Linux and macOS."""
+    on(monkeypatch, platform)
+    words = ["workcenter", "sim", "/home/a b/board", "--out", "/tmp/o"]
+    assert hostos.shell_line(words) == line
+    if platform != "win32":
+        assert hostos.shell_line(words) == shlex.join(words)
+
+
 # ------------------------------------------------------------------ installer_command
 
 

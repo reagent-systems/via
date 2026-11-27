@@ -1697,7 +1697,7 @@ def cmd_sim(args) -> int:
         if deck.get("rerun"):
             print(f"rerun {name}: {deck['rerun']}")
         if deck.get("bundle"):
-            print(f"bundle {name}: ngspice -b {shlex.quote(str(Path(deck['bundle']) / BUNDLE_RUN))}")
+            print(f"bundle {name}: ngspice -b {hostos.shell_word(str(Path(deck['bundle']) / BUNDLE_RUN))}")
     for line in thermal().lines(result.details):
         print(line)
     return code
@@ -4642,9 +4642,9 @@ def cmd_design(args) -> int:
                     print("  route: unconnected not counted: kicad-cli is not installed")
                 elif first:
                     ends = " to ".join(first["ends"])
-                    net = shlex.quote(first["net"])
+                    net = hostos.shell_word(first["net"])
                     print(f"  route: {r['unconnected']} unconnected; first {first['net']}: {ends}")
-                    print(f"  inspect: workcenter inspect net {shlex.quote(r['board'])} {net}")
+                    print(f"  inspect: workcenter inspect net {hostos.shell_word(r['board'])} {net}")
                 else:
                     print("  route: 0 unconnected")
         s = summary.get("seed")
@@ -6425,7 +6425,7 @@ def cmd_gates(args) -> int:
     # The gates do not run `ratings`; they read its record, as `next` does.
     rated = guide().ratings_state(sys.modules[__name__], project)
     said, code = gates_verdict(results, rated.asked and not rated.held, args.strict)
-    named = shlex.quote(str(args.project))
+    named = hostos.shell_word(str(args.project))
     emit(results, args, out)
     if not args.json:
         # Each part's junction, as `sim` prints it: what a part was held on is read where done is decided.

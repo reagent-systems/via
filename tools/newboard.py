@@ -25,7 +25,6 @@ Standard library only, as the CLI is (AGENTS.md invariant 3).
 from __future__ import annotations
 
 import re
-import shlex
 import uuid
 from pathlib import Path
 
@@ -119,7 +118,7 @@ def cmd_new(args, cli) -> int:
         print("new: the folder's name is empty; name a folder. Nothing written.")
         return 1
     target = Path(args.dir).resolve()
-    quoted = shlex.quote(args.dir)
+    quoted = hostos.shell_word(args.dir)
     if target.exists() and not target.is_dir():
         print(f"new: {target} is a file; name a folder. Nothing written.")
         return 1

@@ -31,14 +31,13 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import hostos  # tools/hostos.py, beside this file: the installer each system runs
+import hostos  # tools/hostos.py, beside this file: the installer each system runs, its shell's quoting
 
 # The workcenter's checkout, whose installer a hint names: the CLI's SRC_DIR, found the same way.
 SRC_DIR = Path(__file__).resolve().parent.parent
@@ -776,7 +775,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
     design file (a few seconds); without it the design file is trusted to match."""
     wc = "workcenter"
     path = Path(target).resolve()
-    quoted = shlex.quote(target)
+    quoted = hostos.shell_word(target)
     # A folder that holds a chip.json is a chip project: its steps are the chip gates' (chipguide.py).
     import chipguide
 
@@ -787,7 +786,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
         """A file is no project: the answer names its folder, the one above sim/ for a deck. Taken
         for a project, a deck gets its build/ inside sim/ and its next steps under its own name."""
         folder = file.parent.parent if file.parent.name == "sim" else file.parent
-        again = f"{wc} next {shlex.quote(str(folder))}"
+        again = f"{wc} next {hostos.shell_word(str(folder))}"
         return Step(
             "Name the project's folder: the path leads to a file, and a project is a folder.",
             again,
@@ -817,7 +816,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
         pros = sorted(path.glob("*.kicad_pro")) if path.is_dir() else []
         if len(pros) > 1:
             # Before the design file: generated again, the folder holds as many project files.
-            one = f"{wc} next {shlex.quote(str(Path(target) / pros[0].name))}"
+            one = f"{wc} next {hostos.shell_word(str(Path(target) / pros[0].name))}"
             return Step(
                 f"Name one of the folder's {len(pros)} project files: {', '.join(p.name for p in pros)}. "
                 "The RUN line names the first.",
@@ -848,7 +847,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
         )
     # A command takes the project as it was named, a KiCad file too. A path inside the project starts
     # at its folder.
-    folder = quoted if path.is_dir() else shlex.quote(str(project.dir))
+    folder = quoted if path.is_dir() else hostos.shell_word(str(project.dir))
     has_kicad = bool(project.sch or project.pcb)
     decks = sorted((project.dir / "sim").glob("*.cir")) if (project.dir / "sim").is_dir() else []
     absent = [
@@ -880,7 +879,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
         )
         if proc.returncode != 0:
             said = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
-            regenerate = f"{wc} design {shlex.quote(str(design))} --route"
+            regenerate = f"{wc} design {hostos.shell_word(str(design))} --route"
             # The design step's own refusal comes before any comparison: regenerating a design file
             # that is refused gives the same refusal. Its red line names the kinds; the first printed
             # line of a kind it names is the problem to answer.
@@ -904,14 +903,14 @@ def next_step(cli, target: str, run_check=True) -> Step:
                     regenerate,
                     f"the design file is refused: {first}",
                     read,
-                    f"`{wc} design {shlex.quote(str(design))} --check` exits 0",
+                    f"`{wc} design {hostos.shell_word(str(design))} --check` exits 0",
                 )
             return Step(
                 "Regenerate the KiCad project: it no longer matches its design file.",
                 regenerate,
                 said[-1] if said else "design --check exited 1",
                 f'{DESIGN}, "Steps"',
-                f"`{wc} design {shlex.quote(str(design))} --check` exits 0",
+                f"`{wc} design {hostos.shell_word(str(design))} --check` exits 0",
             )
     # A project with a ratings.json is held to its parts' ratings. A failure there comes before the
     # board's gates: a part that changes takes its routes with it. What is left not judged comes after.
@@ -944,7 +943,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
             shown = ", ".join(loose[:3]) + (f" and {len(loose) - 3} more" if len(loose) > 3 else "")
             return Step(
                 "Route the board before the gates: nets on it have no copper yet.",
-                f"{wc} design {shlex.quote(str(design))} --route",
+                f"{wc} design {hostos.shell_word(str(design))} --route",
                 # A net of k pads and no copper is k - 1 connections: KiCad DRC's count, which
                 # `design --route` prints on its `route: N unconnected` line.
                 f"{pads} pads on {len(loose)} nets have no track, via or pour, "
