@@ -91,10 +91,6 @@
   const login = (next = location.pathname + location.search, githubOnly = false) => {
     const dialog = document.getElementById("made-login");
     if (!dialog || !me.configured) return;
-    const why = dialog.querySelector("[data-login-why]");
-    why.textContent = githubOnly
-      ? "Adding a board takes a GitHub login, since your board comes from your own repository there."
-      : "You log in to like boards and to add your own.";
     for (const a of dialog.querySelectorAll("[data-with]")) {
       const way = a.dataset.with;
       a.hidden = !me.providers.includes(way) || (githubOnly && way !== "github");
@@ -516,7 +512,7 @@
       if (el) el.textContent = value;
     };
     set("[data-name]", p.name);
-    set("[data-bio]", p.bio || (data.own ? "You haven't written anything about yourself yet." : ""));
+    set("[data-bio]", p.bio);
     const joined = Date.parse(p.first);
     set("[data-joined]", joined ? `Joined ${new Date(joined).toLocaleDateString("en-US", { month: "long", year: "numeric" })}` : "");
     const face = document.querySelector("[data-face]");

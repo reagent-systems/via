@@ -330,7 +330,6 @@ def bar(things: list[Thing]) -> str:
         </form>
         <div class="made-end">
           <a class="made-out" href="{HOME}guide">Get Via</a>
-          <a class="made-home" href="{HOME}">via.computer</a>
           <button class="made-login" type="button" data-login aria-label="Log in" title="Log in" hidden>{PERSON}</button>
           <details class="made-drop made-me" data-me hidden>
             <summary aria-label="Your account"><img data-avatar alt="" width="32" height="32"></summary>
@@ -352,16 +351,13 @@ def bar(things: list[Thing]) -> str:
           <h2 id="made-login-title">Log in</h2>
           <button type="button" class="made-quiet" data-close>Close</button>
         </div>
-        <p class="made-hint" data-login-why>You log in to like boards and to add your own.</p>
         <div class="made-login-list">
 {ways}
         </div>
-        <p class="made-hint made-login-note">We keep the name and picture it gives us, to show next to your boards. Adding a board takes a GitHub login, since your board comes from your own repository there.</p>
       </dialog>
       <dialog class="made-dialog" id="made-add" aria-labelledby="made-add-title">
         <form class="made-form" data-add-form novalidate>
           <h2 id="made-add-title" data-add-title>Add your board</h2>
-          <p class="made-hint">Via checks a board from one of your public GitHub repositories. When it passes and we've had a look, it shows up here.</p>
           <label data-source>Repository<input name="repo" placeholder="you/your-board" autocomplete="off" spellcheck="false"></label>
           <div class="made-form-row" data-source>
             <label>Folder <small>if it isn't at the top</small><input name="path" placeholder="boards/my-board" autocomplete="off" spellcheck="false"></label>

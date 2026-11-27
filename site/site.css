@@ -3607,17 +3607,7 @@ html.dark {
   background: oklch(1 0 0 / 14%);
 }
 
-.made-home {
-  display: none;
-  padding: 0.5rem;
-  font-size: 0.9375rem;
-  font-weight: 500;
-}
 
-.made-home:hover {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
 
 .made-bar .icon-btn {
   color: inherit;
@@ -4097,11 +4087,6 @@ img.thing-face {
   }
 }
 
-@media (min-width: 1280px) {
-  .made-home {
-    display: block;
-  }
-}
 
 /* Logging in, the account's menu, and the 2 dialogs: adding or editing a board, and "My boards". */
 .made-login {
@@ -5015,10 +5000,6 @@ main:has(.made-thing-wrap) {
   flex: none;
 }
 
-.made-login-note {
-  margin-top: 1.25rem;
-  font-size: 0.8125rem;
-}
 
 /* A person's profile (made.via.computer/u/<id>): a white box with their picture, name, GitHub login,
    when they joined and a line about them, their own buttons at the right, and 3 counts under it;
