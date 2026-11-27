@@ -11,6 +11,7 @@ The module is loaded from its file for each test, under a name of its own: no fo
 
 from __future__ import annotations
 
+import errno
 import importlib.util
 import json
 import os
@@ -653,3 +654,125 @@ def test_every_function_answers_on_every_platform(hostos, monkeypatch, tmp_path,
     assert set(hostos.kicad_dirs()) == {"symbols", "footprints", "3dmodels"}
     assert isinstance(hostos.awt_lib(tmp_path), Path)
     assert signal.SIGTERM in hostos.stop_signals()
+
+
+# ------------------------------------------------------------------ the engine lock's file lock
+
+
+class FakeMsvcrt:
+    """A stand-in for Windows' msvcrt: each call to `locking` is recorded with the file position it ran
+    at, and answers in turn from `answers` (None takes the lock; an errno raises OSError with it)."""
+
+    LK_UNLCK, LK_LOCK, LK_NBLCK, LK_RLCK, LK_NBRLCK = 0, 1, 2, 3, 4
+
+    def __init__(self, answers=()):
+        self.calls: list[tuple[int, int, int]] = []
+        self.answers = list(answers)
+
+    def locking(self, fd, mode, nbytes):
+        self.calls.append((mode, nbytes, os.lseek(fd, 0, os.SEEK_CUR)))
+        answer = self.answers.pop(0) if self.answers else None
+        if answer is not None:
+            raise OSError(answer, os.strerror(answer))
+
+
+@pytest.fixture
+def fake_msvcrt(monkeypatch):
+    fake = FakeMsvcrt()
+    monkeypatch.setitem(sys.modules, "msvcrt", fake)
+    monkeypatch.setitem(sys.modules, "fcntl", None)
+    return fake
+
+
+def opened(path: Path) -> int:
+    path.touch()
+    return os.open(path, os.O_RDWR)
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_lock_file_on_posix_is_flock_and_a_second_descriptor_waits(hostos, monkeypatch, tmp_path, platform):
+    """enginelock.py:197 and :421: flock(LOCK_EX | LOCK_NB). The lock belongs to the open file, so a
+    second open of the same file in the same process does not get it until the first is closed."""
+    on(monkeypatch, platform)
+    first, second = opened(tmp_path / "t"), os.open(tmp_path / "t", os.O_RDONLY)
+    try:
+        assert hostos.lock_file(first) is True
+        assert hostos.lock_file(second) is False
+        hostos.unlock_file(first)  # nothing on POSIX: close(2) drops a flock at once
+        assert hostos.lock_file(second) is False
+    finally:
+        os.close(first)
+    try:
+        assert hostos.lock_file(second) is True
+    finally:
+        os.close(second)
+
+
+def test_lock_file_on_windows_locks_1_byte_past_any_text(hostos, monkeypatch, tmp_path, fake_msvcrt):
+    """msvcrt.locking locks from the file's position, and Windows stops reads of a locked byte too: the
+    lock is taken on byte 2**30, which no ticket reaches, with LK_NBLCK (no wait)."""
+    on(monkeypatch, "win32")
+    fd = opened(tmp_path / "t")
+    try:
+        assert hostos.lock_file(fd) is True
+        hostos.unlock_file(fd)
+    finally:
+        os.close(fd)
+    assert fake_msvcrt.calls == [(2, 1, 1 << 30), (0, 1, 1 << 30)]
+
+
+def test_lock_file_on_windows_says_false_when_another_handle_holds_it(hostos, monkeypatch, tmp_path):
+    """msvcrt.locking raises OSError with EACCES when the bytes are locked (the CRT's _locking)."""
+    on(monkeypatch, "win32")
+    fake = FakeMsvcrt([errno.EACCES])
+    monkeypatch.setitem(sys.modules, "msvcrt", fake)
+    fd = opened(tmp_path / "t")
+    try:
+        assert hostos.lock_file(fd) is False
+    finally:
+        os.close(fd)
+    assert len(fake.calls) == 1
+
+
+def test_lock_file_on_windows_waits_by_trying_again(hostos, monkeypatch, tmp_path):
+    """LK_LOCK gives up after 10 tries 1 s apart; a wait for `.seq` has no limit, as flock's has none:
+    LK_NBLCK again until it takes the lock (here the 3rd try)."""
+    on(monkeypatch, "win32")
+    fake = FakeMsvcrt([errno.EACCES, errno.EACCES])
+    monkeypatch.setitem(sys.modules, "msvcrt", fake)
+    fd = opened(tmp_path / "t")
+    try:
+        assert hostos.lock_file(fd, wait=True) is True
+    finally:
+        os.close(fd)
+    assert [c[0] for c in fake.calls] == [2, 2, 2]
+
+
+def test_lock_file_on_windows_raises_any_other_error(hostos, monkeypatch, tmp_path):
+    on(monkeypatch, "win32")
+    monkeypatch.setitem(sys.modules, "msvcrt", FakeMsvcrt([errno.EBADF]))
+    fd = opened(tmp_path / "t")
+    try:
+        with pytest.raises(OSError):
+            hostos.lock_file(fd)
+    finally:
+        os.close(fd)
+
+
+@pytest.mark.parametrize("platform", PLATFORMS)
+def test_flock_files_is_false_only_on_windows(hostos, monkeypatch, platform):
+    on(monkeypatch, platform)
+    assert hostos.flock_files() is (platform != "win32")
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_user_id_on_posix_is_getuid(hostos, monkeypatch, platform):
+    """enginelock.py:153: the lock folder must be the user's own."""
+    on(monkeypatch, platform)
+    assert hostos.user_id() == os.getuid()
+
+
+def test_user_id_on_windows_is_none_and_needs_no_getuid(hostos, monkeypatch):
+    on(monkeypatch, "win32")
+    monkeypatch.delattr(os, "getuid")
+    assert hostos.user_id() is None
