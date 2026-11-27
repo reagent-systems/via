@@ -7,7 +7,11 @@ permissions:
   contents: read
   issues: write
 jobs:
+  # The Linux gate starts after the Windows and macOS legs (the jobs below): its last step speaks for the
+  # whole night, so it reads their result. It runs whatever they gave, unless the night was cancelled.
   verify:
+    needs: desktop
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -85,7 +89,9 @@ jobs:
           ARCHIVE: ${{ steps.archive.outcome }}
           INSTALL: ${{ steps.install.outcome }}
           VERIFY: ${{ steps.verify.outcome }}
+          DESKTOP: ${{ needs.desktop.result }}
         with:
+          # A night whose Windows or macOS leg did not pass is a failed night, whatever the Linux gate gave.
           script: |
             const fs = require('fs');
             const { execFileSync } = require('child_process');
@@ -95,12 +101,14 @@ jobs:
             fs.writeFileSync('build/nightly-issues.json', JSON.stringify(open));
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const env = process.env;
+            const outcome = env.DESKTOP === 'success' ? env.JOB_STATUS : 'failure';
             const out = execFileSync('python3', ['tools/ci/nightly_issue.py',
-              '--outcome', env.JOB_STATUS, '--log', 'build/nightly-verify.log',
+              '--outcome', outcome, '--log', 'build/nightly-verify.log',
               '--issues', 'build/nightly-issues.json', '--run', run,
               '--date', new Date().toISOString().slice(0, 10),
               '--step', `archive=${env.ARCHIVE}`, '--step', `install=${env.INSTALL}`,
-              '--step', `verify=${env.VERIFY}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+              '--step', `verify=${env.VERIFY}`, '--step', `desktop=${env.DESKTOP}`],
+              { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
             for (const act of JSON.parse(out).actions) {
               if (act.do === 'open') {
                 await github.rest.issues.create({ ...context.repo, title: act.title, labels: act.labels, body: act.body });
@@ -112,3 +120,96 @@ jobs:
                 }
               }
             }
+
+  # The Windows and macOS legs of ci.yml, every night: their steps are ci.yml's to the letter
+  # (tests/test_ci_desktop.py holds them equal), without the scope's question. A night catches a moved
+  # KiCad download or a new runner image; ee-agent-kit/CI.md, "Windows and macOS", has the why of each step.
+  desktop:
+    name: desktop ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore the downloads kept by an earlier run
+        uses: actions/cache/restore@v4
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: ${{ runner.os == 'macOS' && '~/Library/Application Support/via/downloads' || '~\AppData\Local\Via\downloads' }}
+          key: via-desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('toolchain/desktop.json') }}
+      - name: Install Via with install-macos.sh, as a person does
+        id: install-macos
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          ./install-macos.sh --yes
+      - name: Install Via with install.ps1, as a person does
+        id: install-windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Yes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Join-Path $env:LOCALAPPDATA 'Via\bin')
+      - name: Save the downloads for later runs
+        if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (steps.install-macos.outcome == 'success' || steps.install-windows.outcome == 'success')
+        uses: actions/cache/save@v4
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: ${{ runner.os == 'macOS' && '~/Library/Application Support/via/downloads' || '~\AppData\Local\Via\downloads' }}
+          key: via-desktop-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('toolchain/desktop.json') }}
+      - name: The smoke on macOS
+        id: smoke-macos
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          "$HOME/Library/Application Support/via/venv/bin/python" tools/ci/desktop_smoke.py --work "$RUNNER_TEMP/desktop-smoke"
+      - name: The smoke on Windows
+        id: smoke-windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & (Join-Path $env:LOCALAPPDATA 'Via\venv\Scripts\python.exe') tools/ci/desktop_smoke.py --work (Join-Path $env:RUNNER_TEMP 'desktop-smoke')
+      - uses: actions/upload-artifact@v4
+        if: failure() && (steps.smoke-macos.outcome == 'failure' || steps.smoke-windows.outcome == 'failure')
+        with:
+          name: desktop-smoke-${{ matrix.os }}
+          path: ${{ runner.temp }}/desktop-smoke
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ci.yml's experimental WSL leg, every night, its steps ci.yml's to the letter. Its result is reported
+  # in the run and does not open the ci-failure issue.
+  desktop-wsl:
+    name: desktop windows-latest WSL (experimental)
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ubuntu 24.04 in WSL
+        shell: pwsh
+        run: |
+          wsl --install -d Ubuntu-24.04 --no-launch
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # An older store package registers on its first launch; with --root it makes no user.
+          if (Get-Command ubuntu2404.exe -ErrorAction SilentlyContinue) {
+            ubuntu2404.exe install --root
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          wsl --list --verbose
+      - name: Clone this commit inside WSL and run install.sh
+        shell: pwsh
+        run: |
+          $sha = git rev-parse HEAD
+          wsl -d Ubuntu-24.04 -u root --cd "$env:GITHUB_WORKSPACE" -- bash -euc "git config --global --add safe.directory '*'; git clone -q . /root/via; git -C /root/via checkout -q --detach $sha; cd /root/via; env REQUIRE_FREEROUTING=1 APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570 APT_OTHER_TIMEOUT=300 ./install.sh"
+      - name: The smoke inside WSL
+        shell: pwsh
+        run: wsl -d Ubuntu-24.04 -u root --cd /root/via -- /opt/workcenters/ee/venv/bin/python tools/ci/desktop_smoke.py --work /root/desktop-smoke

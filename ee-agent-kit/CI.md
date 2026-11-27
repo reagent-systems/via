@@ -5,8 +5,8 @@ file explains them and holds the repository settings that are not files.
 
 | File | Trigger | Does |
 |---|---|---|
-| `ci.yml` | push to `main`, every PR, manual (`gh workflow run ci.yml --ref <branch>`: always `full`, the gate of a branch with no pull request) | `fast` on every change: no toolchain, `make verify-site` (KiCad's libraries hidden, no engine started). `full`: the image of this commit's toolchain when the registry gives it, else apt's package files kept from an earlier run (`tools/ci/apt_cache.sh`), `tools/ci/apt_archive.sh` (apt keeps the runner's mirror and Ubuntu's own archive, asks the fastest first, and in the index update sends a file to the next host after 15 s of silence), then `sudo env REQUIRE_FREEROUTING=1 APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570 ./install.sh`; then `make verify` (tools/ci/README.md, "Where `full` runs"). `verdict` passes when `fast` passed and, for a change `tools/ci/scope.py` calls full, `full` too. |
-| `nightly.yml` | 06:17 UTC daily | `tools/ci/apt_archive.sh`, then `sudo env REQUIRE_FREEROUTING=1 APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570 ./install.sh` then `make verify`, always by install.sh. Keeps 1 `ci-failure` issue in step with the nights (`tools/ci/nightly_issue.py`): a failed night opens it or adds 1 comment with the run and the gate's `why:` lines; a passed night closes it with 1 comment naming the run; a second open one is closed as a duplicate of the oldest (tools/ci/README.md, "The nightly's `ci-failure` issue"). Catches a moved PPA, a new KiCad point release, a broken dependency. |
+| `ci.yml` | push to `main`, every PR, manual (`gh workflow run ci.yml --ref <branch>`: always `full`, the gate of a branch with no pull request) | `fast` on every change: no toolchain, `make verify-site` (KiCad's libraries hidden, no engine started). `full`: the image of this commit's toolchain when the registry gives it, else apt's package files kept from an earlier run (`tools/ci/apt_cache.sh`), `tools/ci/apt_archive.sh` (apt keeps the runner's mirror and Ubuntu's own archive, asks the fastest first, and in the index update sends a file to the next host after 15 s of silence), then `sudo env REQUIRE_FREEROUTING=1 APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570 ./install.sh`; then `make verify` (tools/ci/README.md, "Where `full` runs"). `verdict` passes when `fast` passed and, for a change `tools/ci/scope.py` calls full, `full` too, and both `desktop` legs (macos-latest, windows-latest) when the scope asked them: a change to install or platform code, every push to `main`, a run by hand. `desktop-wsl` (Ubuntu 24.04 in WSL on windows-latest) is experimental: printed, not asked ("Windows and macOS"). |
+| `nightly.yml` | 06:17 UTC daily | `tools/ci/apt_archive.sh`, then `sudo env REQUIRE_FREEROUTING=1 APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570 ./install.sh` then `make verify`, always by install.sh. Keeps 1 `ci-failure` issue in step with the nights (`tools/ci/nightly_issue.py`): a failed night opens it or adds 1 comment with the run and the gate's `why:` lines; a passed night closes it with 1 comment naming the run; a second open one is closed as a duplicate of the oldest (tools/ci/README.md, "The nightly's `ci-failure` issue"). Catches a moved PPA, a new KiCad point release, a broken dependency. The same `desktop` and `desktop-wsl` jobs as ci.yml run first; a `desktop` leg that did not pass makes the night failed (`--step desktop=<result>`). |
 | `image.yml` | PR on the files the build reads, every push to `main`, `v*.*.*`, Monday 04:17 UTC, manual | Builds the image on amd64 and arm64 from install.sh, with CI's 2 bounds of its apt step as build arguments, checks it with doctor (its `requirements` row included: the venv holds the pins of the requirements.txt in the tag) and the gates on a fixture as the runner's user (they must write build/gates.json, and every file they write must be that user's); pushes to `ghcr.io/<owner>/via` except on a PR. |
 | `board-gates.yml` | `workflow_call` from a board repository | `workcenter gates` on each project folder the caller names, 1 job each; the gates table in the job's summary; red on RED and SKIPPED. In the image of Via's toolchain where the runner can pull it, else `tools/ci/apt_archive.sh` then `install.sh` with CI's 2 apt bounds (`.claude/skills/board-ci/SKILL.md`). |
 | `board-fixture.yml` | PR and push to `main` on the 2 board workflows, the fixture, `tools/`, `install.sh`, `requirements.txt` or `Dockerfile`; manual | Calls `board-gates.yml` on `tests/boards/pass-rc-divider` with `strict: true`, Via at the run's own commit. |
@@ -133,6 +133,65 @@ On 2026-11-19, 13 routing tests failed on GitHub and the gate printed `see /tmp/
 `fast`'s limit is 20 minutes. Its runs, the job's whole time: 502 s on pull request 124's last head (662fe5b; its pytest step took 468 s, 472 s and 468 s on that pull request's 3 runs); 578 s on wip/install2 at c49fece (run 44585103119, a slow runner), stopped there at the former limit of 600 s in step 3 of 4; 570 s on pull request 127; 711 s on pull request 128's head 797bff6 (job 135849299580), the longest. Half as much again beyond the longest is 1.5 x 711 = 1066.5 s, so the limit must be at least 1067 s: 20 minutes is 1200 s (15 minutes, 900 s, held only 578 s). `tests/test_ci_scope.py` holds the limit to that margin over the longest run measured (`FAST_LONGEST`).
 
 The shards of `full` are planned from `verify/shards.csv`, each file's seconds inside a shard. In run 44585103119 7 files had no row and each was given the default 42 s; the plan set each shard at 904 s, and on a slow runner the shards took 729, 1071, 799 and 740 s (`tests/test_fields_solver.py` alone 465.3 s), Verify 1088 s. The 7 rows are now there, from runs of each file alone on 2026-11-19 (their tests that start no engine, plus for `tests/test_mcp.py` and `tests/test_board_gates_workflow.py` their engine tests from runs behind the engine lock that day); a file runs slower in a shard than alone, so the rows are low by that much. The plan did not hold its balance there: shard 2 took 1071 s against 729 s for shard 1. Which share of that the 7 missing rows made and which the slow runner, that run cannot tell. The job took 1316 s of its 2400 s.
+
+## Windows and macOS
+
+The owner asked for native Windows and macOS (2026-11-27): Apple Silicon proven in CI, an Intel Mac best effort. The `desktop` job of `ci.yml` is the proof. It is a matrix of 2 legs, `desktop macos-latest` (arm64) and `desktop windows-latest` (x64), with `fail-fast: false`, so 1 red leg does not stop the other.
+
+When it runs: on a pull request whose change `tools/ci/scope.py` puts in the desktop scope, on every push to `main`, on a run by hand, and every night (`nightly.yml` holds the same steps; `tests/test_ci_desktop.py` holds the 2 copies equal). The desktop scope is these paths (`DESKTOP_FILES` and `DESKTOP_FOLDERS` in scope.py; `tests/test_ci_scope.py` names them again):
+
+- the installers and their pins: `install.sh`, `install-macos.sh`, `install.ps1`, `workcenter.cmd`, `toolchain/desktop.json`, `requirements.txt`, `requirements-kicad.txt`, `pyproject.toml`;
+- the platform code: `tools/hostos.py`, `tools/enginelock.py`, `tools/routers.py`, `tools/kicadchild.py`, `.gitattributes`;
+- the test runner's portable parts: `tests/conftest.py`, `verify/testshards.py`, `verify/desktop.csv`;
+- the smoke and its fixtures: `tools/ci/desktop_smoke.py`, `tests/boards/pass-first-design/`, `tests/boards/fail-drc-clearance/`, `tests/boards/fail-sim-spec/`, `tests/boards/route-me/`;
+- `.github/workflows/ci.yml`, which holds the legs.
+
+`tools/workcenter` and `tools/kicadgen.py` are not in it: nearly every full change touches them. A break there shows on the next push to `main`, whose run asks the legs. A run with no base, or a base git cannot read, asks them too. The scope job writes `desktop=yes` or `desktop=no` beside `scope=`, and prints a `desktop  <path>: <why>` line for each path that asks.
+
+Each leg, in order:
+
+1. Restores the installer's downloads folder, keyed by `runner.os`, `runner.arch` and the hash of `toolchain/desktop.json`. A pull request restores and never saves; a push to `main`, a night and a run by hand save after a good install. Neither step fails the run. The installers check each file by its SHA256 before use, so a kept file is never trusted for its name.
+2. Installs with the installer a person runs: `./install-macos.sh --yes` on macOS, `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Yes` on Windows. `--yes` and `-Yes` answer the installers' questions; nothing else differs from a person's run. The checkout is GitHub's default on each system: no `core.autocrlf` is changed, so the bytes the Windows leg reads are what a person's Git gives them.
+3. Runs `tools/ci/desktop_smoke.py` with the venv's Python the installer made. Its 8 steps, each with its line `desktop-smoke: [n/8] <step>: ok` or `FAIL (<why>)`:
+   1. `workcenter doctor`: exit 0.
+   2. `workcenter gates --strict` on a copy of `pass-first-design`: exit 0, last line `GREEN`.
+   3. `workcenter gates` on a copy of `fail-drc-clearance`: exit 1, last line `RED`, a `clearance` line.
+   4. `workcenter gates` on a copy of `fail-sim-spec`: exit 1, last line `RED`, a `vout` line.
+   5. `workcenter design tests/boards/pass-first-design/design.py --check`: exit 0.
+   6. `workcenter next` on the copy of `pass-first-design`: exit 0 or 1, a `NEXT` line.
+   7. `workcenter autoroute --apply` on a copy of `route-me`: exit 0, a `PASS` line.
+   8. `verify/testshards.py run --only verify/desktop.csv`: the test files that must pass on that system.
+
+   The 2 RED fixtures matter as much as the GREEN one. A gate whose engine never ran exits 2 (`SKIPPED`), never 1, so it fails steps 3 and 4. Every step runs after a failed one too, so 1 run reports each step's state. The last line is `DESKTOP SMOKE GREEN` or `DESKTOP SMOKE RED`.
+4. A red smoke uploads its work folder (the fixtures' copies with what the gates wrote, the tests' logs) as `desktop-smoke-<os>`, kept 7 days.
+
+On Linux, with this checkout's tools, steps 1 to 7 passed in 12.4 s on 2026-11-27 (this machine, behind the engine lock): `GREEN: divider`, `RED: rc_divider` with `clearance 0.2000 mm; actual 0.0500 mm`, `RED: fail-sim-spec` with `rc_divider:vout=2.5 not in [3.2, 3.4]`, `NEXT  Nothing for the bench`, `PASS  autoroute  routed 13 segments`.
+
+The limit of each leg is 60 minutes. No leg has run yet, so it is a first bound, not a measure: the macOS DMG alone is 1,405,602,755 bytes (`toolchain/desktop.json`), and the Linux `full` job's install bound is 2523 s of its 45 minutes (`tests/test_install_apt.py`). After the first runs it becomes 1.5 x the longest measured leg, as for `fast`.
+
+`desktop-wsl` is the WSL route on windows-latest: `wsl --install -d Ubuntu-24.04 --no-launch`, this commit cloned inside Ubuntu (so the Linux bytes, not the Windows checkout's), the unchanged `install.sh` with CI's 3 bounds, then the same smoke. It is marked `continue-on-error`: only 1 user report says `wsl --install` works on GitHub's Windows runners, and it may need a restart the runner cannot give. Its state is reported in `verdict`'s line (`wsl (experimental, not required): <result>`), never assumed. Its limit is 90 minutes: install.sh's worst case is 2523 s, and the WSL install and the smoke come on top.
+
+`verdict` prints 1 line, `scope: <s>; desktop asked: <yes|no>; fast: <r>; full: <r>; desktop: <r>; wsl (experimental, not required): <r>`, and passes only when every asked job passed.
+
+What the legs do not judge, and why:
+
+| Not judged on macOS and Windows | Why | Where it is judged |
+|---|---|---|
+| `make verify`, shellcheck, ruff, the kit checks, the site | bash, POSIX process groups; none depends on the system | `fast` and `full` on Linux |
+| Tests not named in `verify/desktop.csv` | the list grows as each port lands | `full` on Linux |
+| openEMS (`workcenter fields`), the chip flow, renders through xvfb | Linux and the image only | `full`, the image, a machine with `install.sh --chip` |
+| Docker Desktop on macOS and Windows | macOS arm64 runners have no nested virtualization; the Windows runner's Docker is not shown to run Linux containers | `image.yml` builds and gates the arm64 image on ubuntu-24.04-arm |
+| An Intel Mac | best effort; GitHub's `macos-latest` is arm64 | nowhere in CI |
+| FreeRouting's window on a logged-in desktop | runners have no logged-in session; the smoke's route runs headless | a hand run |
+
+Not confirmed until the first run of the merged branch on GitHub; that run answers each:
+
+- The installers finish unattended on hosted runners (`--yes`, `-Yes`), and the Windows runner, which runs elevated, takes install.ps1's per-user install.
+- `workcenter` resolves on `PATH` after the install: `~/.local/bin` on macOS, `%LOCALAPPDATA%\Via\bin` on Windows (both added to `GITHUB_PATH`).
+- Python runs `workcenter.cmd` given as a full path (Windows), and the gates' engines are found there.
+- The cache paths hold the files the installers keep: `~/Library/Application Support/via/downloads` and `%LOCALAPPDATA%\Via\downloads`.
+- `wsl --install` works on windows-latest without a restart.
+- The time of each leg, for its limit.
 
 ## What GitHub does not judge
 

@@ -45,12 +45,24 @@ def test_a_run_by_hand_gates_any_branch_and_is_full(tmp_path: Path):
         ran = subprocess.run(["bash", "-e", str(script)], cwd=repo, env=env, capture_output=True, text=True)
         assert ran.returncode == 0, ran.stderr
         answers[event] = out.read_text(encoding="utf-8")
-    assert answers == {"pull_request": "scope=fast\n", "workflow_dispatch": "scope=full\n"}
+    # A run by hand has no base, so it asks the Windows and macOS legs too (tools/ci/scope.py).
+    assert answers == {
+        "pull_request": "scope=fast\ndesktop=no\n",
+        "workflow_dispatch": "scope=full\ndesktop=yes\n",
+    }
     (check,) = flow["jobs"]["verdict"]["steps"]
     verdict = tmp_path / "verdict.sh"
     verdict.write_text(check["run"], encoding="utf-8")
     for full, code in (("success", 0), ("skipped", 1), ("failure", 1), ("cancelled", 1)):
         # `fast` runs on every change, a run by hand too, and the verdict asks it (wip/fast-lane).
-        env = {**os.environ, "SCOPE": "full", "FAST": "success", "FULL": full}
+        env = {
+            **os.environ,
+            "SCOPE": "full",
+            "DESKTOP_ASKED": "yes",
+            "FAST": "success",
+            "FULL": full,
+            "DESKTOP": "success",
+            "WSL": "failure",
+        }
         ran = subprocess.run(["bash", "-e", str(verdict)], env=env, capture_output=True, text=True)
         assert ran.returncode == code, (full, ran.stdout)
