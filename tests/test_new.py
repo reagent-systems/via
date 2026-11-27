@@ -13,7 +13,6 @@ import json
 import os
 import re
 import shlex
-import stat
 import subprocess
 import sys
 import time
@@ -21,6 +20,7 @@ import types
 from pathlib import Path
 
 import pytest
+from conftest import stand_in
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
@@ -72,11 +72,13 @@ def stand_ins(folder: Path) -> tuple[dict, Path]:
     bin_dir.mkdir()
     log = folder / "called.log"
     for name in ENGINES:
-        script = bin_dir / name
-        script.write_text(
-            f'#!/bin/sh\necho "{name} $*" >> {shlex.quote(str(log))}\nexit 97\n', encoding="utf-8"
+        stand_in(
+            bin_dir / name,
+            "import sys\n"
+            f"with open({str(log)!r}, 'a', encoding='utf-8') as fh:\n"
+            f"    fh.write(' '.join([{name!r}, *sys.argv[1:]]) + '\\n')\n"
+            "sys.exit(97)\n",
         )
-        script.chmod(script.stat().st_mode | stat.S_IXUSR)
     env = {k: v for k, v in os.environ.items() if k not in ("KICAD_CLI", "NGSPICE", "JAVA")}
     env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
     return env, log
