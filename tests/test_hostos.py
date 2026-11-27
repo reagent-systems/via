@@ -59,6 +59,9 @@ def bare_env(monkeypatch, tmp_path):
     for name in READS:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    # Windows' Python reads the home folder from USERPROFILE, never HOME (run 46067841222: the
+    # runner's C:\Users\runneradmin, where the test meant <tmp>\home).
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
 
 
 def on(monkeypatch, platform: str) -> None:
@@ -491,6 +494,10 @@ def test_java_home_reads_no_java_home_variable_off_the_launchers(hostos, monkeyp
     assert hostos.java_home(java) == (tmp_path / "jdk").resolve()
 
 
+@posix_only(
+    "it runs a stand-in for macOS's /usr/libexec/java_home by its path; on Windows it did not answer and "
+    "the folder stayed /usr (run 46067841222); Linux and the macOS leg run it"
+)
 def test_java_home_on_macos_follows_the_usr_bin_stub_to_java_home(hostos, monkeypatch, tmp_path):
     """Apple's /usr/bin/java is a launcher, not a JVM: the folder above it is /usr. It runs the JDK that
     JAVA_HOME names, else the one /usr/libexec/java_home picks (Apple's java_home(1))."""
@@ -1045,6 +1052,9 @@ def opened(path: Path) -> int:
     return os.open(path, os.O_RDWR)
 
 
+@posix_only(
+    "it takes flock through fcntl, which Windows' Python lacks (run 46067841222: ModuleNotFoundError)"
+)
 @pytest.mark.parametrize("platform", ["linux", "darwin"])
 def test_lock_file_on_posix_is_flock_and_a_second_descriptor_waits(hostos, monkeypatch, tmp_path, platform):
     """enginelock.py:197 and :421: flock(LOCK_EX | LOCK_NB). The lock belongs to the open file, so a

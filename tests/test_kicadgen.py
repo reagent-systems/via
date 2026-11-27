@@ -522,7 +522,8 @@ def test_hook_installer_merges_once_into_user_settings(tmp_path):
 
     # The doctor reports each from the user settings ($HOME), and a settings file without them as absent.
     def doctor_sees(name: str) -> bool:
-        env = {**os.environ, "HOME": str(tmp_path)}
+        # Windows' Python reads the home folder from USERPROFILE, not HOME (run 46067841222).
+        env = {**os.environ, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
         cmd = [sys.executable, str(ROOT / "tools" / "workcenter"), "--json", "doctor"]
         proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)
         return json.loads(proc.stdout)["checks"][name]["ok"]
