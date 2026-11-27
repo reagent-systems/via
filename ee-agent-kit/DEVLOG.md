@@ -58,7 +58,9 @@ systems. Nothing has run on a Mac or on Windows: the first GitHub run of
 the branch proves or refutes it.
 
 Evidence: branch `wip/winmac`; STATUS rows "Windows and macOS: ...";
-MISTAKES M317 to M324.
+MISTAKES M317 to M325. The first GitHub run of the legs (46067841222)
+installed on both systems and was red in its tests; M325 names each
+cause, fixed on the branch before the next run.
 
 ## 2026-11-19 — The test run names every test it did not judge for its machine
 

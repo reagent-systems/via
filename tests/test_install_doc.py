@@ -35,7 +35,7 @@ PLATFORMS = (
 
 # The states a row may give, word for word: proven by a run, or not yet.
 PROVEN = "Proven on GitHub's runners"
-NOT_YET = "Not yet proven: the first CI run will say"
+NOT_YET = "Not yet proven: the next CI run will say"
 NO_RUNNER = "Not proven, and no GitHub runner can prove it"
 
 

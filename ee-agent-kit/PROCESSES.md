@@ -710,6 +710,16 @@ that may be absent.
 16. A test that starts its own pytest, or any program that reads the
     runner's variables, gives it an environment without the outer run's
     own (`TESTSHARDS_*`), so its records go to its own log (M321).
+17. A test that runs on macOS or Windows (`verify/desktop.csv` names its
+    file `desktop`) holds what the tool writes on that system: a path
+    joined with Path and matched whole (a home folder or "Application
+    Support" holds a space), a command quoted with `hostos.shell_word`
+    or `shlex` before a shell reads it, file names that differ by more
+    than case, text written with `newline="\n"` where the bytes are
+    compared, `USERPROFILE` beside `HOME`, and an engine's own count or
+    wording read as that engine gives it. Before it lands it runs once
+    under a venv linked at a path with a space and with `--basetemp`
+    outside the temporary folder, as the desktop legs run it (M325).
 
 Done when: the summary shows no unexpected skips, the engine test is
 green on the runner, and a run with an engine taken away is not GREEN.

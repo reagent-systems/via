@@ -247,10 +247,10 @@ installer runs from a clone of Via (`git clone https://github.com/reagent-system
 | Computer | Command | State |
 |---|---|---|
 | Linux, Ubuntu 24.04 | `sudo ./install.sh` | Proven on GitHub's runners (ubuntu-24.04). |
-| macOS, Apple Silicon | `./install-macos.sh` | Not yet proven: the first CI run will say (macos-latest). On macOS 12 to 14, Homebrew is not supported and builds Python and ngspice from source, which is slow and may fail. |
+| macOS, Apple Silicon | `./install-macos.sh` | Not yet proven: the next CI run will say (macos-latest). The first, run 46067841222 (2026-11-27), installed with it and passed the smoke's 7 command steps; 21 of its 940 tests failed, on causes fixed since (`ee-agent-kit/CI.md`, "Windows and macOS"). On macOS 12 to 14, Homebrew is not supported and builds Python and ngspice from source, which is slow and may fail. |
 | macOS, Intel | `./install-macos.sh` | Best effort: no CI job runs on an Intel Mac. It needs a Homebrew already installed: Homebrew's installer refuses an Intel Mac. On macOS 12 to 14, Homebrew is not supported and builds Python and ngspice from source, which is slow and may fail. |
-| Windows 10 or 11, native (x64) | `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1` | Not yet proven: the first CI run will say (windows-latest). |
-| Windows 10 or 11, WSL2 | `wsl --install -d Ubuntu-24.04` as an administrator, a restart, then the Ubuntu row inside Ubuntu | Not yet proven: the first CI run will say (an experimental leg on windows-latest). |
+| Windows 10 or 11, native (x64) | `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1` | Not yet proven: the next CI run will say (windows-latest). The first, run 46067841222, installed with it and passed the smoke's 7 command steps, but through the checkout's `workcenter.cmd`, not the installed one; 84 of its 940 tests failed, on causes fixed since. |
+| Windows 10 or 11, WSL2 | `wsl --install -d Ubuntu-24.04` as an administrator, a restart, then the Ubuntu row inside Ubuntu | Not yet proven: the next CI run will say (an experimental leg on windows-latest). The first, run 46067841222: `wsl --install` worked with no restart, install.sh finished in 187 s, the smoke's 7 command steps passed, and 13 of its 940 tests failed, on 1 cause fixed since. |
 | Docker, on any of them | `docker run --rm ghcr.io/reagent-systems/via:main` | Not proven, and no GitHub runner can prove it on macOS or Windows (Docker Desktop). The image build runs the gates in it on Linux, amd64 and arm64. Today ghcr.io refuses an anonymous pull of it; `ghcr.io/thyfriendlyfox/via:main`, older, answers one. |
 
 Install is done when `workcenter doctor` says `ok`, the gates say GREEN on
