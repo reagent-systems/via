@@ -2,7 +2,9 @@
 
 Each function reads `sys.platform` when it is called ("linux", "darwin", "win32"), never `os.name`, so a
 test sets the platform with 1 attribute. On Linux each returns what the code returns today; the comment
-of each names the file and line that holds that value at main cea464d. tools/enginelock.py calls
+of each names the file and line that holds that value at main cea464d. tools/workcenter, kicadgen.py,
+fields.py and image.py read the root, the engines and KiCad's folders from it, and tools/kicadchild.py
+KiCad's Python. tools/enginelock.py calls
 lock_dir, user_id, lock_file, unlock_file, flock_files and stop_signals; tools/routers.py,
 tools/routebench.py and tools/mcpserver.py call it too; write_text is called by tools/kicadgen.py,
 tools/newboard.py and the run decks of tools/workcenter, and installer_command by tools/guide.py. The
