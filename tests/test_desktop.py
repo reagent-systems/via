@@ -221,6 +221,10 @@ ECHO = (
 )
 
 
+FIRST_LINE = conftest.posix_only("a program's first line is POSIX; the Windows stand-in has its own test")
+
+
+@FIRST_LINE
 def test_a_stand_in_is_a_python_program_that_starts_no_shell(tmp_path):
     """The stand-in's first line names this Python: the kernel starts it with no shell, so it runs with
     PATH empty (no sh, no bash to find), and it passes its arguments and its exit code."""
@@ -232,11 +236,13 @@ def test_a_stand_in_is_a_python_program_that_starts_no_shell(tmp_path):
     assert (ran.returncode, ran.stdout, ran.stderr) == (7, "stand-in pcb drc a b 7\n", "err\n")
 
 
+@FIRST_LINE
 def test_a_stand_in_is_found_on_path_by_its_name(tmp_path):
     conftest.stand_in(tmp_path / "bin" / "ngspice", ECHO)
     assert shutil.which("ngspice", path=str(tmp_path / "bin")) == str(tmp_path / "bin" / "ngspice")
 
 
+@FIRST_LINE
 def test_where_this_pythons_path_cannot_be_a_first_line_the_stand_in_starts_it_by_sh(tmp_path, monkeypatch):
     """A first line holds no space (macOS's kernel splits it there) and at most 127 bytes; the venv of
     Via's macOS root is under "Application Support". There the stand-in is `#!/bin/sh` and 1 exec line,
@@ -254,8 +260,9 @@ def test_where_this_pythons_path_cannot_be_a_first_line_the_stand_in_starts_it_b
 
 def test_on_windows_the_stand_in_is_a_cmd_file_that_starts_this_python(tmp_path, monkeypatch):
     """Windows runs no first line: the stand-in is `<name>.cmd`, found on PATH by PATHEXT, whose 1 line
-    starts this Python on the program beside it with every argument (%*). Here that line is read as cmd
-    would split it (its words in double quotes) and run: the program answers as it does on Linux."""
+    starts this Python on the program beside it with every argument (%*). On Windows cmd runs the file;
+    elsewhere the line is read as cmd would split it (its words in double quotes) and run: the program
+    answers as it does on Linux."""
     monkeypatch.setattr(sys, "platform", "win32")
     prog = conftest.stand_in(tmp_path / "bin" / "kicad-cli", ECHO)
     assert prog == tmp_path / "bin" / "kicad-cli.cmd"
@@ -263,7 +270,10 @@ def test_on_windows_the_stand_in_is_a_cmd_file_that_starts_this_python(tmp_path,
     (line,) = prog.read_bytes().decode("utf-8").splitlines()
     assert line == f'@"{sys.executable}" "{script}" %*'
     assert prog.read_bytes().endswith(b"\r\n")
-    argv = shlex.split(line.lstrip("@").replace("%*", "pcb export 5"))
+    if os.name == "nt":
+        argv = [str(prog), "pcb", "export", "5"]
+    else:
+        argv = shlex.split(line.lstrip("@").replace("%*", "pcb export 5"))
     ran = subprocess.run(argv, capture_output=True, text=True)
     assert (ran.returncode, ran.stdout) == (5, "stand-in pcb export 5\n")
 
@@ -290,6 +300,7 @@ def test_on_windows_no_home_takes_out_every_variable_path_home_reads(tmp_path, m
     assert ran.stderr.strip().splitlines()[-1] == "RuntimeError: Could not determine home directory."
 
 
+@conftest.posix_only("it holds the POSIX start; the Windows one has its own test")
 def test_on_linux_no_home_runs_as_before(tmp_path):
     cmd, bare = conftest.no_home_command(tmp_path / "s.py", 1, env={"HOME": "/h", "A": "b"})
     assert bare == {"A": "b"}
