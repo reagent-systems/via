@@ -940,6 +940,124 @@ def test_without_pdeathsig_the_server_says_so(tmp_path, monkeypatch):
         assert mcpserver._dies_with(os.getpid()) is None
 
 
+# ------------------------------------------------------------------ on a stand-in for Windows
+#
+# tests/winstandin.py: sys.platform is win32, os.killpg and SIGHUP are gone, Popen refuses
+# start_new_session and preexec_fn, and taskkill is a stand-in that ends the pid it names. ctypes.CDLL(None)
+# raises TypeError, as it is read to do on Windows (not confirmed in a run). The server and its commands
+# run for real; what Windows itself does with a Ctrl+Break is not shown here.
+
+
+def _on_windows(monkeypatch, tmp_path: Path, console: bool = True):
+    """The stand-in, and os.kill's calls: a Ctrl+Break (1) reaches the command as SIGTERM when the server
+    shares a console with it, and raises OSError when it does not."""
+    import ctypes
+
+    from winstandin import windows
+
+    seen = windows(monkeypatch, tmp_path / "win")
+
+    def no_dlopen(*_args, **_kw):
+        raise TypeError("expected str, bytes or os.PathLike object, not NoneType")
+
+    monkeypatch.setattr(ctypes, "CDLL", no_dlopen)
+    real_kill, sent = os.kill, []
+
+    def kill(pid, sig):
+        sent.append((pid, sig))
+        if sig == 1 and not console:
+            raise OSError(6, "The handle is invalid")
+        real_kill(pid, 15 if sig == 1 else sig)
+
+    monkeypatch.setattr(os, "kill", kill)
+    return seen, sent
+
+
+def test_on_windows_the_server_starts_and_says_in_1_line_that_it_sets_no_guard(tmp_path, monkeypatch):
+    """No prctl on Windows: the server asks no C library, starts, and its instructions say that a server
+    ended by force leaves its commands running. Before this, ctypes.CDLL(None) was asked there."""
+    import mcpserver
+
+    _on_windows(monkeypatch, tmp_path)
+    out = Collector()
+    server = mcpserver.Server(tmp_path, out=out)
+    assert server.guarded is False
+    server.handle(b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}')
+    said = out.inbox.get(timeout=5)["result"]["instructions"]
+    assert mcpserver.UNGUARDED_WINDOWS in said and mcpserver.UNGUARDED not in said, said
+    assert "\n" not in mcpserver.UNGUARDED_WINDOWS
+
+
+def test_on_windows_a_command_runs_in_a_group_of_its_own_and_a_cancel_stops_it(
+    tmp_path, monkeypatch, request
+):
+    """The command starts with CREATE_NEW_PROCESS_GROUP, no start_new_session and no first step
+    (preexec_fn); a cancel sends Ctrl+Break to its group and it stops."""
+    seen, sent = _on_windows(monkeypatch, tmp_path)
+    server, out = _stubbed(tmp_path, PID_THEN_SLEEP)
+    _tools_call(server, 1, token="w")
+    pid = int(_next(out, lambda m: m.get("method") == "notifications/progress")["params"]["message"])
+    request.addfinalizer(lambda: _kill(pid))
+    [started] = [kw for kw in seen.popens if kw.get("cwd") == tmp_path]
+    assert started["creationflags"] == 0x200 and "preexec_fn" not in started, started
+    _cancel(server, 1)
+    end = time.monotonic() + 20
+    while _alive(Path(f"/proc/{pid}")):
+        assert time.monotonic() < end, "the cancel did not stop the command"
+        time.sleep(0.05)
+    assert (pid, 1) in sent and seen.taskkills() == [], (sent, seen.taskkills())
+
+
+def test_on_windows_without_a_console_a_stop_ends_the_tree_at_once(tmp_path, monkeypatch, request):
+    """A host may start the server with no console: then no Ctrl+Break can reach a command, and the stop
+    is `taskkill /T /F` at once, not GRACE seconds later."""
+    seen, sent = _on_windows(monkeypatch, tmp_path, console=False)
+    server, out = _stubbed(tmp_path, PID_THEN_SLEEP)
+    _tools_call(server, 1, token="w")
+    pid = int(_next(out, lambda m: m.get("method") == "notifications/progress")["params"]["message"])
+    request.addfinalizer(lambda: _kill(pid))
+    _cancel(server, 1)
+    end = time.monotonic() + 5
+    while _alive(Path(f"/proc/{pid}")):
+        assert time.monotonic() < end, "the stop did not end the command at once"
+        time.sleep(0.05)
+    assert seen.taskkills() == [["/T", "/F", "/PID", str(pid)]], seen.taskkills()
+
+
+def test_on_windows_a_command_that_ignores_the_stop_is_ended_by_taskkill(tmp_path, monkeypatch, request):
+    """stop_all: Ctrl+Break to each command's group, then `taskkill /T /F` for each still there after
+    GRACE seconds (0.5 here). The stub ignores the stop."""
+    import mcpserver
+
+    monkeypatch.setattr(mcpserver, "GRACE", 0.5)
+    seen, _ = _on_windows(monkeypatch, tmp_path)
+    server, out = _stubbed(tmp_path, IGNORES_SIGTERM)
+    _tools_call(server, 1, token="w")
+    pid = int(_next(out, lambda m: m.get("method") == "notifications/progress")["params"]["message"])
+    request.addfinalizer(lambda: _kill(pid))
+    server.stop_all()
+    assert not _alive(Path(f"/proc/{pid}"))
+    assert seen.taskkills() == [["/T", "/F", "/PID", str(pid)]], seen.taskkills()
+
+
+def test_on_windows_cmd_mcp_catches_term_break_and_int_and_asks_for_no_hup(tmp_path, monkeypatch, capsys):
+    """Windows has no SIGHUP; Ctrl+Break reaches a console program as SIGBREAK. The server catches
+    SIGTERM, SIGBREAK and SIGINT, and says on stderr in 1 line that it sets no guard."""
+    import signal
+    import types
+
+    import mcpserver
+
+    _on_windows(monkeypatch, tmp_path)
+    caught = []
+    monkeypatch.setattr(signal, "signal", lambda signum, handler: caught.append(signum))
+    monkeypatch.setattr(mcpserver.Server, "serve", lambda self, stream: 0)
+    assert mcpserver.cmd_mcp(types.SimpleNamespace(root=str(tmp_path))) == 0
+    assert caught == [signal.SIGTERM, 21, signal.SIGINT], caught
+    err = capsys.readouterr().err
+    assert err == f"workcenter mcp: {mcpserver.UNGUARDED_WINDOWS}\n", err
+
+
 def test_a_root_that_is_the_whole_disk_or_home_is_refused(tmp_path):
     """The root is the only boundary the paths are held to: `/` and the home folder hold everything, so
     the server will not start on them. 1 line on stderr, exit 2."""

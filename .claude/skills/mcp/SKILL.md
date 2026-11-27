@@ -49,8 +49,12 @@ later does not. stdio only: no HTTP, no authentication.
    - `workcenter mcp <ROOT>: too wide a root` on stderr, exit code 2: ROOT
      was `/` or the home folder. Name the project or the repository.
    - A line on stderr that a SIGKILL to this server leaves its commands
-     running: this system has no prctl PR_SET_PDEATHSIG. The server works;
-     stop it with SIGTERM, not SIGKILL.
+     running: this system has no prctl PR_SET_PDEATHSIG (macOS). The server
+     works; stop it with SIGTERM, not SIGKILL.
+   - On Windows, the line `On Windows this server sets no guard: a server
+     ended by force (taskkill /F, Task Manager) leaves its commands
+     running.` The server works; stop it by closing its stdin, or with
+     Ctrl+Break or Ctrl+C.
 3. Give the host the server's command line. A host takes a command and its
    arguments; name the CLI by its full path, since a host may start it from
    any folder: `python3 <workcenter>/tools/workcenter mcp <project>`.
@@ -99,6 +103,21 @@ later does not. stdio only: no HTTP, no authentication.
    killed by SIGKILL, and the server says so on stderr and in its
    `initialize` instructions.
 
+## On Windows
+
+What is POSIX-only has a Windows path or is left out, and the server says
+which:
+
+| On Linux and macOS | On Windows |
+|---|---|
+| Each command leads a session of its own. | Each command leads a process group of its own (`CREATE_NEW_PROCESS_GROUP`). |
+| A stop is SIGTERM to the command's group, then SIGKILL after 10 s. | A stop is Ctrl+Break to the command's group, then `taskkill /T /F` after 10 s. With no console shared with the command, `taskkill /T /F` at once. |
+| The server stops on SIGTERM, SIGHUP and SIGINT. | The server stops on SIGTERM, SIGBREAK (Ctrl+Break) and SIGINT (Ctrl+C). |
+| On Linux the command's first step sets PR_SET_PDEATHSIG, so a SIGKILL to the server stops it. | No first step and no guard: a server ended by force leaves its commands running. The server says so in 1 line on stderr and in its `initialize` instructions. |
+
+Every Windows cell is held by tests on a stand-in for Windows on Linux
+(`tests/winstandin.py`); none has run on Windows yet.
+
 ## What it does not do
 
 - It holds no state between calls: each call is 1 run of 1 command.
@@ -116,4 +135,6 @@ sends nothing after it, stdin closed, SIGTERM, SIGINT and SIGKILL, SIGKILL
 after SIGTERM for a command that ignores it, the bound of 4 running commands
 and its queue, a reused id, a line too deep or too long, the default `build`
 held inside ROOT, and `erc` and `drc` answering the same lines and exit codes
-as the commands.
+as the commands. On a stand-in for Windows: the server starts and says it
+sets no guard, a command's group, a cancel by Ctrl+Break, `taskkill /T /F`
+with no console and after the grace, and the signals it stops on.

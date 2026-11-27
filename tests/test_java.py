@@ -594,3 +594,121 @@ def test_no_test_decides_on_the_first_java_on_path():
         if 'which("java")' in ln and p.name != Path(__file__).name
     ]
     assert found == []
+
+
+# ------------------------------------------------------------------ the JDK's layout on each system
+#
+# Each case is a JDK's files as its maker lays them out, built under tmp_path, with `sys.platform` set to
+# the system's name; the check runs as on that system and starts no java (the JVM's release file names
+# 21). The macOS and Windows layouts are read from the makers' documents, not from an installed JDK:
+# Temurin's macOS .pkg puts a JDK in /Library/Java/JavaVirtualMachines/<name>.jdk/Contents/Home;
+# Homebrew's openjdk@21 keeps 1 in libexec/openjdk.jdk/Contents/Home and links bin/java to it; Temurin's
+# Windows .msi puts 1 in "Eclipse Adoptium\jdk-<version>-hotspot" with its native libraries in bin.
+# Which AWT library each system builds: tools/hostos.py, awt_lib.
+
+AWT = {"linux": "lib/libawt_xawt.so", "darwin": "lib/libawt_lwawt.dylib", "win32": "bin/awt.dll"}
+EXE = {"linux": "java", "darwin": "java", "win32": "java.exe"}
+SYSTEM = {"ubuntu": "linux", "temurin-pkg": "darwin", "homebrew": "darwin", "temurin-msi": "win32"}
+
+
+def jdk(home: Path, platform: str, awt: str | None) -> Path:
+    """A JDK 21 at `home` for `platform`: its java, its release file and, when `awt` names one, that
+    AWT library."""
+    java = home / "bin" / EXE[platform]
+    java.parent.mkdir(parents=True, exist_ok=True)
+    java.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+    java.chmod(0o755)
+    (home / "release").write_text('JAVA_VERSION="21.0.5"\n', encoding="utf-8")
+    if awt is not None:
+        lib = home / awt
+        lib.parent.mkdir(parents=True, exist_ok=True)
+        lib.write_text("", encoding="utf-8")
+    return java
+
+
+def layout(tmp_path: Path, name: str, awt_of: str | None = None) -> tuple[str, Path]:
+    """The platform of layout `name` and the java Via is handed. `awt_of`: whose AWT library the JDK
+    holds (default: its own platform's)."""
+    platform = SYSTEM[name]
+    awt = AWT[awt_of or platform]
+    if name == "ubuntu":
+        java = jdk(tmp_path / "usr/lib/jvm/java-21-openjdk-amd64", platform, awt)
+        link = tmp_path / "usr/bin/java"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(java)
+        return platform, link
+    if name == "temurin-pkg":
+        home = tmp_path / "Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"
+        return platform, jdk(home, platform, awt)
+    if name == "homebrew":
+        home = tmp_path / "opt/homebrew/Cellar/openjdk@21/21.0.5/libexec/openjdk.jdk/Contents/Home"
+        java = jdk(home, platform, awt)
+        link = tmp_path / "opt/homebrew/opt/openjdk@21/bin/java"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(java)
+        return platform, link
+    return platform, jdk(tmp_path / "Program Files/Eclipse Adoptium/jdk-21.0.5.11-hotspot", platform, awt)
+
+
+LAYOUTS = ["ubuntu", "temurin-pkg", "homebrew", "temurin-msi"]
+
+
+def on(monkeypatch, platform: str) -> None:
+    """`sys.platform`; on win32 also PATHEXT, which shutil.which reads there and splits on os.pathsep
+    (";" on Windows, ":" here)."""
+    monkeypatch.setattr(sys, "platform", platform)
+    if platform == "win32":
+        monkeypatch.setenv("PATHEXT", os.pathsep.join([".COM", ".EXE", ".BAT", ".CMD"]))
+
+
+@pytest.mark.parametrize("name", LAYOUTS)
+def test_a_jdk_with_its_systems_awt_library_can_run_freerouting(tmp_path, monkeypatch, name):
+    platform, java = layout(tmp_path, name)
+    on(monkeypatch, platform)
+    assert routers.java_refusal(str(java)) == ""
+
+
+@pytest.mark.parametrize("name", LAYOUTS)
+def test_a_jdk_without_its_systems_awt_library_is_refused_by_that_library(tmp_path, monkeypatch, name):
+    """Each JDK here holds another system's AWT library and not its own: the refusal names the library
+    its own system needs, in the folder where it is looked for. Before this, every JDK was held to
+    Linux's lib/libawt_xawt.so, so a macOS or Windows JDK could never run FreeRouting 1.9.0."""
+    platform, java = layout(tmp_path, name, awt_of="win32" if name == "ubuntu" else "linux")
+    on(monkeypatch, platform)
+    want = Path(java).resolve().parent.parent / AWT[platform]
+    why = routers.java_refusal(str(java))
+    assert why.startswith(f"{want.parent} has no {want.name}: "), why
+
+
+def test_on_linux_the_refusal_is_the_words_of_before(tmp_path, monkeypatch):
+    platform, java = layout(tmp_path, "ubuntu", awt_of="darwin")
+    monkeypatch.setattr(sys, "platform", "linux")
+    lib = Path(java).resolve().parent.parent / "lib"
+    assert routers.java_refusal(str(java)) == (
+        f"{lib} has no libawt_xawt.so: a headless Java runtime cannot draw FreeRouting 1.9.0's window "
+        "(openjdk-21-jre adds the library)"
+    )
+
+
+def test_on_macos_the_usr_bin_java_launcher_is_followed_to_its_jdk(tmp_path, monkeypatch):
+    """Apple's /usr/bin/java is a launcher: the folder above it is /usr, which holds no JVM. The check
+    reads the JDK the launcher runs, the one /usr/libexec/java_home names (a stand-in here); with
+    JAVA_HOME set, that one."""
+    _, java = layout(tmp_path, "temurin-pkg")
+    home = java.parent.parent
+    stub = tmp_path / "usr/bin/java"
+    stub.parent.mkdir(parents=True)
+    stub.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+    stub.chmod(0o755)
+    tool = tmp_path / "usr/libexec/java_home"
+    tool.parent.mkdir(parents=True)
+    tool.write_text(f"#!/bin/sh\necho '{home}'\n", encoding="utf-8")
+    tool.chmod(0o755)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(routers.hostos, "MAC_JAVA_STUB", stub.resolve())
+    monkeypatch.setattr(routers.hostos, "MAC_JAVA_HOME", tool)
+    monkeypatch.delenv("JAVA_HOME", raising=False)
+    assert routers.java_refusal(str(stub)) == ""
+    monkeypatch.setenv("JAVA_HOME", str(tmp_path / "no-jdk"))
+    why = routers.java_refusal(str(stub))
+    assert why.startswith(f"{tmp_path / 'no-jdk' / 'lib'} has no libawt_lwawt.dylib: "), why

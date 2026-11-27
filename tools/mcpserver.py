@@ -40,6 +40,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import hostos
+
 PROTOCOL = "2025-11-25"
 CLI = Path(__file__).resolve().parent / "workcenter"
 SERVER = {"name": "ee-workcenter", "version": "1.0"}
@@ -55,6 +57,12 @@ LINE_LIMIT = 4 * 1024 * 1024
 PR_SET_PDEATHSIG = 1
 PR_GET_PDEATHSIG = 2
 UNGUARDED = "This system has no prctl PR_SET_PDEATHSIG: a SIGKILL to this server leaves its commands running."
+# Windows has no prctl and no first step for a child (preexec_fn). A Job Object would end the commands
+# with the server; this server sets none (not built yet), and says so.
+UNGUARDED_WINDOWS = (
+    "On Windows this server sets no guard: a server ended by force (taskkill /F, Task Manager) leaves its "
+    "commands running."
+)
 
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -262,6 +270,8 @@ class Server:
         self.slots = threading.BoundedSemaphore(SLOTS)
         self.room = SLOTS + QUEUE
         self.guarded = pdeathsig_works()
+        # The line that says a command can outlive this server, or "" where it cannot.
+        self.unguarded = "" if self.guarded else UNGUARDED_WINDOWS if sys.platform == "win32" else UNGUARDED
 
     def send(self, msg: dict) -> None:
         try:
@@ -357,7 +367,7 @@ class Server:
                     "instructions": f"Via's gates on the projects under {self.root}. Each "
                     "tool runs `workcenter <tool>` and answers its lines and its exit code: 0 pass, 1 fail, "
                     f"2 skip. {SLOTS} commands run at once; a further call waits its turn, and 1 beyond "
-                    f"{SLOTS + QUEUE} held is refused." + ("" if self.guarded else " " + UNGUARDED),
+                    f"{SLOTS + QUEUE} held is refused." + (" " + self.unguarded if self.unguarded else ""),
                 },
             )
         elif method == "ping":
@@ -428,6 +438,12 @@ class Server:
         with self.state:
             if rid in self.cancelled:
                 return
+            # A process group of its own (hostos.own_group): a new session on Linux and macOS,
+            # CREATE_NEW_PROCESS_GROUP on Windows. The first step the child runs (preexec_fn) is set only
+            # where prctl answers, which is Linux; Windows refuses any.
+            group = hostos.own_group()
+            if self.guarded:
+                group["preexec_fn"] = _dies_with(os.getpid())
             try:
                 proc = subprocess.Popen(
                     [sys.executable, str(self.cli), *words],
@@ -436,8 +452,7 @@ class Server:
                     stderr=subprocess.STDOUT,
                     cwd=self.root,
                     env=env,
-                    start_new_session=True,
-                    preexec_fn=_dies_with(os.getpid()) if self.guarded else None,
+                    **group,
                 )
             except OSError as exc:
                 text = f"not run: workcenter {words[0]} could not start in {self.root}: {exc.strerror}"
@@ -489,47 +504,66 @@ class Server:
             stop(proc)
 
     def stop_all(self) -> None:
-        """SIGTERM to every command's process group, then SIGKILL to each still there after GRACE seconds.
-        It returns when every command it started is gone, so the server exits after them."""
+        """A stop to every command's process group, then a kill to each still there after GRACE seconds
+        (_stop_group, _kill_group). It returns when every command it started is gone, so the server exits
+        after them."""
         with self.state:
             self.cancelled.update(self.active)
             procs = list(self.running.values())
         for proc in procs:
-            _signal_group(proc, signal.SIGTERM)
+            _stop_group(proc)
         end = time.monotonic() + GRACE
         for proc in procs:
             try:
                 proc.wait(timeout=max(0.0, end - time.monotonic()))
             except subprocess.TimeoutExpired:
-                _signal_group(proc, signal.SIGKILL)
+                _kill_group(proc)
 
 
-def _signal_group(proc: subprocess.Popen, signum: int) -> bool:
+def _stop_group(proc: subprocess.Popen) -> bool:
+    """Ask the command's group to stop, its engines with it; False when the group is gone. Linux and
+    macOS: SIGTERM to the group. Windows: Ctrl+Break to the group, which needs a console the server
+    shares with it; without one (OSError) the tree is ended at once (hostos.stop_tree, kill_tree)."""
     try:
-        os.killpg(proc.pid, signum)
+        hostos.stop_tree(proc)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        _kill_group(proc)
+    return True
+
+
+def _kill_group(proc: subprocess.Popen) -> bool:
+    """End the command's group: SIGKILL on Linux and macOS, `taskkill /T /F` on Windows
+    (hostos.kill_tree). False when the group is gone."""
+    try:
+        hostos.kill_tree(proc)
     except ProcessLookupError:
         return False
     return True
 
 
 def stop(proc: subprocess.Popen) -> None:
-    """SIGTERM to the command's process group, its engines with it; SIGKILL after GRACE seconds."""
-    if not _signal_group(proc, signal.SIGTERM):
+    """A stop to the command's process group, its engines with it; a kill after GRACE seconds."""
+    if not _stop_group(proc):
         return
 
     def kill():
         try:
             proc.wait(timeout=GRACE)
         except subprocess.TimeoutExpired:
-            _signal_group(proc, signal.SIGKILL)
+            _kill_group(proc)
 
     threading.Thread(target=kill, daemon=True).start()
 
 
 def _prctl():
+    """Linux's prctl, or None. Only Linux has it; on Windows ctypes.CDLL(None) is not asked at all."""
+    if not sys.platform.startswith("linux"):
+        return None
     try:
         return ctypes.CDLL(None, use_errno=True).prctl
-    except (OSError, AttributeError):
+    except (OSError, AttributeError, TypeError):
         return None
 
 
@@ -581,8 +615,8 @@ def cmd_mcp(args) -> int:
         )
         return 2
     server = Server(root)
-    if not server.guarded:
-        print(f"workcenter mcp: {UNGUARDED}", file=sys.stderr)
+    if server.unguarded:
+        print(f"workcenter mcp: {server.unguarded}", file=sys.stderr)
 
     def stopped(signum, _frame):
         # Each command runs in a process group of its own, so a signal to the server reaches none of
@@ -590,8 +624,9 @@ def cmd_mcp(args) -> int:
         server.stop_all()
         raise SystemExit(128 + signum)
 
-    # SIGINT is a terminal's Ctrl-C: the same stop, exit 130, and no traceback.
-    for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+    # SIGTERM and SIGHUP on Linux and macOS, SIGTERM and SIGBREAK (Ctrl+Break) on Windows
+    # (hostos.stop_signals). SIGINT is a terminal's Ctrl-C: the same stop, exit 130, and no traceback.
+    for signum in (*hostos.stop_signals(), signal.SIGINT):
         signal.signal(signum, stopped)
     return server.serve(sys.stdin.buffer)
 
