@@ -1,0 +1,112 @@
+file,runs,reason
+tests/test_blocks.py,posix,not on the desktop list; not run on Windows yet
+tests/test_blocks_charger.py,posix,it makes symbolic links
+tests/test_blocks_i2c.py,posix,it makes symbolic links
+tests/test_blocks_ldo.py,posix,it makes symbolic links
+tests/test_blocks_mcu.py,posix,not on the desktop list; not run on Windows yet
+tests/test_blocks_usbc.py,posix,it makes symbolic links
+tests/test_board.py,posix,its stand-in gh is a shell script
+tests/test_board_gates_workflow.py,linux,"GitHub's board-gates workflow, which installs with apt on Ubuntu"
+tests/test_boardroute.py,posix,it makes symbolic links and sets file modes
+tests/test_boardrules.py,posix,not on the desktop list; not run on Windows yet
+tests/test_boardrules_drc.py,desktop,DRC: the rule packs of the fixture boards
+tests/test_boardrules_left.py,posix,not on the desktop list; not run on Windows yet
+tests/test_bytes.py,posix,"its Git fixtures hold first lines and its stand-in kicad-cli writes one by hand; not run on Windows yet"
+tests/test_chipback.py,linux,the chip flow: its engines are installed on Ubuntu only
+tests/test_chipflow.py,linux,the chip flow: its engines are installed on Ubuntu only
+tests/test_chipfront.py,linux,the chip flow: its engines are installed on Ubuntu only
+tests/test_chipguide.py,linux,the chip flow: its engines are installed on Ubuntu only
+tests/test_chipinstall.py,linux,"the chip flow's step of install.sh, which runs on Ubuntu"
+tests/test_chips.py,linux,the chip flow: its engines are installed on Ubuntu only
+tests/test_ci.py,linux,workcenter ci replays GitHub's Ubuntu shell steps
+tests/test_ci_apt_archive.py,linux,CI's apt archive step on Ubuntu
+tests/test_ci_apt_cache.py,linux,CI's apt cache step on Ubuntu
+tests/test_ci_changes.py,posix,not on the desktop list; not run on Windows yet
+tests/test_ci_dispatch.py,posix,it runs CI's scripts in bash
+tests/test_ci_kept_logs.py,linux,"CI's kept logs: steps of the Ubuntu jobs, run in bash"
+tests/test_ci_nightly_issue.py,linux,"the nightly's issue, written by an Ubuntu job"
+tests/test_ci_notjudged.py,linux,CI.md's table against a collection made as on GitHub's Ubuntu runner
+tests/test_ci_scope.py,linux,"CI's scope of a change, run in bash as the Ubuntu job runs it"
+tests/test_clock.py,posix,not on the desktop list; not run on Windows yet
+tests/test_copper.py,posix,not on the desktop list; not run on Windows yet
+tests/test_corners.py,desktop,SIM: the corners of temperature and tolerance a deck runs at
+tests/test_creepage.py,posix,not on the desktop list; not run on Windows yet
+tests/test_creepage_drc.py,posix,not on the desktop list; not run on Windows yet
+tests/test_curve.py,posix,not on the desktop list; not run on Windows yet
+tests/test_designfile.py,desktop,"design: a first design file, its traps and --route"
+tests/test_desktop.py,desktop,"this table, the stand-in engines and the run with no home folder; not proved on Windows: a stand-in's first line, the POSIX no-home start and the stand-in taskkill (their Windows twins run there)"
+tests/test_docs.py,posix,it runs the documents' commands in bash
+tests/test_doctools.py,posix,not on the desktop list; not run on Windows yet
+tests/test_doctor_platforms.py,posix,"its stand-in engines are shell scripts; it runs the doctor of Linux, macOS and Windows on stand-ins"
+tests/test_doctor_requirements.py,desktop,"doctor: the Python environment against requirements.txt; not proved on Windows: doctor's venv probe, which reads venv\Scripts\python.exe there (a stand-in cannot be an .exe)"
+tests/test_done.py,desktop,next: the one definition of done
+tests/test_engine_marker.py,linux,"the engine guard's cases start timeout, env -u and flock as on Ubuntu"
+tests/test_enginelock.py,desktop,"the engine lock every command takes (msvcrt on Windows); not proved on Windows: a run killed by SIGKILL, the engines left after a stop (/proc), the lock folder's user id, and the macOS and Windows stand-in tests, which need Linux or POSIX"
+tests/test_fab.py,desktop,"DRC and EXPORT: a fab's rule set; not proved on Windows: a rule file's mode bits and a linked rule file"
+tests/test_fabexport.py,desktop,"EXPORT: the files for a fab and an assembler, read back"
+tests/test_fabfiles.py,posix,not on the desktop list; not run on Windows yet
+tests/test_fetch.py,posix,not on the desktop list; not run on Windows yet
+tests/test_fetch_checks.py,posix,not on the desktop list; not run on Windows yet
+tests/test_fields.py,linux,workcenter fields: openEMS stays on Linux and the image
+tests/test_fields_measures.py,linux,workcenter fields: openEMS stays on Linux and the image
+tests/test_fields_rerun.py,linux,workcenter fields: openEMS stays on Linux and the image
+tests/test_fields_solver.py,linux,workcenter fields: openEMS stays on Linux and the image
+tests/test_forms.py,posix,not on the desktop list; not run on Windows yet
+tests/test_freqplan.py,desktop,SIM: the frequency plan
+tests/test_gate_rule.py,posix,it runs verify/verify.sh in bash
+tests/test_gates.py,desktop,"the gates' verdicts on the fixture boards: ERC, DRC, SIM and EXPORT"
+tests/test_guide.py,desktop,next: the one next step for a project
+tests/test_guide_ratings.py,posix,not on the desktop list; not run on Windows yet
+tests/test_harvest.py,posix,not on the desktop list; not run on Windows yet
+tests/test_highspeed.py,posix,not on the desktop list; not run on Windows yet
+tests/test_highspeed_drc.py,posix,not on the desktop list; not run on Windows yet
+tests/test_hostos.py,desktop,"the platform layer: every difference between Linux, macOS and Windows; not proved off Linux: kill_tree's end of a grandchild (/proc) and the match with today's code"
+tests/test_image.py,linux,the Linux container image
+tests/test_inspect.py,posix,not on the desktop list; not run on Windows yet
+tests/test_install_apt.py,linux,install.sh's apt step on Ubuntu
+tests/test_java.py,linux,"its stand-in javas are shell scripts; the JDK layouts of macOS and Windows are held there by fixtures on Linux"
+tests/test_kicadgen.py,desktop,design: the generator behind workcenter design
+tests/test_layoutrules.py,posix,not on the desktop list; not run on Windows yet
+tests/test_layoutrules_drc.py,posix,not on the desktop list; not run on Windows yet
+tests/test_lead.py,linux,"the lead's scripts need setsid, bash 4.2 and /proc"
+tests/test_lead_skills.py,posix,not on the desktop list; not run on Windows yet
+tests/test_legend.py,posix,not on the desktop list; not run on Windows yet
+tests/test_made.py,posix,it makes symbolic links
+tests/test_mcp.py,linux,the MCP server's tests read /proc and signal process groups
+tests/test_measureplan.py,posix,not on the desktop list; not run on Windows yet
+tests/test_mutate.py,posix,workcenter mutate runs each firmware test in bash
+tests/test_new.py,desktop,"next on a new board, and workcenter new; not proved on Windows: that no engine starts by its bare name, since such a start looks for <name>.exe and never reaches the .cmd stand-in"
+tests/test_no_home.py,posix,no home folder is a container's case (M299); Windows always sets USERPROFILE
+tests/test_now.py,posix,its scratch git trees use shell scripts and file modes
+tests/test_partdata.py,posix,not on the desktop list; not run on Windows yet
+tests/test_placement.py,posix,not on the desktop list; not run on Windows yet
+tests/test_procure_rows.py,posix,not on the desktop list; not run on Windows yet
+tests/test_product_name.py,posix,not on the desktop list; not run on Windows yet
+tests/test_pulls.py,posix,not on the desktop list; not run on Windows yet
+tests/test_ratings.py,posix,not on the desktop list; not run on Windows yet
+tests/test_ratings_cli.py,posix,not on the desktop list; not run on Windows yet
+tests/test_ratings_edges.py,posix,not on the desktop list; not run on Windows yet
+tests/test_ratings_fuse.py,posix,not on the desktop list; not run on Windows yet
+tests/test_ratings_mutations.py,posix,not on the desktop list; not run on Windows yet
+tests/test_references.py,posix,not on the desktop list; not run on Windows yet
+tests/test_references_code.py,posix,not on the desktop list; not run on Windows yet
+tests/test_references_pages.py,posix,not on the desktop list; not run on Windows yet
+tests/test_route_open.py,posix,not on the desktop list; not run on Windows yet
+tests/test_routebench.py,posix,not on the desktop list; not run on Windows yet
+tests/test_routeorder.py,posix,not on the desktop list; not run on Windows yet
+tests/test_routers.py,linux,"FreeRouting 1.9.0 under xvfb-run; its Windows time-limit test is a stand-in on Linux"
+tests/test_routing.py,posix,not on the desktop list; not run on Windows yet
+tests/test_simfields.py,posix,not on the desktop list; not run on Windows yet
+tests/test_simgate.py,desktop,"SIM: the gate's soundness, its words and the bundle a deck leaves"
+tests/test_simneeds.py,posix,not on the desktop list; not run on Windows yet
+tests/test_simneeds_cli.py,posix,it runs a step's line in bash
+tests/test_sources.py,posix,it makes symbolic links
+tests/test_standards.py,posix,not on the desktop list; not run on Windows yet
+tests/test_testshards.py,desktop,"the runner that runs this list, and its clean-up through hostos.kill_tree; not proved on Windows: a stop by signal, and a shard killed by SIGKILL or crashed by SIGSEGV (test_desktop ends 1 by os._exit there)"
+tests/test_thermal.py,posix,not on the desktop list; not run on Windows yet
+tests/test_thermal_asked.py,posix,not on the desktop list; not run on Windows yet
+tests/test_thermal_asked_boards.py,posix,not on the desktop list; not run on Windows yet
+tests/test_thermal_boards.py,posix,not on the desktop list; not run on Windows yet
+tests/test_thermal_model.py,posix,not on the desktop list; not run on Windows yet
+tests/test_verify.py,posix,not on the desktop list; not run on Windows yet
+tests/test_xsection.py,posix,not on the desktop list; not run on Windows yet

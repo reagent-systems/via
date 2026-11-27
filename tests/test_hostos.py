@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 import pytest
+from conftest import posix_only, stand_in
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "tools" / "hostos.py"
@@ -61,7 +62,18 @@ def bare_env(monkeypatch, tmp_path):
 
 
 def on(monkeypatch, platform: str) -> None:
+    """Set the platform. A run on Windows stands in the POSIX names its Python lacks (os.getuid,
+    os.killpg, SIGHUP, SIGKILL) for a test of Linux or macOS; a POSIX run keeps its own."""
     monkeypatch.setattr(sys, "platform", platform)
+    if platform != "win32":
+        for module, name, value in (
+            (os, "getuid", lambda: 1000),
+            (os, "killpg", lambda pid, sig: None),
+            (signal, "SIGHUP", 1),
+            (signal, "SIGKILL", 9),
+        ):
+            if not hasattr(module, name):
+                monkeypatch.setattr(module, name, value, raising=False)
 
 
 def touch(path: Path) -> Path:
@@ -116,7 +128,7 @@ def test_lock_dir_on_posix_is_one_folder_per_user_in_tmp(hostos, monkeypatch, pl
 def test_lock_dir_on_windows_is_under_localappdata_and_asks_no_user_id(hostos, monkeypatch, tmp_path):
     on(monkeypatch, "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
-    monkeypatch.delattr(os, "getuid")
+    monkeypatch.delattr(os, "getuid", raising=False)
     assert hostos.lock_dir() == tmp_path / "local" / "Via" / "lock"
 
 
@@ -455,6 +467,7 @@ def program(path: Path, text: str = "") -> Path:
     return path
 
 
+@posix_only("it makes symbolic links, which Windows refuses without Developer Mode")
 @pytest.mark.parametrize("platform", PLATFORMS)
 def test_java_home_is_the_folder_above_bin_with_links_resolved(hostos, monkeypatch, tmp_path, platform):
     """routers.py:93 on Linux: /usr/bin/java -> /etc/alternatives/java -> the JVM's bin/java. Homebrew's
@@ -485,11 +498,20 @@ def test_java_home_on_macos_follows_the_usr_bin_stub_to_java_home(hostos, monkey
     stub = program(tmp_path / "usr" / "bin" / "java").resolve()
     monkeypatch.setattr(hostos, "MAC_JAVA_STUB", stub)
     jdk = tmp_path / "Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"
-    tool = program(tmp_path / "usr" / "libexec" / "java_home", f"#!/bin/sh\necho '{jdk}'\n")
+    tool = stand_in(tmp_path / "usr" / "libexec" / "java_home", f"print({str(jdk)!r})\n")
     monkeypatch.setattr(hostos, "MAC_JAVA_HOME", tool)
     assert hostos.java_home(stub) == jdk
     monkeypatch.setenv("JAVA_HOME", str(tmp_path / "named"))
     assert hostos.java_home(stub) == tmp_path / "named"
+
+
+# What the stand-in java_home does, by the shell line each case once was (conftest.stand_in: no shell).
+JAVA_HOME_SAYS = {
+    "exit 1": "import sys\nsys.exit(1)\n",
+    "echo /x; exit 1": "import sys\nprint('/x')\nsys.exit(1)\n",
+    "echo a; echo b": "print('a')\nprint('b')\n",
+    "": "",
+}
 
 
 @pytest.mark.parametrize("said", ["exit 1", "echo /x; exit 1", "echo a; echo b", "", "missing"])
@@ -501,7 +523,7 @@ def test_java_home_on_macos_keeps_usr_when_java_home_names_no_jdk(hostos, monkey
     monkeypatch.setattr(hostos, "MAC_JAVA_STUB", stub)
     tool = tmp_path / "usr" / "libexec" / "java_home"
     if said != "missing":
-        program(tool, f"#!/bin/sh\n{said}\n")
+        tool = stand_in(tool, JAVA_HOME_SAYS[said])
     monkeypatch.setattr(hostos, "MAC_JAVA_HOME", tool)
     assert hostos.java_home(stub) == stub.parent.parent
 
@@ -548,7 +570,7 @@ def test_stop_tree_on_windows_sends_ctrl_break_to_the_group(hostos, monkeypatch)
     """CTRL_BREAK_EVENT is 1 (Microsoft's GenerateConsoleCtrlEvent); os.kill sends it to the process
     group the pid leads (Python's os.kill)."""
     on(monkeypatch, "win32")
-    monkeypatch.delattr(os, "killpg")
+    monkeypatch.delattr(os, "killpg", raising=False)
     monkeypatch.delattr(signal, "CTRL_BREAK_EVENT", raising=False)
     sent = []
     monkeypatch.setattr(os, "kill", lambda pid, sig: sent.append((pid, sig)))
@@ -568,7 +590,7 @@ def test_stop_signals_on_posix_are_term_and_hup(hostos, monkeypatch, platform):
 
 def test_stop_signals_on_windows_are_term_and_break_and_need_no_hup(hostos, monkeypatch):
     on(monkeypatch, "win32")
-    monkeypatch.delattr(signal, "SIGHUP")
+    monkeypatch.delattr(signal, "SIGHUP", raising=False)
     monkeypatch.setattr(signal, "SIGBREAK", 21, raising=False)
     assert hostos.stop_signals() == (signal.SIGTERM, 21)
 
@@ -625,7 +647,7 @@ def test_kill_tree_on_posix_kills_the_process_group(hostos, monkeypatch, platfor
 
 def test_kill_tree_on_windows_runs_taskkill_on_the_tree(hostos, monkeypatch):
     on(monkeypatch, "win32")
-    monkeypatch.delattr(os, "killpg")
+    monkeypatch.delattr(os, "killpg", raising=False)
     ran = []
 
     def run(cmd, **kwargs):
@@ -690,6 +712,56 @@ def test_kill_tree_on_linux_ends_a_grandchild_the_test_started(hostos):
             proc.kill()
             proc.wait()
         proc.stdout.close()
+
+
+# ------------------------------------------------------------------ program_name
+
+KNOWN = {"kicad-cli", "ngspice", "openEMS", "xvfb-run"}
+
+
+@pytest.mark.parametrize(
+    ("word", "name"),
+    [
+        ("/usr/bin/kicad-cli", "kicad-cli"),
+        ("kicad-cli", "kicad-cli"),
+        ("kicad-cli.exe", "kicad-cli.exe"),
+        ("/opt/x/OPENEMS", "OPENEMS"),
+    ],
+)
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_program_name_on_posix_is_the_last_part_of_the_path(hostos, monkeypatch, platform, word, name):
+    """engine_watch.py:93, os.path.basename: no extension is taken off, and case counts."""
+    on(monkeypatch, platform)
+    assert hostos.program_name(word, KNOWN) == name
+
+
+@pytest.mark.parametrize(
+    ("word", "name"),
+    [
+        ("C:\\Program Files\\KiCad\\10.0\\bin\\kicad-cli.exe", "kicad-cli"),
+        ("C:/Spice64/bin/NGSPICE.EXE", "ngspice"),
+        ("openems.exe", "openEMS"),
+        ("kicad-cli.cmd", "kicad-cli"),
+        ("kicad-cli", "kicad-cli"),
+        ("kicad-cli.txt", "kicad-cli.txt"),
+        ("notepad.exe", "notepad"),
+    ],
+)
+def test_program_name_on_windows_takes_off_a_pathext_extension_and_reads_any_case(
+    hostos, monkeypatch, word, name
+):
+    on(monkeypatch, "win32")
+    monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+    assert hostos.program_name(word, KNOWN) == name
+
+
+def test_program_name_on_windows_reads_pathext_and_has_a_default(hostos, monkeypatch):
+    on(monkeypatch, "win32")
+    monkeypatch.setenv("PATHEXT", ".PY")
+    assert hostos.program_name("ngspice.py", KNOWN) == "ngspice"
+    assert hostos.program_name("ngspice.exe", KNOWN) == "ngspice.exe"
+    monkeypatch.delenv("PATHEXT")
+    assert hostos.program_name("NGSPICE.EXE", KNOWN) == "ngspice"
 
 
 # ------------------------------------------------------------------ write_text
@@ -1020,5 +1092,5 @@ def test_user_id_on_posix_is_getuid(hostos, monkeypatch, platform):
 
 def test_user_id_on_windows_is_none_and_needs_no_getuid(hostos, monkeypatch):
     on(monkeypatch, "win32")
-    monkeypatch.delattr(os, "getuid")
+    monkeypatch.delattr(os, "getuid", raising=False)
     assert hostos.user_id() is None

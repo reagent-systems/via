@@ -5,7 +5,9 @@ test sets the platform with 1 attribute. On Linux each returns what the code ret
 of each names the file and line that holds that value at main cea464d. tools/enginelock.py calls
 lock_dir, user_id, lock_file, unlock_file, flock_files and stop_signals; tools/routers.py,
 tools/routebench.py and tools/mcpserver.py call it too; write_text is called by tools/kicadgen.py,
-tools/newboard.py and the run decks of tools/workcenter, and installer_command by tools/guide.py.
+tools/newboard.py and the run decks of tools/workcenter, and installer_command by tools/guide.py. The
+test runner (verify/testshards.py: kill_tree, stop_signals) and the engine guard of the tests
+(tools/ci/guard/engine_watch.py: program_name) call it as well.
 
 The macOS and Windows values come from vendor documents and build files, named beside each. None was
 seen on a Mac or a Windows machine: each is marked "not confirmed in a run" until a run there shows it.
@@ -22,6 +24,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Iterable
 from pathlib import Path
 
 # The KiCad 10 application bundle the official DMG and the Homebrew cask `kicad` install
@@ -372,6 +375,25 @@ def installer_command(src: Path | str) -> str:
     if _mac():
         return shlex.quote(f"{src}/install-macos.sh")
     return f"sudo {Path(src) / 'install.sh'}"
+
+
+def program_name(word: str, known: Iterable[str] = ()) -> str:
+    """The name of the program a command's first word starts, as a list of names such as `known` holds.
+
+    Linux and macOS: the last part of the path (tools/ci/guard/engine_watch.py:93). Windows: the last part
+    after `\\` or `/`, less an extension PATHEXT names (`.exe`, `.cmd`), and a name of `known` matches in
+    any case, as Windows' names do (Microsoft's `where` and PATHEXT references):
+    `C:\\KiCad\\bin\\KICAD-CLI.EXE` is `kicad-cli`. Not confirmed in a run on Windows."""
+    if not _windows():
+        return os.path.basename(word)
+    import ntpath
+
+    name = ntpath.basename(word)
+    stem, ext = ntpath.splitext(name)
+    exts = os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD"
+    if ext and ext.lower() in {e.strip().lower() for e in exts.split(";") if e.strip()}:
+        name = stem
+    return next((k for k in known if k.lower() == name.lower()), name)
 
 
 def write_text(path: Path | str, text: str) -> int:

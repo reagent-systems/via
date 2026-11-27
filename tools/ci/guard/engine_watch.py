@@ -11,12 +11,17 @@ FileNotFoundError, which the commands read as an engine that is absent.
 
 A program under the temporary folder is a test's stand-in, not an engine. A process started with
 `python -I`, or with an environment that drops PYTHONPATH, is not watched. Standard library only.
+
+A program's name is tools/hostos.py's `program_name`: on Windows `C:\\KiCad\\bin\\kicad-cli.exe` is
+`kicad-cli` (its PATHEXT extension off, in any case). hostos is loaded from its file, since the tools
+folder is not on the path of the processes this guard watches.
 """
 
 from __future__ import annotations
 
 import errno
 import importlib.machinery
+import importlib.util
 import os
 import re
 import shlex
@@ -35,6 +40,7 @@ ENGINES = frozenset(
     {
         "kicad-cli",
         "ngspice",
+        "ngspice_con",  # ngspice's console program on Windows (tools/hostos.py ngspice_candidates)
         "java",
         "openEMS",
         "verilator",
@@ -72,6 +78,24 @@ SHELL_PREFIX = frozenset(
 )
 
 
+def _load_hostos():
+    """tools/hostos.py, 2 folders up from this one."""
+    tools = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    spec = importlib.util.spec_from_file_location("engine_watch_hostos", os.path.join(tools, "hostos.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+hostos = _load_hostos()
+NAMES = ENGINES | WRAPPERS | SHELLS
+
+
+def name_of(word: str) -> str:
+    """The program `word` starts, by its name (hostos.program_name)."""
+    return hostos.program_name(word, NAMES)
+
+
 class EngineRefused(FileNotFoundError):
     """An engine started while WORKCENTER_NO_ENGINES=1."""
 
@@ -90,7 +114,7 @@ def engine_of(args: object, path: str | None = None) -> str | None:
         return in_shell_line(os.fsdecode(args), path)
     words = words_of(args)
     while words:
-        name = os.path.basename(words[0])
+        name = name_of(words[0])
         if name in ENGINES:
             return None if stand_in(words[0], path) else name
         if name in SHELLS and "-c" in words[:-1]:
@@ -117,7 +141,7 @@ def past_options(wrapper: str, rest: list[str]) -> list[str] | str:
                 return word.split("=", 1)[1]
         if word in VALUED.get(wrapper, ()):
             rest = rest[2:]
-        elif SKIPPED.fullmatch(word) and os.path.basename(word) not in ENGINES:
+        elif SKIPPED.fullmatch(word) and name_of(word) not in ENGINES:
             rest = rest[1:]
         else:
             break
@@ -141,8 +165,8 @@ def in_shell_line(line: str, path: str | None) -> str | None:
         tokens = list(lexer)
     except ValueError:
         for word in SHELL_WORD.split(line):
-            if os.path.basename(word) in ENGINES and not stand_in(word, path):
-                return os.path.basename(word)
+            if name_of(word) in ENGINES and not stand_in(word, path):
+                return name_of(word)
         return None
     command: list[str] = []
     for token in [*tokens, ";"]:

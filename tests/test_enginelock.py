@@ -31,6 +31,10 @@ import time
 from pathlib import Path
 
 import pytest
+from conftest import linux_only, posix_only, stand_in
+
+# The tests piece A ports to Windows: each kills a run by SIGKILL, reads /proc or asks for the user id.
+KILLS = posix_only("it kills a run by SIGKILL, which Windows' Python lacks (piece A ports it)")
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / "tools" / "enginelock.py"
@@ -323,10 +327,7 @@ class Bench:
         self.engine.write_text(ENGINE, encoding="utf-8")
         self.standin = tmp / "standin.py"
         self.standin.write_text(STANDIN, encoding="utf-8")
-        ngspice = tmp / "ngspice"
-        ngspice.write_text(f"#!{PY}\n{NGSPICE}", encoding="utf-8")
-        ngspice.chmod(0o755)
-        self.ngspice = ngspice
+        self.ngspice = stand_in(tmp / "ngspice", NGSPICE)
         self.procs: list[subprocess.Popen] = []
 
     def env(self, **extra: str) -> dict[str, str]:
@@ -538,6 +539,7 @@ def test_tickets_taken_at_the_same_moment_get_distinct_numbers(tmp_path, monkeyp
             t.release()
 
 
+@KILLS
 @needs_proc(
     "B's line says `still run` from /proc's environ; there the engine keeps the ticket locked through the"
     " inherited descriptor and B's line names A (test_without_proc_a_holder_killed_by_sigkill_keeps_...)"
@@ -560,6 +562,7 @@ def test_a_holder_killed_with_sigkill_frees_the_lock_when_its_engine_ends(bench)
     assert len(bench.tickets()) == 1
 
 
+@KILLS
 def test_a_waiter_killed_while_waiting_does_not_block_those_behind_it(bench):
     """A holds, B and C wait; B dies by SIGKILL; when A ends, C starts."""
     bench.hold("A")
@@ -617,6 +620,7 @@ def test_a_child_and_a_grandchild_of_the_holder_run_at_once(bench):
     assert bench.log() == ["start C", "end C", "start G", "end G", "start B"]
 
 
+@linux_only("it reads the holder's variables from /proc, which macOS and Windows lack")
 @needs_proc(
     "a run inside the holder is known by WORKCENTER_LOCK_TICKET alone, so a stranger with a copy of it"
     " counts as inside: the weaker guarantee tools/enginelock.py states for macOS and Windows"
@@ -893,6 +897,7 @@ def alive(pid: int) -> bool:
     return stat.rsplit(")", 1)[1].split()[0] != "Z"
 
 
+@linux_only("it reads /proc for the engines left (piece A ports it)")
 @needs_proc(
     "no list of the processes a run started, so SIGTERM is not passed on, and `workcenter sim` hands its"
     " ngspice no descriptor yet (test_without_proc_a_holder_stopped_by_sigterm_keeps_... holds `hold`)"
@@ -958,6 +963,7 @@ def test_doctor_with_a_lock_folder_that_is_a_file_says_not_judged(bench):
     assert "is not a folder" in data["engine_lock"]["not_judged"]
 
 
+@posix_only("the folder's name holds os.getuid(), which Windows lacks; test_hostos holds Windows' folder")
 def test_the_lock_folder_does_not_follow_tmpdir(bench):
     """2 runs of 1 user whose TMPDIR differ share 1 lock: with no `WORKCENTER_LOCK_DIR`, the folder is
     /tmp/workcenter-lock-<uid> whatever TMPDIR says."""
@@ -1052,8 +1058,8 @@ def test_every_command_of_the_cli_is_named_long_or_short():
 # Nothing here ran on macOS or Windows: each test runs the lock's real code on this machine with the
 # other system's differences stood in for. GitHub's macOS and Windows runners run this file as it is;
 # the stand-ins need fcntl (POSIX), and the Windows one Linux's lock calls.
-ON_LINUX = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the Windows stand-in is Linux's")
-ON_POSIX = pytest.mark.skipif(sys.platform == "win32", reason="the stand-ins need fcntl and SIGKILL")
+ON_LINUX = linux_only("the Windows stand-in is Linux's")
+ON_POSIX = posix_only("the stand-ins need fcntl and SIGKILL")
 
 
 @ON_LINUX

@@ -18,7 +18,7 @@ import uuid
 from pathlib import Path
 
 import pytest
-from conftest import engine
+from conftest import engine, posix_only
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
@@ -387,6 +387,7 @@ def older_rule_file(folder: Path) -> tuple[Path, str]:
 
 
 @needs_libs
+@posix_only("Windows keeps no Unix mode bits; a file is 0o666 or 0o444 there")
 def test_rules_only_keeps_the_mode_of_the_file_it_writes_again(tmp_path):
     design = rules_project(tmp_path)
     dru, written = older_rule_file(tmp_path)
@@ -398,6 +399,7 @@ def test_rules_only_keeps_the_mode_of_the_file_it_writes_again(tmp_path):
 
 
 @needs_libs
+@posix_only("a symbolic link on Windows needs an administrator or Developer Mode")
 def test_rules_only_writes_the_target_of_a_linked_rule_file(tmp_path):
     """A rule file may be a link to a shared one: `design` writes through the link, and so does this."""
     (tmp_path / "board").mkdir()
