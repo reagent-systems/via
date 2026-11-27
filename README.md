@@ -235,6 +235,7 @@ any other. Paste this to it:
 ```text
 Set up Via on this computer for me.
 Read https://raw.githubusercontent.com/reagent-systems/via/main/INSTALL.md and follow it step by step.
+If you cannot fetch it, clone https://github.com/reagent-systems/via and read INSTALL.md there.
 Ask me before any command that needs sudo, an administrator, a restart, or a large download.
 Stop when its "Done when" holds, and show me the last lines of each check.
 If a step fails twice, stop and tell me what it printed.
@@ -246,9 +247,9 @@ installer runs from a clone of Via (`git clone https://github.com/reagent-system
 | Computer | Command | State |
 |---|---|---|
 | Linux, Ubuntu 24.04 | `sudo ./install.sh` | Proven on GitHub's runners (ubuntu-24.04). |
-| macOS, Apple Silicon | `./install-macos.sh` | Not yet proven: the first CI run will say (macos-latest). |
-| macOS, Intel | `./install-macos.sh` | Best effort: no CI job runs on an Intel Mac. |
-| Windows 10 or 11, native (x64) | `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1` | Not yet proven: the first CI run will say (windows-latest). It needs Via's Windows port, which is not on `main` yet. |
+| macOS, Apple Silicon | `./install-macos.sh` | Not yet proven: the first CI run will say (macos-latest). `install-macos.sh` is not on `main` yet; until it is, use Docker. On macOS 12 to 14, Homebrew is not supported and builds Python and ngspice from source, which is slow and may fail. |
+| macOS, Intel | `./install-macos.sh` | Best effort: no CI job runs on an Intel Mac. It needs a Homebrew already installed: Homebrew's installer refuses an Intel Mac. `install-macos.sh` is not on `main` yet; until it is, use Docker. On macOS 12 to 14, Homebrew is not supported and builds Python and ngspice from source, which is slow and may fail. |
+| Windows 10 or 11, native (x64) | `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1` | Not yet proven: the first CI run will say (windows-latest). `install.ps1` and Via's Windows port are not on `main` yet; until they are, use WSL2. |
 | Windows 10 or 11, WSL2 | `wsl --install -d Ubuntu-24.04` as an administrator, a restart, then the Ubuntu row inside Ubuntu | Not yet proven: the first CI run will say (an experimental leg on windows-latest). |
 | Docker, on any of them | `docker run --rm ghcr.io/reagent-systems/via:main` | Not proven, and no GitHub runner can prove it on macOS or Windows (Docker Desktop). The image build runs the gates in it on Linux, amd64 and arm64. Today ghcr.io refuses an anonymous pull of it; `ghcr.io/thyfriendlyfox/via:main`, older, answers one. |
 
@@ -351,31 +352,33 @@ The files the gates write belong to you. The image holds the toolchain install.s
 
 ### Run Via from its container
 
-The image of the release v0.1.0 has the tag `v0.1.0`, built when the tag `v0.1.0` is pushed; no tag has been pushed yet.
+The image built from `main` has the tag `main`. A release's image gets the release's tag when that tag
+is pushed; none has been pushed yet. Today ghcr.io refuses an anonymous pull of
+`ghcr.io/reagent-systems/via`; `ghcr.io/thyfriendlyfox/via:main`, older, answers one.
 It mounts your project on `/work`, its working folder.
 
 Pull the image:
 
 ```sh
-docker pull ghcr.io/reagent-systems/via:v0.1.0
+docker pull ghcr.io/reagent-systems/via:main
 ```
 
 Run the gates on the project in the current folder, on Linux or macOS in a POSIX shell:
 
 ```sh
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work ghcr.io/reagent-systems/via:v0.1.0 workcenter gates .
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/work ghcr.io/reagent-systems/via:main workcenter gates .
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-docker run --rm -v "${PWD}:/work" ghcr.io/reagent-systems/via:v0.1.0 workcenter gates .
+docker run --rm -v "${PWD}:/work" ghcr.io/reagent-systems/via:main workcenter gates .
 ```
 
 On Windows, in cmd.exe:
 
 ```bat
-docker run --rm -v "%cd%:/work" ghcr.io/reagent-systems/via:v0.1.0 workcenter gates .
+docker run --rm -v "%cd%:/work" ghcr.io/reagent-systems/via:main workcenter gates .
 ```
 
 - On Linux, `--user` makes the files the gates write yours; the image's build checks this with the same command.
