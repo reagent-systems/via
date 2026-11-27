@@ -13,6 +13,7 @@ Standard library only, as the CLI (AGENTS.md invariant 3).
 from __future__ import annotations
 
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -252,6 +253,21 @@ def stop_signals() -> tuple[int, ...]:
     process group as SIGBREAK. A signal this Python lacks is left out."""
     names = ("SIGTERM", "SIGBREAK") if _windows() else ("SIGTERM", "SIGHUP")
     return tuple(getattr(signal, name) for name in names if hasattr(signal, name))
+
+
+def installer_command(src: Path | str) -> str:
+    """The command line that installs the toolchain from the checkout at `src`, as `next` prints it.
+
+    Linux: tools/guide.py:834, `sudo <src>/install.sh`. macOS: install-macos.sh, which asks before it
+    uses sudo itself (winmac plan, piece E). Windows: install.ps1 run by Windows PowerShell, which every
+    Windows 10 and 11 has (winmac plan, piece F2); the path is in double quotes, which cmd.exe and
+    PowerShell both read and which no Windows file name holds. Neither script exists yet."""
+    if _windows():
+        script = str(src).rstrip("\\/") + "\\install.ps1"
+        return f'powershell -NoProfile -ExecutionPolicy Bypass -File "{script}"'
+    if _mac():
+        return shlex.quote(f"{src}/install-macos.sh")
+    return f"sudo {Path(src) / 'install.sh'}"
 
 
 def write_text(path: Path | str, text: str) -> int:

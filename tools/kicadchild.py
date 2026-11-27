@@ -38,6 +38,11 @@ CONTRACT = 1
 OPS = ("stitch",)
 EXIT_REFUSED = 2
 EXIT_NO_PCBNEW = 3
+# Seconds 1 round may take before `design` stops it in 1 line (a pcbnew that hangs at load, under a
+# dialog, would block it with no end). The slowest whole board write measured with stitching, every
+# round and fill of the Snapdragon example's 8 vias, took 17.1 s on Linux (2026-11-27); this is 35
+# times that.
+TIMEOUT = 600
 HERE = Path(__file__).resolve().parent
 CHILD = Path(__file__).resolve()
 # KiCad's Python module writes these to stderr on every load; they say nothing about the board
@@ -73,12 +78,16 @@ def run(op: str, request: dict) -> dict:
     if py is None:
         raise Missing(f"{NOT_FOUND}; `workcenter doctor` says where it looks")
     # -s: the user's own site folder stays out; KiCad's Python sees its own packages only.
-    proc = subprocess.run(
-        [py, "-s", str(CHILD), op],
-        input=json.dumps({**request, "contract": CONTRACT}).encode("ascii"),
-        capture_output=True,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            [py, "-s", str(CHILD), op],
+            input=json.dumps({**request, "contract": CONTRACT}).encode("ascii"),
+            capture_output=True,
+            check=False,
+            timeout=TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"KiCad's Python {py} did not answer {op} in {TIMEOUT} s") from None
     said = [
         ln
         for ln in proc.stderr.decode("utf-8", "replace").splitlines()
@@ -91,8 +100,11 @@ def run(op: str, request: dict) -> dict:
         raise RuntimeError(f"KiCad's Python {py} failed on {op} (exit {proc.returncode}): {last}")
     for ln in said:
         print(ln, file=sys.stderr)
-    answer = json.loads(proc.stdout.decode("ascii"))
-    got = answer.get("contract")
+    try:
+        answer = json.loads(proc.stdout.decode("ascii"))
+    except ValueError:  # UnicodeDecodeError is one
+        raise RuntimeError(f"KiCad's Python {py} answered {op} with no JSON: {proc.stdout[:80]!r}") from None
+    got = answer.get("contract") if isinstance(answer, dict) else None
     if got != CONTRACT:
         raise RuntimeError(f"KiCad's Python {py} answered contract {got!r}, not {CONTRACT}")
     return answer

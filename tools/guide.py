@@ -753,20 +753,15 @@ def kicad_python_step(cli, project) -> Step | None:
         return None
     if "(zone" not in pcb.read_text(encoding="utf-8", errors="replace"):
         return None
+    import hostos
     import kicadchild
 
     if kicadchild.python() is not None:
         return None
-    if sys.platform == "darwin":
-        run = str(cli.SRC_DIR / "install-macos.sh")
-    elif sys.platform == "win32":
-        run = f"powershell -ExecutionPolicy Bypass -File {cli.SRC_DIR / 'install.ps1'}"
-    else:
-        run = f"sudo {cli.SRC_DIR / 'install.sh'}"
     return Step(
-        "Install KiCad 10 with its own Python: `design --route` stitches the pours with KiCad's pcbnew, "
-        "run in that Python, and none is found.",
-        run,
+        "Install KiCad 10 with its own Python: none is found. `design --route` stitches the pours with "
+        "KiCad's pcbnew, run in that Python.",
+        hostos.installer_command(cli.SRC_DIR),
         f"{pcb.name} has a pour, and {kicadchild.NOT_FOUND}",
         "ee-agent-kit/docs/ENGINES.md",
         "`workcenter doctor` shows the pcbnew row ok",
