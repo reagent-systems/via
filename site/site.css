@@ -1783,6 +1783,18 @@ html:not(.motion) .wordmark .wm-pt,
   position: static;
   flex: none;
 }
+/* The owner's line over the link an agent is given (2026-11-27), then the Ubuntu command under it. */
+.install-line {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.install-link pre {
+  padding-top: 0.25rem;
+  font-size: 1.0625rem;
+}
+.install-link + .install {
+  margin-top: 0.75rem;
+}
 .install .copy:hover {
   background: var(--secondary);
 }
