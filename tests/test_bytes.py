@@ -426,15 +426,27 @@ def test_a_routed_and_poured_board_is_written_again_with_lf(crlf, tmp_path, monk
 
 
 def test_stitch_zones_writes_the_board_with_lf(crlf, tmp_path, monkeypatch):
-    """stitch_zones' own write, each round it adds a via: pcbnew and KiCad are stubbed."""
-    pcbnew = types.SimpleNamespace(VECTOR2I_MM=lambda x, y: (x, y))
-    monkeypatch.setitem(sys.modules, "pcbnew", pcbnew)
-    pieces = [("F.Cu", None, 0, ["R1.1"]), ("B.Cu", None, 0, ["R2.1"])]
-    graph = {"pieces": pieces, "components": [[0], [1]]}
-    monkeypatch.setattr(kicadgen, "pour_pieces", lambda pcb, net: graph)
-    monkeypatch.setattr(kicadgen, "_holes", lambda pcbnew, pcb: [])
-    monkeypatch.setattr(kicadgen, "_via_blocker", lambda *args: None)
-    monkeypatch.setattr(kicadgen, "_via_spot", lambda *args, **kwargs: (1.0, 2.0))
+    """stitch_zones' own write, each round it adds a via. The search runs in tools/kicadchild.py under
+    KiCad's Python; here the child and KiCad are stubbed: the child answers 1 via in the first round."""
+    answers = [
+        {
+            "contract": 1,
+            "stitches": [{"net": "GND", "at": [1.0, 2.0], "layer": "F.Cu", "to": "B.Cu", "island": ["R2.1"]}],
+            "left": [],
+        }
+    ]
+
+    class Child:
+        Missing = RuntimeError
+
+        @staticmethod
+        def run(op, request):
+            return answers.pop(0)
+
+    monkeypatch.setattr(kicadgen, "_kicadchild", lambda: Child)
+    monkeypatch.setattr(
+        kicadgen, "_stitch_request", lambda design, pcb: {"nets": [{"net": "GND", "size": 0.6, "drill": 0.3}]}
+    )
     monkeypatch.setattr(kicadgen, "fill_zones", lambda pcb: {})
     design = types.SimpleNamespace(
         zones=[{"net": "GND"}],

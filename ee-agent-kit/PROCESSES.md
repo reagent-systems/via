@@ -850,6 +850,10 @@ When: a change is about to be called done.
     the tests for the variable or the name), in every branch about to
     meet it, and runs them all after the merge, not only the files the
     pick touched (M305).
+12. A new test file runs once the way CI runs it, `make verify-site`,
+    before it lands, not by pytest alone: a test that starts make, or
+    reads a variable an outer program sets, meets that program only
+    there (M324).
 
 Done when: the remote has the commit, its CI run is green, and the report
 has been sent. For a gate's method: the attack's cases are tests; after 2

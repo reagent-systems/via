@@ -642,11 +642,15 @@ def test_the_makefile_takes_its_venv_python_from_hostos(tmp_path, platform, venv
 
 
 def make(*argv: str) -> subprocess.CompletedProcess:
+    """A make of its own, also under `make verify-site`: an outer make's MAKELEVEL and MAKEFLAGS would make
+    this one print "Entering directory" lines into what the test reads."""
+    env = {k: v for k, v in os.environ.items() if k not in ("MAKELEVEL", "MAKEFLAGS", "MFLAGS")}
     return subprocess.run(
-        ["make", "-s", "-C", str(ROOT), "-f", "Makefile", *argv],
+        ["make", "-s", "--no-print-directory", "-C", str(ROOT), "-f", "Makefile", *argv],
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
 
 
@@ -692,12 +696,7 @@ def test_the_makefile_falls_back_to_python3_without_the_venv(tmp_path):
 @needs_make
 def test_the_makefile_on_this_machine_names_todays_venv_python(tmp_path):
     show = ["--eval", "show-venv: ; @echo $(VENV_PY)", "show-venv"]
-    proc = subprocess.run(
-        ["make", "-s", "-C", str(ROOT), "-f", "Makefile", *show],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    proc = make(*show)
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == str(Path(wc.hostos.venv_python(wc.hostos.default_root())))
     if sys.platform.startswith("linux"):

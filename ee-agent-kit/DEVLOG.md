@@ -58,7 +58,7 @@ systems. Nothing has run on a Mac or on Windows: the first GitHub run of
 the branch proves or refutes it.
 
 Evidence: branch `wip/winmac`; STATUS rows "Windows and macOS: ...";
-MISTAKES M317 to M323.
+MISTAKES M317 to M324.
 
 ## 2026-11-19 — The test run names every test it did not judge for its machine
 
