@@ -22,11 +22,12 @@ A waiting run says so on stderr, or in the file `WORKCENTER_LOCK_LOG` names: a t
 (tests/conftest.py), so a run of another session adds no line to the stderr a test compares.
 
 macOS and Windows have no /proc, and every platform difference goes through tools/hostos.py:
-- macOS: the lock is flock, as on Linux. A run hands the processes it starts the ticket's descriptor
-  (`pass_fds()`), and they share its flock, so a ticket whose run died stays locked until the last of
-  those ends. Only processes started with `pass_fds()` count, and SIGTERM is not passed on: no list of
-  the processes a run started can be read. A run inside the holder is known by
-  `WORKCENTER_LOCK_TICKET` alone.
+- macOS: the lock is flock, as on Linux. `enginelock.py hold` hands its command the ticket's descriptor
+  (`pass_fds()`), and the command shares its flock, so a ticket whose run died stays locked until that
+  command ends. The other callers (`workcenter` commands and the engines they start) do not hand it on
+  yet: a `workcenter sim` killed outright frees the lock while its ngspice runs. SIGTERM is not passed
+  on: no list of the processes a run started can be read. A run inside the holder is known by
+  `WORKCENTER_LOCK_TICKET` alone, so a stranger with a copy of it counts as inside.
 - Windows: the lock is msvcrt.locking of 1 byte (hostos.lock_file). A ticket is written, closed,
   renamed and then locked, since a file open in Python cannot be renamed there. The weaker guarantee:
   the lock belongs to the run's own handle, so a run that dies frees it at once, even while an engine
@@ -261,6 +262,8 @@ def _procfs() -> bool:
     return (PROC / "self" / "stat").is_file()
 
 
+# The descriptor of the ticket this process holds, while it holds it. At most 1: a second `take` in the
+# process is inside the holder and takes no ticket (tests/test_enginelock.py, 1 ticket at most).
 _HELD: list[int] = []
 
 
@@ -455,8 +458,9 @@ class Ticket:
             raise Refused(
                 f"engine lock: the lock folder {self.folder} cannot be written ({exc.strerror})"
             ) from None
+        locked = False
         try:
-            hostos.lock_file(seq_fd, wait=True)
+            locked = hostos.lock_file(seq_fd, wait=True)
             raw = _read_seq(seq_fd).strip()
             names = os.listdir(self.folder)
             last = max([_seq(n) or 0 for n in names] + [int(raw) if raw.isdigit() else 0])
@@ -486,6 +490,10 @@ class Ticket:
             os.lseek(seq_fd, 0, os.SEEK_SET)
             os.write(seq_fd, str(self.seq).encode())
         finally:
+            # Windows frees the lock of a handle closed while locked only "at a time that depends upon
+            # available system resources" (LockFileEx), and the next run waits on `.seq` till then.
+            if locked:
+                hostos.unlock_file(seq_fd)
             os.close(seq_fd)
 
     def _own(self, tmp: Path, data: bytes) -> int:
@@ -556,8 +564,9 @@ def _told_on_stop(ticket: Ticket, stream):
     """A run stopped by SIGTERM or SIGHUP (a host's time limit) passes the signal to the processes it
     started, prints 1 line that says so, frees its ticket, and dies of the same signal. Where it started
     any, the ticket file stays: it counts until the last of them has ended (`survey`). Without /proc it
-    finds none to pass the signal to and leaves the file: on macOS the processes that took `pass_fds()`
-    keep it locked until they end. Only the main thread may set handlers."""
+    finds none to pass the signal to; a run that holds the lock leaves the file while `pass_fds()` names
+    it: on macOS the processes that took it keep it locked until they end. A waiting run, and a run on
+    Windows, removes it. Only the main thread may set handlers."""
     if threading.current_thread() is not threading.main_thread():
         yield
         return
@@ -580,7 +589,9 @@ def _told_on_stop(ticket: Ticket, stream):
             file=stream,
             flush=True,
         )
-        ticket.release(unlink=not sent and _procfs())
+        # The file stays while a process may hold it: one it passed the signal to, or one it handed the
+        # ticket's descriptor (`pass_fds`, only while it holds). A waiting run started none.
+        ticket.release(unlink=not sent and not pass_fds())
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
 

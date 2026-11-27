@@ -77,9 +77,13 @@ with (folder / "log").open("a") as f:
 #           is a byte range of the handle (an open file here, by Linux's open file description locks),
 #           is not taken twice through 1 handle, and stops reads of its bytes through any other handle
 #           (os.read, io.open); os.O_CLOEXEC, os.pread, os.pwrite, os.getuid and signal.SIGHUP are gone;
-#           a file this process opened with os.open can be neither renamed nor removed (Python's os.open
-#           asks Windows for no FILE_SHARE_DELETE); os.rename refuses a target that exists; sys.platform
-#           is "win32". Linux only: it rests on Linux's lock calls.
+#           a file that any process has open (os.open or io.open on the stand-in, each handle marked by a
+#           shared lock of byte SHARE_AT) can be neither renamed nor removed (Python's os.open asks
+#           Windows for no FILE_SHARE_DELETE); os.rename refuses a target that exists; a handle closed
+#           while locked keeps its lock 0.5 s and is noted in `STANDIN_LOG` (LockFileEx frees it "at a
+#           time that depends upon available system resources"); `STANDIN_RACE` makes 1 race at the
+#           reopen of a new ticket (`race`); sys.platform is "win32". Linux only: it rests on Linux's
+#           lock calls.
 # The modules the tools import are loaded first, as they would be on that system: subprocess and shutil
 # (which argparse imports) read sys.platform at import and stay POSIX's.
 STANDIN = """\
@@ -125,28 +129,89 @@ def w_io_open(file, *a, **kw):
 
 
 opened, held = {}, {}
+LOCK_AT = 1 << 30  # hostos.WIN_LOCK_AT
+SHARE_AT = 1 << 40  # a shared lock of this byte marks a handle open with no FILE_SHARE_DELETE
+
+
+def note(line):
+    named = os.environ.get("STANDIN_LOG")
+    if named:
+        with real_io_open(named, "a", encoding="utf-8") as f:
+            f.write(line + "\\n")
+
+
+def share(fd):
+    # Every handle a process opens, in any process, keeps the file from a rename or a remove.
+    if stat.S_ISREG(os.fstat(fd).st_mode):
+        with contextlib.suppress(OSError):  # a write-only handle takes no shared lock: left unmarked
+            ofd(fd, OFD_SETLK, real_fcntl.F_RDLCK, SHARE_AT, 1)
+
+
+raced = []
+
+
+def race(path, flags):
+    # STANDIN_RACE: what another run does once, at the reopen of a new ticket (enginelock's _own: read
+    # and write, no O_CREAT): `gone` removes it first; `probe` holds its lock for 0.3 s from another handle.
+    how = os.environ.get("STANDIN_RACE")
+    name = os.path.basename(os.fsdecode(path))
+    if raced or not how or not name.endswith(".ticket") or flags & os.O_CREAT:
+        return
+    if flags & os.O_ACCMODE != os.O_RDWR:
+        return
+    raced.append(name)
+    note(f"race {how} {name}")
+    if how == "gone":
+        real["unlink"](path)
+        return
+    probe = real["open"](path, os.O_RDWR)
+    ofd(probe, OFD_SETLK, real_fcntl.F_WRLCK, LOCK_AT, 1)
+    timer = threading.Timer(0.3, real["close"], (probe,))
+    timer.daemon = True
+    timer.start()
 
 
 def w_open(path, flags, mode_=0o777, **kw):
     if hidden(path):
         raise gone(path)
-    if mode == "win32" and flags & os.O_ACCMODE == os.O_RDONLY:
-        # Windows locks through a handle opened for reading; Linux's write lock needs a writable file.
-        flags |= os.O_RDWR
+    if mode == "win32":
+        race(path, flags)
+        if flags & os.O_ACCMODE == os.O_RDONLY:
+            # Windows locks through a handle opened for reading; Linux's write lock needs a writable file.
+            flags |= os.O_RDWR
     fd = real["open"](path, flags, mode_, **kw)
     opened[fd] = os.path.abspath(path)
+    if mode == "win32":
+        share(fd)
     return fd
 
 
 def w_close(fd):
-    opened.pop(fd, None)
-    held.pop(fd, None)
+    path = opened.pop(fd, None)
+    if held.pop(fd, None) is not None:
+        # Windows frees the lock of a handle closed while locked only "at a time that depends upon
+        # available system resources" (LockFileEx): here 0.5 s later, and the stand-in notes it.
+        note(f"closed locked {path}")
+        keep = os.dup(fd)
+        with contextlib.suppress(OSError):
+            ofd(keep, OFD_SETLK, real_fcntl.F_UNLCK, SHARE_AT, 1)
+        timer = threading.Timer(0.5, real["close"], (keep,))
+        timer.daemon = True
+        timer.start()
     real["close"](fd)
 
 
 def busy(path):
-    if os.path.abspath(path) in opened.values():
-        raise PermissionError(errno.EACCES, "the stand-in: the file is open", os.fsdecode(path))
+    # Any process's handle refuses a rename or a remove, as Windows does without FILE_SHARE_DELETE.
+    try:
+        probe = real["open"](path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        if ofd(probe, OFD_GETLK, real_fcntl.F_WRLCK, SHARE_AT, 1) != real_fcntl.F_UNLCK:
+            raise PermissionError(errno.EACCES, "the stand-in: the file is open", os.fsdecode(path))
+    finally:
+        real["close"](probe)
 
 
 def w_rename(src, dst, **kw):
@@ -214,6 +279,8 @@ def w_read(fd, n):
 
 def w_io_open_win(file, *a, **kw):
     f = w_io_open(file, *a, **kw)
+    if not isinstance(file, int):
+        share(f.fileno())
     if not isinstance(file, int) and "r" in (a[0] if a else kw.get("mode", "r")):
         size = os.fstat(f.fileno()).st_size
         if locked_by_another(f.fileno(), 0, size):
@@ -265,8 +332,14 @@ class Bench:
     def env(self, **extra: str) -> dict[str, str]:
         env = {k: v for k, v in os.environ.items() if not k.startswith("WORKCENTER_LOCK")}
         env["WORKCENTER_LOCK_DIR"] = str(self.dir)
+        env["STANDIN_LOG"] = str(self.tmp / "standin.log")
         env.update(extra)
         return env
+
+    def standin_log(self) -> str:
+        """What the stand-ins saw (STANDIN): a race they made, a handle closed while it held a lock."""
+        path = self.tmp / "standin.log"
+        return path.read_text(encoding="utf-8") if path.is_file() else ""
 
     def start(self, argv: list[str], tag: str, **extra: str) -> subprocess.Popen:
         err = (self.tmp / f"err-{tag}").open("w")
@@ -325,11 +398,20 @@ def until(what: str, check, timeout: float = 5.0) -> None:
         time.sleep(0.02)
 
 
+def needs_proc(why: str):
+    """Skip a test that rests on /proc where it lists no process (macOS, an empty /proc in a container);
+    `why` says what the lock does there instead, and which test holds that."""
+    return pytest.mark.skipif(not Path("/proc/self/stat").is_file(), reason=f"no /proc: {why}")
+
+
 @pytest.fixture
 def bench(tmp_path):
     b = Bench(tmp_path)
     yield b
     b.stop()
+    # Windows frees the lock of a closed handle only "at a time that depends on system resources"
+    # (LockFileEx): every run on the Windows stand-in unlocks before it closes.
+    assert "closed locked" not in b.standin_log(), b.standin_log()
 
 
 def started(b: Bench, tag: str) -> bool:
@@ -456,6 +538,10 @@ def test_tickets_taken_at_the_same_moment_get_distinct_numbers(tmp_path, monkeyp
             t.release()
 
 
+@needs_proc(
+    "B's line says `still run` from /proc's environ; there the engine keeps the ticket locked through the"
+    " inherited descriptor and B's line names A (test_without_proc_a_holder_killed_by_sigkill_keeps_...)"
+)
 def test_a_holder_killed_with_sigkill_frees_the_lock_when_its_engine_ends(bench):
     """A's lock process dies by SIGKILL; its engine, A's child, runs on. B, waiting behind it, does not
     start beside that engine, and its line (every 0.25 s) says the holder ended and its engine still runs.
@@ -531,6 +617,10 @@ def test_a_child_and_a_grandchild_of_the_holder_run_at_once(bench):
     assert bench.log() == ["start C", "end C", "start G", "end G", "start B"]
 
 
+@needs_proc(
+    "a run inside the holder is known by WORKCENTER_LOCK_TICKET alone, so a stranger with a copy of it"
+    " counts as inside: the weaker guarantee tools/enginelock.py states for macOS and Windows"
+)
 def test_a_stranger_with_a_copied_variable_waits(bench):
     """A holds and hands its children `WORKCENTER_LOCK_TICKET`; a process that is not A's child but
     carries the same value waits like any other."""
@@ -803,6 +893,10 @@ def alive(pid: int) -> bool:
     return stat.rsplit(")", 1)[1].split()[0] != "Z"
 
 
+@needs_proc(
+    "no list of the processes a run started, so SIGTERM is not passed on, and `workcenter sim` hands its"
+    " ngspice no descriptor yet (test_without_proc_a_holder_stopped_by_sigterm_keeps_... holds `hold`)"
+)
 def test_a_holder_stopped_by_sigterm_stops_its_engine_before_the_next_run_starts(bench):
     """A host's time limit sends SIGTERM to a holding `workcenter sim`. It passes the signal to the
     engine it started, says so in its last line, and B's engine starts only when no engine of A's runs."""
@@ -1138,3 +1232,133 @@ def test_the_owner_check_needs_no_uid_on_windows(lock_here, monkeypatch, tmp_pat
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "appdata"))
     assert enginelock.lock_dir() == tmp_path / "appdata" / "Via" / "lock"
     enginelock.check(folder)
+
+
+@ON_POSIX
+def test_a_named_lock_folder_of_another_user_is_taken(lock_here, monkeypatch, tmp_path):
+    """`WORKCENTER_LOCK_DIR` names a folder on purpose, a shared one too: its owner is not checked."""
+    folder = tmp_path / "shared"
+    folder.mkdir()
+    monkeypatch.setenv("WORKCENTER_LOCK_DIR", str(folder))
+    uid = os.getuid()
+    monkeypatch.setattr(os, "getuid", lambda: uid + 1)
+    lock_here.check(folder)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="O_CLOEXEC and no O_BINARY: Linux's")
+def test_every_open_on_linux_closes_on_exec(lock_here):
+    """On Linux every os.open of the lock takes O_CLOEXEC, as before, and nothing else: an engine never
+    inherits a ticket or `.seq` unless it is handed one (`pass_fds`)."""
+    assert lock_here.OPEN == os.O_CLOEXEC
+
+
+def test_a_run_holds_1_ticket_at_most(lock_here):
+    """A take inside a take of the same process is inside the holder (`inside`): it takes no second
+    ticket, so `pass_fds()` has 1 descriptor to hand on, the first ticket's."""
+    enginelock = lock_here
+    with enginelock.take("outer") as outer:
+        with enginelock.take("inner") as inner:
+            assert inner is None
+            assert enginelock._HELD == [outer.fd]
+    assert enginelock._HELD == []
+
+
+@ON_POSIX
+@pytest.mark.parametrize("system", ["noproc", pytest.param("win32", marks=ON_LINUX)])
+def test_without_proc_a_waiter_stopped_by_sigterm_leaves_no_ticket(bench, system):
+    """As test_a_waiter_stopped_by_sigterm_says_so, on the macOS and Windows stand-ins: B waits behind A
+    and gets SIGTERM. A waiting run has started no process that could hold its ticket, so it removes its
+    ticket: 1 ticket is left, A's."""
+    bench.hold("A", system)
+    until("A to start", lambda: started(bench, "A"))
+    b = bench.hold("B", system)
+    until("B's waiting line", lambda: "waiting" in bench.err("B"))
+    b.send_signal(signal.SIGTERM)
+    assert b.wait(5) == -signal.SIGTERM
+    last = bench.err("B").splitlines()[-1]
+    assert "stopped by signal 15 (SIGTERM) after waiting" in last and "1 run ahead" in last, last
+    assert len(bench.tickets()) == 1
+
+
+def hold_showing_the_ticket(bench: Bench, system: str | None) -> subprocess.CompletedProcess:
+    """`hold` of a command that prints the name of the ticket it runs under."""
+    show = [PY, "-c", "import os; print(os.path.basename(os.environ['WORKCENTER_LOCK_TICKET']))"]
+    argv = [*bench.lock(system), "hold", "--", *show]
+    return subprocess.run(argv, env=bench.env(), capture_output=True, text=True, timeout=60)
+
+
+@ON_POSIX
+@pytest.mark.parametrize("system", [None, pytest.param("win32", marks=ON_LINUX)])
+def test_the_counter_counts_on_after_every_ticket_is_gone(bench, system):
+    """`.seq` holds the last number given. 3 runs, 1 after the other, leave it exactly `3`, no byte
+    before or after, and no ticket; the 4th run then takes number 4 from `.seq` alone."""
+    names = []
+    for n in range(4):
+        done = hold_showing_the_ticket(bench, system)
+        assert done.returncode == 0, done.stderr
+        names.append(done.stdout.strip())
+        if n == 2:
+            assert (bench.dir / ".seq").read_bytes() == b"3"
+            assert bench.tickets() == []
+    assert names == [f"{n:012d}.ticket" for n in range(1, 5)]
+
+
+# A process that holds a file open as Windows' Python does (no FILE_SHARE_DELETE), marked as STANDIN
+# marks every handle it opens: a shared lock of 1 byte at SHARE_AT, by Linux's open file description
+# locks (F_OFD_SETLK 37). The stand-in then refuses to rename or remove the file, in every process.
+OPEN_ELSEWHERE = """\
+import fcntl, os, struct, sys, time
+path, ready, go = sys.argv[1:4]
+fd = os.open(path, os.O_RDONLY)
+fcntl.fcntl(fd, 37, struct.pack("hhqqi4x", fcntl.F_RDLCK, os.SEEK_SET, 1 << 40, 1, 0))
+open(ready, "w").close()
+while not os.path.exists(go):
+    time.sleep(0.02)
+"""
+
+
+@ON_LINUX
+def test_on_windows_a_dead_ticket_another_process_has_open_is_removed_later(bench):
+    """On Windows a file another process has open cannot be removed. Dead ticket 1 is held open by a
+    process that is not a run, as another run's survey holds it while it reads: `state` answers, no
+    holder, and the file stays; `hold` runs at once with ticket 2. Once that process has closed the
+    file, the next `state` removes it."""
+    bench.dir.mkdir()
+    dead = bench.dir / "000000000001.ticket"
+    dead.write_text(json.dumps({"pid": 1, "what": "a run that died", "came": 0}), encoding="utf-8")
+    (bench.dir / ".seq").write_text("1", encoding="utf-8")
+    ready, go = bench.tmp / "ready", bench.tmp / "go"
+    bench.procs.append(subprocess.Popen([PY, "-c", OPEN_ELSEWHERE, str(dead), str(ready), str(go)]))
+    until("the file to be open", ready.exists)
+    state = [*bench.lock("win32"), "state", "--json"]
+    done = subprocess.run(state, env=bench.env(), capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0 and json.loads(done.stdout)["holder"] is None, done.stderr
+    assert bench.tickets() == [dead.name]
+    done = hold_showing_the_ticket(bench, "win32")
+    assert done.returncode == 0 and done.stdout.strip() == "000000000002.ticket", (done.stdout, done.stderr)
+    assert bench.tickets() == [dead.name]
+    go.touch()
+    bench.procs[-1].wait(5)
+    done = subprocess.run(state, env=bench.env(), capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert bench.tickets() == []
+
+
+@ON_LINUX
+@pytest.mark.parametrize("race", ["gone", "probe"])
+def test_on_windows_a_race_at_the_reopen_of_a_new_ticket_still_ends_locked(bench, race):
+    """Windows: a new ticket is renamed, opened again and locked (`_own`); in between another run may
+    act (STANDIN's `STANDIN_RACE`). `gone`: its survey found the ticket unlocked and removed it before
+    the reopen; the run writes it again under the same number. `probe`: its survey holds the ticket's
+    lock for 0.3 s at the reopen; the run waits it out. Either way ticket 1 is locked, A holds it and no
+    one waits."""
+    a = bench.hold("A", "win32", STANDIN_RACE=race)
+    until("A to start", lambda: started(bench, "A"))
+    assert f"race {race} 000000000001.ticket" in bench.standin_log(), bench.standin_log()
+    state = [*bench.lock("win32"), "state", "--json"]
+    done = subprocess.run(state, env=bench.env(), capture_output=True, text=True, timeout=60)
+    st = json.loads(done.stdout)
+    assert st["holder"] and st["holder"]["seq"] == 1 and st["holder"]["pid"] == a.pid, st
+    assert st["waiting"] == 0 and bench.tickets() == ["000000000001.ticket"], st
+    bench.release("A")
+    assert a.wait(5) == 0
