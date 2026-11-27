@@ -58,7 +58,18 @@ def bare_env(monkeypatch, tmp_path):
 
 
 def on(monkeypatch, platform: str) -> None:
+    """Set the platform. A run on Windows stands in the POSIX names its Python lacks (os.getuid,
+    os.killpg, SIGHUP, SIGKILL) for a test of Linux or macOS; a POSIX run keeps its own."""
     monkeypatch.setattr(sys, "platform", platform)
+    if platform != "win32":
+        for module, name, value in (
+            (os, "getuid", lambda: 1000),
+            (os, "killpg", lambda pid, sig: None),
+            (signal, "SIGHUP", 1),
+            (signal, "SIGKILL", 9),
+        ):
+            if not hasattr(module, name):
+                monkeypatch.setattr(module, name, value, raising=False)
 
 
 def touch(path: Path) -> Path:
@@ -113,7 +124,7 @@ def test_lock_dir_on_posix_is_one_folder_per_user_in_tmp(hostos, monkeypatch, pl
 def test_lock_dir_on_windows_is_under_localappdata_and_asks_no_user_id(hostos, monkeypatch, tmp_path):
     on(monkeypatch, "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
-    monkeypatch.delattr(os, "getuid")
+    monkeypatch.delattr(os, "getuid", raising=False)
     assert hostos.lock_dir() == tmp_path / "local" / "Via" / "lock"
 
 
@@ -417,7 +428,7 @@ def test_stop_signals_on_posix_are_term_and_hup(hostos, monkeypatch, platform):
 
 def test_stop_signals_on_windows_are_term_and_break_and_need_no_hup(hostos, monkeypatch):
     on(monkeypatch, "win32")
-    monkeypatch.delattr(signal, "SIGHUP")
+    monkeypatch.delattr(signal, "SIGHUP", raising=False)
     monkeypatch.setattr(signal, "SIGBREAK", 21, raising=False)
     assert hostos.stop_signals() == (signal.SIGTERM, 21)
 
@@ -456,7 +467,7 @@ def test_kill_tree_on_posix_kills_the_process_group(hostos, monkeypatch, platfor
 
 def test_kill_tree_on_windows_runs_taskkill_on_the_tree(hostos, monkeypatch):
     on(monkeypatch, "win32")
-    monkeypatch.delattr(os, "killpg")
+    monkeypatch.delattr(os, "killpg", raising=False)
     ran = []
 
     def run(cmd, **kwargs):
@@ -521,6 +532,56 @@ def test_kill_tree_on_linux_ends_a_grandchild_the_test_started(hostos):
             proc.kill()
             proc.wait()
         proc.stdout.close()
+
+
+# ------------------------------------------------------------------ program_name
+
+KNOWN = {"kicad-cli", "ngspice", "openEMS", "xvfb-run"}
+
+
+@pytest.mark.parametrize(
+    ("word", "name"),
+    [
+        ("/usr/bin/kicad-cli", "kicad-cli"),
+        ("kicad-cli", "kicad-cli"),
+        ("kicad-cli.exe", "kicad-cli.exe"),
+        ("/opt/x/OPENEMS", "OPENEMS"),
+    ],
+)
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_program_name_on_posix_is_the_last_part_of_the_path(hostos, monkeypatch, platform, word, name):
+    """engine_watch.py:93, os.path.basename: no extension is taken off, and case counts."""
+    on(monkeypatch, platform)
+    assert hostos.program_name(word, KNOWN) == name
+
+
+@pytest.mark.parametrize(
+    ("word", "name"),
+    [
+        ("C:\\Program Files\\KiCad\\10.0\\bin\\kicad-cli.exe", "kicad-cli"),
+        ("C:/Spice64/bin/NGSPICE.EXE", "ngspice"),
+        ("openems.exe", "openEMS"),
+        ("kicad-cli.cmd", "kicad-cli"),
+        ("kicad-cli", "kicad-cli"),
+        ("kicad-cli.txt", "kicad-cli.txt"),
+        ("notepad.exe", "notepad"),
+    ],
+)
+def test_program_name_on_windows_takes_off_a_pathext_extension_and_reads_any_case(
+    hostos, monkeypatch, word, name
+):
+    on(monkeypatch, "win32")
+    monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+    assert hostos.program_name(word, KNOWN) == name
+
+
+def test_program_name_on_windows_reads_pathext_and_has_a_default(hostos, monkeypatch):
+    on(monkeypatch, "win32")
+    monkeypatch.setenv("PATHEXT", ".PY")
+    assert hostos.program_name("ngspice.py", KNOWN) == "ngspice"
+    assert hostos.program_name("ngspice.exe", KNOWN) == "ngspice.exe"
+    monkeypatch.delenv("PATHEXT")
+    assert hostos.program_name("NGSPICE.EXE", KNOWN) == "ngspice"
 
 
 # ------------------------------------------------------------------ write_text
