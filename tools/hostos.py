@@ -8,7 +8,8 @@ KiCad's Python. tools/enginelock.py calls
 lock_dir, user_id, lock_file, unlock_file, flock_files, stop_signals and shell_line; tools/routers.py,
 tools/routebench.py and tools/mcpserver.py call it too; write_text is called by tools/kicadgen.py,
 tools/newboard.py and the run decks of tools/workcenter, installer_command by tools/guide.py, and
-shell_word by tools/guide.py, tools/newboard.py and the lines tools/workcenter prints. The
+shell_word by tools/guide.py, tools/newboard.py and the lines tools/workcenter prints, whose main()
+calls console_streams. The
 test runner (verify/testshards.py: kill_tree, stop_signals) and the engine guard of the tests
 (tools/ci/guard/engine_watch.py: program_name) call it as well.
 
@@ -352,6 +353,19 @@ def shell_word(word: str) -> str:
     if _windows():
         return subprocess.list2cmdline([word])
     return shlex.quote(word)
+
+
+def console_streams() -> None:
+    """Let stdout and stderr write `?` for a character their encoding lacks, never a traceback.
+
+    Windows writes a pipe and a console in the ANSI code page (cp1252) unless PYTHONUTF8=1, which
+    workcenter.cmd sets; run as `python tools/workcenter`, `next` stopped at a net name read with U+FFFD
+    (run 46067841222: "UnicodeEncodeError: 'charmap' codec can't encode character '\\ufffd'"). A stream
+    that writes UTF-8, as on Linux and macOS, is left as it is."""
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "").replace("_", "")
+        if encoding != "utf8" and hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
 
 
 def shell_line(words: Iterable[str]) -> str:

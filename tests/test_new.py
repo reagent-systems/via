@@ -439,6 +439,12 @@ def test_a_board_that_is_not_utf8_is_read_and_answered(tmp_path):
     proc = workcenter("next", "--trust-design", str(board), env=env)
     assert proc.returncode == 1 and "Traceback" not in proc.stderr, proc.stderr
     assert "Route the board before the gates" in proc.stdout
+    # Windows writes a pipe in cp1252 unless PYTHONUTF8=1 (run 46067841222: UnicodeEncodeError on
+    # U+FFFD). The same answer, with `?` for what cp1252 lacks.
+    cp1252 = {**env, "PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"}
+    proc = workcenter("next", "--trust-design", str(board), env=cp1252)
+    assert proc.returncode == 1 and "Traceback" not in proc.stderr, proc.stderr
+    assert "Route the board before the gates" in proc.stdout and "V?" in proc.stdout, proc.stdout
 
 
 def test_the_help_of_next_says_exit_1_is_a_step_and_no_error():

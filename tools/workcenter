@@ -6549,6 +6549,7 @@ def render_views(value: str) -> tuple[str, ...]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    hostos.console_streams()
     # The command's 1 reading of the clock: every day it writes in this run is this one, after midnight too.
     with clock().run():
         return command(argv)
