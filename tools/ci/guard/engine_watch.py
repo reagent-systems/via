@@ -9,7 +9,8 @@ KiCad's Python module is imported. Each start appends `<engine>\t<pid>\t<program
 WORKCENTER_ENGINE_LOG names. With WORKCENTER_NO_ENGINES=1 the start is refused with a
 FileNotFoundError, which the commands read as an engine that is absent.
 
-A program under the temporary folder is a test's stand-in, not an engine. A process started with
+A program under the temporary folder, or under the base folder of the tests' temporary folders that
+WORKCENTER_STAND_INS names, is a test's stand-in, not an engine. A process started with
 `python -I`, or with an environment that drops PYTHONPATH, is not watched. Standard library only.
 
 A program's name is tools/hostos.py's `program_name`: on Windows `C:\\KiCad\\bin\\kicad-cli.exe` is
@@ -32,6 +33,8 @@ import tempfile
 
 LOG_VAR = "WORKCENTER_ENGINE_LOG"
 REFUSE_VAR = "WORKCENTER_NO_ENGINES"
+# pytest's base folder of tmp_path, when a run names one (tools/ci/engine_marker.py sets it).
+STAND_INS_VAR = "WORKCENTER_STAND_INS"
 
 # The board engines (tools/workcenter: KICAD_CLI, NGSPICE, JAVA for FreeRouting; tools/fields.py:
 # openEMS) and the chip engines (tools/chipflow.py ENGINES; tests/test_engine_marker.py holds the 2
@@ -101,11 +104,15 @@ class EngineRefused(FileNotFoundError):
 
 
 def stand_in(word: str, path: str | None) -> bool:
-    """Whether a program is a test's own stand-in: a file under the temporary folder."""
+    """Whether a program is a test's own stand-in: a file under the temporary folder, or under the
+    base folder of the tests' temporary folders that STAND_INS_VAR names (pytest's --basetemp, which
+    CI's desktop legs put outside the temporary folder: run 46067841222)."""
     found = word if "/" in word else shutil.which(word, path=path)
     if not found:
         return False
-    return os.path.realpath(found).startswith(os.path.realpath(tempfile.gettempdir()) + os.sep)
+    real = os.path.realpath(found)
+    roots = [tempfile.gettempdir(), os.environ.get(STAND_INS_VAR, "")]
+    return any(root and real.startswith(os.path.realpath(root) + os.sep) for root in roots)
 
 
 def engine_of(args: object, path: str | None = None) -> str | None:

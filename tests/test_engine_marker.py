@@ -126,9 +126,11 @@ def test_starts_git_and_python_only():
 """
 
 
-def run_cases(tmp_path: Path, *args: str, files: dict[str, str] | None = None) -> tuple[int, str]:
+def run_cases(
+    tmp_path: Path, *args: str, files: dict[str, str] | None = None, env_extra: dict[str, str] | None = None
+) -> tuple[int, str]:
     """pytest on the cases above (or on `files`), beside a copy of this repository's conftest, with
-    engines refused."""
+    engines refused; `env_extra` is added to its environment."""
     folder = tmp_path / "cases"
     folder.mkdir()
     for name, text in (files or {"test_cases.py": CASES}).items():
@@ -139,8 +141,10 @@ def run_cases(tmp_path: Path, *args: str, files: dict[str, str] | None = None) -
     assert conftest.count(plugin) == 1
     conftest = conftest.replace(plugin, f"Path({str(ROOT / 'tools' / 'ci')!r})")
     (folder / "conftest.py").write_text(conftest, encoding="utf-8")
-    env = {k: v for k, v in os.environ.items() if k not in ("WORKCENTER_ENGINE_LOG", "PYTHONPATH")}
+    drop = ("WORKCENTER_ENGINE_LOG", "PYTHONPATH", engine_watch.STAND_INS_VAR)
+    env = {k: v for k, v in os.environ.items() if k not in drop}
     env["WORKCENTER_NO_ENGINES"] = "1"
+    env.update(env_extra or {})
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q", "--rootdir", str(folder), *args],
         cwd=folder,
@@ -305,3 +309,23 @@ def test_only_a_word_in_command_position_of_a_shell_line_is_a_program():
     assert found("if true; then yosys -V; fi") == "yosys"
     assert found("echo x\nsta flow.tcl") == "sta"
     assert found("echo x | timeout -s KILL 5 ngspice") == "ngspice"
+
+
+def test_a_stand_in_under_a_base_folder_outside_the_temporary_folder_is_no_engine(tmp_path):
+    """CI's desktop legs run the tests with `--work "$RUNNER_TEMP/desktop-smoke"`, so pytest's base
+    folder is not under the system's temporary folder (run 46067841222: /Users/runner/work/_temp on
+    macOS, /root/desktop-smoke in WSL, D:\\a\\_temp on Windows). A stand-in the test wrote there is still
+    no engine: 1 passed, as under /tmp. Before, the guard knew a stand-in only under the temporary
+    folder, refused it and failed the test."""
+    elsewhere = tmp_path / "temporary"
+    elsewhere.mkdir()
+    env_tmp = {name: str(elsewhere) for name in ("TMPDIR", "TEMP", "TMP")}
+    code, text = run_cases(
+        tmp_path,
+        "-k",
+        "test_a_stand_in_written_by_the_test_is_no_engine",
+        "--basetemp",
+        str(tmp_path / "base"),
+        env_extra=env_tmp,
+    )
+    assert code == 0 and "1 passed" in text, text

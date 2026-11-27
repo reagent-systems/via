@@ -4,7 +4,8 @@ A test that starts kicad-cli, ngspice, FreeRouting, openEMS, a chip engine or Ki
 carries `@pytest.mark.engine`. The fast run (`make verify-site`) runs `-m "not engine"` with
 WORKCENTER_NO_ENGINES=1. In every run this plugin puts `guard/` first on PYTHONPATH, so each Python
 process a test starts writes its engine starts to 1 log (guard/engine_watch.py), and it fails a test
-without the marker that wrote a line, in its setup, its call or its teardown.
+without the marker that wrote a line, in its setup, its call or its teardown. A run with --basetemp
+names that folder to the guard (WORKCENTER_STAND_INS): a program a test wrote there is a stand-in.
 
 A start while a module is collected is not held: a module's probe (`import pcbnew` in a try,
 `importlib.util.find_spec("pcbnew")`) decides its skip marks, and the fast run refuses it, so it costs
@@ -53,6 +54,10 @@ def pytest_configure(config):
         os.close(handle)
         os.environ[engine_watch.LOG_VAR] = log
         _made.append(log)
+    # A stand-in a test writes under its tmp_path is no engine, wherever --basetemp puts it: CI's
+    # desktop legs put it under the runner's work folder, outside the temporary folder.
+    if config.option.basetemp:
+        os.environ[engine_watch.STAND_INS_VAR] = os.path.realpath(config.option.basetemp)
     paths = [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]
     if str(GUARD) not in paths:
         os.environ["PYTHONPATH"] = os.pathsep.join([str(GUARD), *paths])
