@@ -460,6 +460,16 @@ def test_no_sentence_of_a_hint_or_of_a_step_is_over_20_words(tmp_path, monkeypat
     with monkeypatch.context() as patch:
         patch.setattr(cli, "NGSPICE", "no-such-ngspice")
         answer(project("absent"))
+    # KiCad's Python, which stitches a poured board's islands (tools/kicadchild.py)
+    poured = project("poured")
+    (poured / "design.py").write_text("# a design\n", encoding="utf-8")
+    (poured / "proj.kicad_pro").write_text("{}\n", encoding="utf-8")
+    (poured / "proj.kicad_pcb").write_text(
+        '(kicad_pcb\n  (zone (net 1) (net_name "GND"))\n)\n', encoding="utf-8"
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(kicadgen._kicadchild(), "python", lambda: None)
+        answer(poured)
     # the design file: refused, then different from the project
     designed = project("designed")
     (designed / "design.py").write_text("# a design\n", encoding="utf-8")

@@ -171,7 +171,8 @@ def test_order_and_seed_are_refused_together(tmp_path):
 @needs_router
 def test_an_ordered_route_routes_each_stage_and_joins_every_connection(tmp_path):
     """The 4 stages run in order and each names its nets; the board's DRC finds 0 unconnected."""
-    pytest.importorskip("pcbnew")
+    if kicadgen._kicadchild().python() is None:  # the stitching child (tools/kicadchild.py)
+        pytest.skip("KiCad's Python (with its pcbnew module) is not found")
     (tmp_path / "design.py").write_text(
         "import sys\n"
         f"sys.path.insert(0, {str(ROOT / 'tests')!r})\n"

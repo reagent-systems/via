@@ -65,6 +65,7 @@ tests/test_image.py,linux,the Linux container image
 tests/test_inspect.py,posix,not on the desktop list; not run on Windows yet
 tests/test_install_apt.py,linux,install.sh's apt step on Ubuntu
 tests/test_java.py,linux,"its stand-in javas are shell scripts; the JDK layouts of macOS and Windows are held there by fixtures on Linux"
+tests/test_kicadchild.py,desktop,"design --route's pour stitching, run as a child under KiCad's own Python; not proved off Linux: the in-process byte test, which needs pcbnew in Via's venv"
 tests/test_kicadgen.py,desktop,design: the generator behind workcenter design
 tests/test_layoutrules.py,posix,not on the desktop list; not run on Windows yet
 tests/test_layoutrules_drc.py,posix,not on the desktop list; not run on Windows yet

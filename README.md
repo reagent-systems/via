@@ -382,6 +382,7 @@ images are drawn.
 | `Makefile`, `verify/` | `make verify`: the repository's health gate, one command, run by CI's `full` job; `make check`: the fast checks before a push to a work branch, with `make kit`, the gate's kit checks alone; `verify/testshards.py` runs its tests in shards side by side by `verify/shards.csv` (`verify/README.md`). |
 | `tools/workcenter` | The CLI and the gates. Standard library only. |
 | `tools/kicadgen.py` | Design a board in Python from the KiCad libraries; writes the KiCad project and routes it headless. |
+| `tools/kicadchild.py` | The pour stitching of `design`, run as a child process under KiCad's own Python (`hostos.kicad_python()`), with a JSON request in and a JSON answer out: on macOS and Windows only that Python imports pcbnew. The child's half is standard library and pcbnew only, valid Python 3.9. |
 | `tools/simcorners.py`, `tools/freqplan.py`, `tools/thermal.py`, `tools/simneeds.py` | The corners a deck runs at; the frequency plan; each part's junction temperature at every run; the decks the schematic asks for. Read by the SIM gate. |
 | `tools/partdata.py` | The makers' data of a deck's capacitors and inductors: picks each curve from the part's facts when its maker's file has its row in `library/sources.csv`, and rewrites the deck's part as ngspice's behavioural element on it. Standard library only; the SIM gate runs it. |
 | `tools/guide.py` | `workcenter next`: the one next step and the fix for each kind of failure. |
