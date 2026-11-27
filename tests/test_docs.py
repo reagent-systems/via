@@ -697,8 +697,10 @@ def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
         assert f'"{key}"' in json.dumps(re.findall(r"data-(\w+)=", " ".join(cards)))
     for word in ("Sign in", "Upload", "Remove ads", "Become a Supporter"):
         assert word not in text, f"the gallery draws {word}, which it does not have"
-    assert '<button class="made-login" type="button" data-login hidden>Log In</button>' in text, (
-        "Log In shows once the API says"
+    # Log In is a profile icon in the bar (the owner's word, 2026-11-27), shown once the API says.
+    assert (
+        '<button class="made-login" type="button" data-login aria-label="Log in" title="Log in" hidden><svg'
+        in text
     )
     # Log In offers Google, Microsoft and GitHub, in the owner's order, each shown once the API offers it.
     ways = re.findall(

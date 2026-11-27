@@ -137,6 +137,11 @@ WAYS_IN = (
         f'<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="{GH_PATH}"/></svg>',
     ),
 )
+# The profile mark in the bar, at the owner's word (2026-11-27: "I need a little profile icon in the
+# header"): a person in a circle, which opens Log In; once logged in, the person's picture takes its place.
+PERSON = icon(
+    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3.2"/><path d="M6.6 19.2a6.5 6.5 0 0 1 10.8 0"/>'
+)
 FUNNEL = icon('<path d="M4 5h16l-6 7.5V19l-4-2v-4.5L4 5z"/>')
 KEBAB = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>'
 MOON = icon('<path d="M20.2 14.6A8.4 8.4 0 1 1 9.4 3.8a6.6 6.6 0 0 0 10.8 10.8Z"/>').replace(
@@ -326,7 +331,7 @@ def bar(things: list[Thing]) -> str:
         <div class="made-end">
           <a class="made-out" href="{HOME}guide">Get Via</a>
           <a class="made-home" href="{HOME}">via.computer</a>
-          <button class="made-login" type="button" data-login hidden>Log In</button>
+          <button class="made-login" type="button" data-login aria-label="Log in" title="Log in" hidden>{PERSON}</button>
           <details class="made-drop made-me" data-me hidden>
             <summary aria-label="Your account"><img data-avatar alt="" width="32" height="32"></summary>
             <ul>

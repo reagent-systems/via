@@ -4105,18 +4105,21 @@ img.thing-face {
 
 /* Logging in, the account's menu, and the 2 dialogs: adding or editing a board, and "My boards". */
 .made-login {
-  display: flex;
+  display: grid;
+  width: 2.75rem;
   height: 2.75rem;
-  align-items: center;
-  white-space: nowrap;
-  padding-inline: 0.75rem;
-  border-radius: 0.625rem;
-  font-size: 0.9375rem;
-  font-weight: 500;
+  place-items: center;
+  border-radius: 999px;
+  transition: background-color 150ms var(--ease);
 }
 
 .made-login:hover {
   background: oklch(1 0 0 / 14%);
+}
+
+.made-login svg {
+  width: 1.875rem;
+  height: 1.875rem;
 }
 
 .made-login[hidden],
