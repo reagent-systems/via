@@ -83,7 +83,7 @@ function Confirm-Step {
         return $true
     }
     if ([Console]::IsInputRedirected -or -not [Environment]::UserInteractive) {
-        Stop-Install "$Question Nobody can answer here: run again with -Yes to answer yes." 4
+        Stop-Install "$Question Nobody can answer here. Ask the person who runs this computer. Only if they say yes, run install.ps1 again with -Yes." 4
     }
     $answer = Read-Host "$Question [y/N]"
     return ($answer -match '^(y|yes)$')
@@ -153,7 +153,8 @@ function Save-Download {
     Write-Step "download $Url to $Path, then check its SHA256"
     if ($script:DryRun) { return }
     $part = "$Path.part"
-    Invoke-WebRequest -Uri $Url -OutFile $part -UseBasicParsing
+    # SourceForge sends PowerShell's own user agent a web page instead of the file; a plain one gets the file.
+    Invoke-WebRequest -Uri $Url -OutFile $part -UseBasicParsing -UserAgent 'via-install'
     $got = (Get-FileHash -LiteralPath $part -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($got -ne $Sha256) {
         Remove-Item -LiteralPath $part -Force
@@ -168,6 +169,15 @@ function Expand-Zip {
     if ($script:DryRun) { return }
     if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Recurse -Force }
     Expand-Archive -LiteralPath $Zip -DestinationPath $Dest -Force
+}
+
+function Clear-Folder {
+    # Empties a folder before an archive is unpacked into it, so nothing of an older pin stays.
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    Write-Step "remove folder $Path"
+    if ($script:DryRun) { return }
+    Remove-Item -LiteralPath $Path -Recurse -Force
 }
 
 function New-Folder {
@@ -204,8 +214,11 @@ function Add-UserPath {
         if ($script:DryRun) { return }
         $value = (@($parts) + $Folder) -join ';'
         if ($raw.Contains('%')) {
-            # Kept as an expandable string; a new sign-in shows it to every new terminal.
+            # Kept as an expandable string. Set-ItemProperty tells nobody, so setting and clearing a
+            # throwaway user variable through .NET sends Windows' WM_SETTINGCHANGE: a new terminal sees it.
             Set-ItemProperty -LiteralPath 'HKCU:\Environment' -Name 'Path' -Value $value -Type ExpandString
+            [Environment]::SetEnvironmentVariable('VIA_PATH_NOTICE', '1', 'User')
+            [Environment]::SetEnvironmentVariable('VIA_PATH_NOTICE', $null, 'User')
         } else {
             # Also tells Windows the PATH changed, so a new terminal sees it.
             [Environment]::SetEnvironmentVariable('Path', $value, 'User')
@@ -278,7 +291,7 @@ function Install-KiCad {
     if (Test-Winget) {
         $code = Invoke-Tool "KiCad $($Pins.kicad.version)" 'winget' @(
             'install', '--exact', '--id', $Pins.kicad.winget_id, '--version', $Pins.kicad.version,
-            '--scope', 'user', '--silent', '--accept-package-agreements', '--accept-source-agreements')
+            '--source', 'winget', '--scope', 'user', '--silent', '--accept-package-agreements', '--accept-source-agreements')
     } else {
         Write-Note 'winget: not on this computer; KiCad comes from its own installer, checked by its SHA256'
         $exe = Get-Pinned $Pins.kicad
@@ -287,6 +300,13 @@ function Install-KiCad {
     Assert-Installed $code 'KiCad'
     if ($script:DryRun) { return }
     $found = Find-KiCadCli
+    $userCli = Join-Path $env:LOCALAPPDATA "Programs\KiCad\$(Get-Series $Pins.kicad.version)\bin\kicad-cli.exe"
+    if (-not $found -and (Test-Path -LiteralPath $userCli -PathType Leaf)) {
+        Stop-Install ("KiCad installed, but $userCli does not answer. Microsoft's Visual C++ runtime is probably missing: " +
+            "KiCad's installer asks Windows for an administrator to add it, and goes on without it when nobody says yes. " +
+            "Install the Visual C++ v14 Redistributable (x64) from learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist " +
+            "(this needs an administrator), then run install.ps1 again.")
+    }
     if (-not $found) {
         Stop-Install "KiCad installed, but no kicad-cli of KiCad $($Pins.kicad.version) answers. Set KICAD_CLI to its kicad-cli.exe and run install.ps1 again."
     }
@@ -317,12 +337,15 @@ function Install-Python {
         Write-Note "Python $series`: kept $script:Python"
         return
     }
-    $ask = "Install Python $($Pins.python.version) for this user (no administrator)?"
+    # The switches say InstallLauncherAllUsers=0: Python's installer otherwise puts its py launcher in
+    # for all users (an administrator). winget's own switches do not say it, so --override replaces them.
+    $ask = "Install Python $($Pins.python.version) for this user (no administrator; your PATH is not changed)?"
     if (-not (Confirm-Step $ask)) { Stop-Install "Via's venv needs Python $series; nothing was installed." }
     if (Test-Winget) {
         $code = Invoke-Tool "Python $($Pins.python.version)" 'winget' @(
             'install', '--exact', '--id', $Pins.python.winget_id, '--version', $Pins.python.version,
-            '--scope', 'user', '--silent', '--accept-package-agreements', '--accept-source-agreements')
+            '--source', 'winget', '--scope', 'user', '--silent', '--override', $Pins.python.user_switches,
+            '--accept-package-agreements', '--accept-source-agreements')
     } else {
         Write-Note 'winget: not on this computer; Python comes from its own installer, checked by its SHA256'
         $exe = Get-Pinned $Pins.python
@@ -362,6 +385,7 @@ function Install-Ngspice {
     }
     $sevenzr = Get-Pinned $Pins.sevenzip
     $archive = Get-Pinned $Pins.ngspice
+    Clear-Folder $dest
     New-Folder $dest
     $code = Invoke-Tool "unpack ngspice $($Pins.ngspice.version) with 7-Zip $($Pins.sevenzip.version)" $sevenzr @('x', '-y', "-o$dest", $archive)
     if ($code -ne 0) { Stop-Install "7-Zip could not unpack $archive (exit $code)." }
@@ -457,4 +481,5 @@ if ($script:DryRun) {
     Write-Host 'dry run: nothing was installed, downloaded or written.'
 } else {
     Write-Host "Via is installed. Open a new terminal; 'workcenter doctor' runs there."
+    Write-Host "If that terminal does not know 'workcenter', run it by its full path: $script:Shim"
 }

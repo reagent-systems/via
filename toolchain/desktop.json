@@ -13,8 +13,8 @@
       "version": "3.12.10",
       "url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe",
       "sha256": "67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb",
-      "user_switches": "/quiet InstallAllUsers=0 PrependPath=0 Include_test=0",
-      "source": "microsoft/winget-pkgs manifests/p/Python/Python/3/12/3.12.10/Python.Python.3.12.installer.yaml, x64 Scope user (read 2026-11-27)"
+      "user_switches": "/quiet InstallAllUsers=0 InstallLauncherAllUsers=0 PrependPath=0 Include_test=0",
+      "source": "microsoft/winget-pkgs manifests/p/Python/Python/3/12/3.12.10/Python.Python.3.12.installer.yaml, x64 Scope user (read 2026-11-27); InstallLauncherAllUsers=0 because python/cpython v3.12.10 Tools/msi/bundle/bundle.wxs:31 defaults it to -1 and packagegroups/launcher.wxs installs launcher_AllUsers per machine when it is set"
     },
     "java": {
       "version": "21.0.13.1+2",

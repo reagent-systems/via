@@ -43,12 +43,15 @@ ACTORS = (
     "Copy-File",
     "Write-TextFile",
     "Add-UserPath",
+    "Clear-Folder",
 )
 # What changes the computer in PowerShell: a native program through the call operator, and the
 # cmdlets and .NET calls that write.
 EFFECTS = re.compile(
-    r"&\s*\$|\bStart-Process\b|\bInvoke-WebRequest\b|\bExpand-Archive\b|\bNew-Item\b|\bCopy-Item\b"
-    r"|\bMove-Item\b|\bRemove-Item\b|\bRename-Item\b|\bSet-ItemProperty\b|\bWriteAllText\b"
+    r"&\s*[$\"']|\bStart-Process\b|\bInvoke-WebRequest\b|\bInvoke-RestMethod\b|\bStart-BitsTransfer\b"
+    r"|\bInvoke-Expression\b|\bExpand-Archive\b|\bNew-Item\b|\bCopy-Item\b|\bMove-Item\b|\bRemove-Item\b"
+    r"|\bRename-Item\b|\bSet-Item\b|\bSet-ItemProperty\b|\bNew-ItemProperty\b|\bRemove-ItemProperty\b"
+    r"|\bClear-Item\b|\[IO\.File\]::(?:Write|Append|Create|Delete|Move|Copy)\w*|\bWriteAllText\b"
     r"|\bSetEnvironmentVariable\b|\bwinget\s+install\b"
 )
 
@@ -430,3 +433,90 @@ def test_the_installer_puts_a_shim_on_the_users_path_that_hands_over_to_this_one
     text = body("Add-Shim")
     assert "workcenter.cmd" in text and "Add-UserPath" in text and "Write-TextFile" in text
     assert "Join-Path $Root 'bin'" in text
+
+
+# --- Findings of the independent review (F-1 to F-10) --------------------------------------------
+
+
+def test_python_installs_its_py_launcher_for_this_user_only_on_both_paths():
+    """Python 3.12's installer defaults InstallLauncherAllUsers to -1 (cpython v3.12.10
+    Tools/msi/bundle/bundle.wxs:31), and its launcher_AllUsers package is ForcePerMachine with
+    InstallCondition "(InstallAllUsers or InstallLauncherAllUsers) and Include_launcher"
+    (packagegroups/launcher.wxs): an administrator. InstallLauncherAllUsers=0 picks launcher_JustForMe.
+    winget's manifest switches (Custom: InstallAllUsers=0 PrependPath=1) do not say it, so the winget
+    call replaces them with the same per-user switches as the installer's own path."""
+    switches = PINS["python"]["user_switches"].split()
+    assert "InstallAllUsers=0" in switches and "InstallLauncherAllUsers=0" in switches
+    assert "/quiet" in switches
+    text = body("Install-Python")
+    assert "'--override', $Pins.python.user_switches" in text
+    assert "($Pins.python.user_switches -split ' ')" in text
+
+
+def test_every_winget_install_names_the_winget_source():
+    """Without --source, winget also asks the msstore source, which can fail or prompt."""
+    for name in ("Install-KiCad", "Install-Python"):
+        assert "'--source', 'winget'" in body(name), name
+
+
+def test_every_download_sends_a_plain_user_agent():
+    """SourceForge sends PowerShell's default user agent a web page instead of the 7z (seen with curl
+    -A 'WindowsPowerShell/5.1': 200 text/html; -A 'via-install': the 13814879-byte archive)."""
+    calls = [line for line in body("Save-Download").splitlines() if "Invoke-WebRequest" in line]
+    assert calls and all("-UserAgent" in line for line in calls)
+    assert len(re.findall(r"\bInvoke-WebRequest\b", CODE)) == len(calls)
+
+
+def test_when_nobody_can_answer_the_stop_names_the_persons_yes():
+    """A coding agent reads the stop message, not the help: it must say to ask the person first."""
+    text = body("Confirm-Step")
+    stop = [line for line in text.splitlines() if "Stop-Install" in line]
+    assert len(stop) == 1
+    assert "Ask the person" in stop[0] and "Only if they say yes" in stop[0] and "-Yes" in stop[0]
+
+
+def test_the_path_change_is_announced_even_when_the_users_path_is_expandable():
+    """Windows' default user PATH holds %USERPROFILE%; Set-ItemProperty tells nobody. Setting and
+    clearing a user variable through .NET sends WM_SETTINGCHANGE, so a new terminal sees the PATH."""
+    text = body("Add-UserPath")
+    expand = text.find("-Type ExpandString")
+    assert expand >= 0
+    after = text[expand:]
+    assert after.count("SetEnvironmentVariable(") >= 2
+    assert "$null, 'User')" in after
+    # Until a run confirms it, the last line also names the shim's full path.
+    main = SCRIPT[SCRIPT.rindex("# --- Main") :]
+    assert "$script:Shim" in main[main.rindex("Via is installed") - 200 :]
+
+
+def test_a_new_ngspice_pin_unpacks_into_an_empty_folder():
+    text = body("Install-Ngspice")
+    assert 0 <= text.find("Clear-Folder $dest") < text.find("Invoke-Tool")
+    clear = body("Clear-Folder")
+    assert "Remove-Item" in clear and "-Recurse" in clear
+
+
+def test_a_kicad_cli_that_is_there_but_silent_points_at_the_visual_cpp_runtime():
+    """KiCad's NSIS script runs VC_redist.x64.exe and ignores its exit; a declined administrator
+    prompt leaves kicad-cli.exe unable to start."""
+    text = body("Install-KiCad")
+    assert "Test-Path" in text and "Visual C++" in text and "administrator" in text
+    assert "learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist" in text
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="runs install.ps1 itself: Windows only")
+def test_a_dry_run_on_windows_exits_0_and_makes_nothing(tmp_path):
+    root = tmp_path / "via-root"
+    shell = shutil.which("powershell") or shutil.which("pwsh")
+    assert shell
+    command = [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(INSTALL)]
+    proc = subprocess.run(
+        [*command, "-DryRun", "-Root", str(root)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=300,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "nothing was installed" in proc.stdout
+    assert not root.exists()
