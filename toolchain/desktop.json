@@ -1,0 +1,46 @@
+{
+  "windows": {
+    "kicad": {
+      "winget_id": "KiCad.KiCad",
+      "version": "10.0.8",
+      "url": "https://github.com/KiCad/kicad-source-mirror/releases/download/10.0.8/kicad-10.0.8-x86_64.exe",
+      "sha256": "5652b9ed52fca4aa63ec2ec61c8bfd4fab4f6a2fbfdb441def2972b0e9b2dfc7",
+      "user_switches": "/S /currentuser",
+      "source": "microsoft/winget-pkgs manifests/k/KiCad/KiCad/10.0.8/KiCad.KiCad.installer.yaml, x64 Scope user (read 2026-11-27)"
+    },
+    "python": {
+      "winget_id": "Python.Python.3.12",
+      "version": "3.12.10",
+      "url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe",
+      "sha256": "67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb",
+      "user_switches": "/quiet InstallAllUsers=0 PrependPath=0 Include_test=0",
+      "source": "microsoft/winget-pkgs manifests/p/Python/Python/3/12/3.12.10/Python.Python.3.12.installer.yaml, x64 Scope user (read 2026-11-27)"
+    },
+    "java": {
+      "version": "21.0.13.1+2",
+      "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13.1%2B2/OpenJDK21U-jre_x64_windows_hotspot_21.0.13.1_2.zip",
+      "sha256": "e15ee1e54a5a3b38027a09cedfa87bc3348d7dd3ce50866dd3d9671d7fffc6c1",
+      "folder": "jdk-21.0.13.1+2-jre",
+      "source": "api.adoptium.net/v3/assets/latest/21/hotspot?os=windows&architecture=x64&image_type=jre (read 2026-11-27); the zip it names hashed to the same SHA256"
+    },
+    "ngspice": {
+      "version": "47",
+      "url": "https://downloads.sourceforge.net/project/ngspice/ng-spice-rework/47/ngspice-47_64.7z",
+      "sha256": "59225971bd68cdd1199443649aa4615a9e6d684933f205ab49006a3942518f5a",
+      "exe": "Spice64/bin/ngspice_con.exe",
+      "source": "sourceforge.net/projects/ngspice/files/ng-spice-rework/47/ (the sha256 the page lists, read 2026-11-27); the archive it served hashed to the same SHA256 and names Spice64/bin/ngspice_con.exe"
+    },
+    "sevenzip": {
+      "version": "26.06",
+      "url": "https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe",
+      "sha256": "e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc",
+      "source": "www.7-zip.org/download.html links this 7zr.exe for 7-Zip 26.06 (2026-11-06); the SHA256 is of the 600064-byte file that URL served on 2026-11-27 (the page gives none)"
+    },
+    "freerouting": {
+      "version": "1.9.0",
+      "url": "https://github.com/freerouting/freerouting/releases/download/v1.9.0/freerouting-1.9.0.jar",
+      "sha256": "9084a4888937a7f31f857ecc12aa7a37407f51160e4d2892dff9c9bb47ae3102",
+      "source": "install.sh FREEROUTING_SHA256; the jar the release URL served on 2026-11-27 hashed to the same SHA256"
+    }
+  }
+}
