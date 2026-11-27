@@ -238,6 +238,18 @@ await step("like_listed", () => call("made", "POST", "/api/made?do=like", { as: 
 await step("picture", () => call("made", "GET", `/api/made?do=picture&id=${id}`));
 await step("board_listed", () => call("made", "GET", `/api/made?do=board&id=${id}`, { as: "b" }));
 
+// A person's profile: what others see, what they see of their own, and their edit of it.
+await step("profile_by_b", () => call("made", "GET", "/api/made?do=profile&id=github-101", { as: "b" }));
+await step("profile_out", () => call("made", "GET", "/api/made?do=profile&id=github-101"));
+await step("profile_own", () => call("made", "GET", "/api/made?do=profile&id=github-101", { as: "a" }));
+await step("profile_unknown", () => call("made", "GET", "/api/made?do=profile&id=github-999"));
+await step("profile_bad", () => call("made", "GET", "/api/made?do=profile&id=../made/users/github-101"));
+await step("profile_edit_out", () => call("made", "POST", "/api/made?do=profile", { body: { name: "Mallory" } }));
+await step("profile_edit_other_site", () => call("made", "POST", "/api/made?do=profile", { as: "a", origin: "https://evil.example", body: { name: "Mallory" } }));
+await step("profile_edit", () => call("made", "POST", "/api/made?do=profile&id=github-202", { as: "a", body: { name: "  Alice Anders  ", bio: "b".repeat(400) } }));
+await step("profile_after_edit", () => call("made", "GET", "/api/made?do=profile&id=github-101"));
+await step("profile_bob_after", () => call("made", "GET", "/api/made?do=profile&id=github-202"));
+
 // The Gerbers: the workflow takes an example when no board waits, uploads its zip, and the page
 // offers it; a file the workflow did not make, or from no workflow, is refused.
 const zip = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(40)]);
@@ -495,6 +507,36 @@ def test_a_boards_page_reads_it_by_its_name_and_its_drawing_carries_its_colours(
     assert "report" not in page["board"], "only its owner sees the report"
     svg = run["picture"]["text"]
     assert svg.startswith("<svg") and "<style>" in svg and ".edge{" in svg
+
+
+@needs_node
+def test_a_profile_shows_a_persons_boards_and_likes_and_they_edit_their_own(run):
+    """The owner's word (2026-11-27): "there needs to be a profile page". Anyone sees a person's name,
+    picture, line, listed boards and likes; the person also sees their boards' states, and edits their
+    own name and line, never another's."""
+    other = run["profile_by_b"]["data"]
+    assert run["profile_out"]["data"] == {**other, "myLiked": []}
+    person = other["person"]
+    assert person["id"] == "github-101" and person["name"] == "Alice" and person["github"] == "Alice"
+    assert person["first"] and person["bio"] == "" and other["own"] is False
+    assert [b["name"] for b in other["boards"]] == ["Desk lamp"] and "status" not in other["boards"][0]
+    assert other["liked"] == {"examples": ["ex-hush"], "boards": []}
+    assert other["counts"] == {"boards": 1, "likes": 1, "received": 1}, "bob liked the lamp"
+    # What bob, who is looking, likes: the lamp (he took back his like of Hush).
+    assert other["myLiked"] == [other["boards"][0]["id"]]
+    own = run["profile_own"]["data"]
+    assert (
+        own["own"] is True and own["boards"][0]["status"] == "green" and own["boards"][0]["approved"] is True
+    )
+    assert run["profile_unknown"]["status"] == 404 and run["profile_bad"]["status"] == 404
+    assert run["profile_edit_out"]["status"] == 401
+    assert run["profile_edit_other_site"]["status"] == 403
+    edited = run["profile_edit"]["data"]
+    assert edited["person"]["id"] == "github-101", "an edit is always of the person's own profile"
+    assert edited["person"]["name"] == "Alice Anders" and len(edited["person"]["bio"]) == 280
+    assert run["profile_after_edit"]["data"]["person"]["name"] == "Alice Anders"
+    assert run["profile_bob_after"]["data"]["person"]["name"] == "bob", "bob's profile is his own still"
+    assert run["profile_bob_after"]["data"]["person"]["github"] == "bob"
 
 
 @needs_node

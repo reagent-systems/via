@@ -131,7 +131,11 @@ WAYS_IN = (
         '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#F25022" d="M1 1h10.5v10.5H1z"/><path fill="#7FBA00" d="M12.5 1H23v10.5H12.5z"/>'
         '<path fill="#00A4EF" d="M1 12.5h10.5V23H1z"/><path fill="#FFB900" d="M12.5 12.5H23V23H12.5z"/></svg>',
     ),
-    ("github", "GitHub", f'<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="{GH_PATH}"/></svg>'),
+    (
+        "github",
+        "GitHub",
+        f'<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="{GH_PATH}"/></svg>',
+    ),
 )
 FUNNEL = icon('<path d="M4 5h16l-6 7.5V19l-4-2v-4.5L4 5z"/>')
 KEBAB = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>'
@@ -285,6 +289,7 @@ def bar(things: list[Thing]) -> str:
         for c, n in sorted(counts.items())
     )
     logo = LOGO.replace(" data-logo", "")
+    options = "".join(f'<option value="{c}">{c}</option>' for c in CATEGORIES)
     ways = "\n".join(
         f'            <a class="made-login-with" href="/api/auth?do=login&amp;with={key}" data-with="{key}" hidden>{mark}Log in with {name}</a>'
         for key, name, mark in WAYS_IN
@@ -325,6 +330,7 @@ def bar(things: list[Thing]) -> str:
           <details class="made-drop made-me" data-me hidden>
             <summary aria-label="Your account"><img data-avatar alt="" width="32" height="32"></summary>
             <ul>
+              <li><a href="/" data-my-profile>My profile</a></li>
               <li><button type="button" data-open-mine>My boards</button></li>
               <li><button type="button" data-open-add>Add a board</button></li>
               <li><button type="button" data-logout>Log out</button></li>
@@ -347,6 +353,40 @@ def bar(things: list[Thing]) -> str:
         </div>
         <p class="made-hint made-login-note">We keep the name and picture it gives us, to show next to your boards. Adding a board takes a GitHub login, since your board comes from your own repository there.</p>
       </dialog>
+      <dialog class="made-dialog" id="made-add" aria-labelledby="made-add-title">
+        <form class="made-form" data-add-form novalidate>
+          <h2 id="made-add-title" data-add-title>Add your board</h2>
+          <p class="made-hint">Via checks a board from one of your public GitHub repositories. When it passes and we've had a look, it shows up here.</p>
+          <label data-source>Repository<input name="repo" placeholder="you/your-board" autocomplete="off" spellcheck="false"></label>
+          <div class="made-form-row" data-source>
+            <label>Folder <small>if it isn't at the top</small><input name="path" placeholder="boards/my-board" autocomplete="off" spellcheck="false"></label>
+            <label>Branch <small>if it isn't the default</small><input name="ref" placeholder="main" autocomplete="off" spellcheck="false"></label>
+          </div>
+          <label>Name<input name="name" maxlength="60" autocomplete="off"></label>
+          <label>What it is<textarea name="summary" maxlength="280" rows="3"></textarea></label>
+          <div class="made-form-row">
+            <label>Category<select name="category">{options}</select></label>
+            <label>License <small>if it isn't the repository's</small><input name="licence" maxlength="60" autocomplete="off"></label>
+          </div>
+          <p class="made-error" data-error role="alert" hidden></p>
+          <div class="made-form-end">
+            <button type="button" class="made-quiet" data-close>Cancel</button>
+            <button type="submit" class="made-go" data-add-go>Add it</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog class="made-dialog made-dialog-wide" id="made-mine" aria-labelledby="made-mine-title">
+        <div class="made-dialog-head">
+          <h2 id="made-mine-title">My boards</h2>
+          <button type="button" class="made-quiet" data-close>Close</button>
+        </div>
+        <div class="made-mine" data-mine-list></div>
+        <div data-review hidden>
+          <h3>Waiting for your review</h3>
+          <div class="made-mine" data-review-list></div>
+        </div>
+      </dialog>
     </header>
 """
 
@@ -364,7 +404,6 @@ def made_page(green: list[Example], waiting: list[Example], things: list[Thing])
         f'<button type="button" data-category="{html.escape(c)}" aria-pressed="false">{html.escape(c)}</button>'
         for c in sorted(counts)
     )
-    categories = "".join(f'<option value="{c}">{c}</option>' for c in CATEGORIES)
     later = ""
     if len(waiting) == 1:
         later = f" {waiting[0].name} isn't here yet, because we haven't seen it pass every check. It'll show up when it does."
@@ -407,42 +446,7 @@ def made_page(green: list[Example], waiting: list[Example], things: list[Thing])
           <p>You log in with GitHub and add a board from one of your public repositories. Logging in with Google or Microsoft lets you like boards. Via's checks run on it in GitHub Actions, and once it passes and we've had a look, it shows up here with the others. You can hide it, check it again or take it down from "My boards". We'd also like to see what you're making in <a class="link" href="{DISCORD}">our Discord</a>.</p>
           <p>The first boards here are ours.{later}</p>
         </div>
-      </section>
-
-      <dialog class="made-dialog" id="made-add" aria-labelledby="made-add-title">
-        <form class="made-form" data-add-form novalidate>
-          <h2 id="made-add-title" data-add-title>Add your board</h2>
-          <p class="made-hint">Via checks a board from one of your public GitHub repositories. When it passes and we've had a look, it shows up here.</p>
-          <label data-source>Repository<input name="repo" placeholder="you/your-board" autocomplete="off" spellcheck="false"></label>
-          <div class="made-form-row" data-source>
-            <label>Folder <small>if it isn't at the top</small><input name="path" placeholder="boards/my-board" autocomplete="off" spellcheck="false"></label>
-            <label>Branch <small>if it isn't the default</small><input name="ref" placeholder="main" autocomplete="off" spellcheck="false"></label>
-          </div>
-          <label>Name<input name="name" maxlength="60" autocomplete="off"></label>
-          <label>What it is<textarea name="summary" maxlength="280" rows="3"></textarea></label>
-          <div class="made-form-row">
-            <label>Category<select name="category">{categories}</select></label>
-            <label>License <small>if it isn't the repository's</small><input name="licence" maxlength="60" autocomplete="off"></label>
-          </div>
-          <p class="made-error" data-error role="alert" hidden></p>
-          <div class="made-form-end">
-            <button type="button" class="made-quiet" data-close>Cancel</button>
-            <button type="submit" class="made-go" data-add-go>Add it</button>
-          </div>
-        </form>
-      </dialog>
-
-      <dialog class="made-dialog made-dialog-wide" id="made-mine" aria-labelledby="made-mine-title">
-        <div class="made-dialog-head">
-          <h2 id="made-mine-title">My boards</h2>
-          <button type="button" class="made-quiet" data-close>Close</button>
-        </div>
-        <div class="made-mine" data-mine-list></div>
-        <div data-review hidden>
-          <h3>Waiting for your review</h3>
-          <div class="made-mine" data-review-list></div>
-        </div>
-      </dialog>"""
+      </section>"""
     return shell(
         "Made with Via",
         "Boards made with Via that pass its checks: search them, sort them by parts, layers and size, and open each one in 3D.",
@@ -725,6 +729,78 @@ def added_page(things: list[Thing], top: str) -> str:
     )
 
 
+def profile_page(things: list[Thing], top: str) -> str:
+    """A person's profile, at made.via.computer/u/<id> (the owner's word, 2026-11-27: "there needs to
+    be a profile page"): their picture, name, GitHub login, when they joined and a line about them;
+    their boards and the boards they like. 1 page for everyone, which made.js fills from
+    /api/made?do=profile. The examples' cards wait in a template for the likes that name them."""
+    cards = "\n".join(card(t, i, "../") for i, t in enumerate(things))
+    body = f"""      <div class="made-profile-page">
+        <div class="made-wrap made-missing" data-missing hidden>
+          <h1>We couldn't find that person</h1>
+          <p>Nobody here has that address yet. <a class="link" href="/">All the boards</a></p>
+        </div>
+        <div class="made-profile" data-profile hidden>
+          <div class="made-profile-head">
+            <img class="made-profile-face" data-face alt="" width="128" height="128" hidden>
+            <span class="made-profile-face made-profile-initials" data-initials hidden></span>
+            <div class="made-profile-who">
+              <h1 data-name></h1>
+              <p class="made-profile-meta"><a class="link" data-github hidden></a><span data-joined></span></p>
+              <p class="made-profile-bio" data-bio></p>
+            </div>
+            <div class="made-profile-do" data-own hidden>
+              <button type="button" class="made-quiet" data-edit-profile>Edit profile</button>
+              <button type="button" class="made-go" data-open-mine>My boards</button>
+            </div>
+          </div>
+          <dl class="made-profile-counts">
+            <div><dt>Boards</dt><dd data-count-boards>0</dd></div>
+            <div><dt>Likes given</dt><dd data-count-likes>0</dd></div>
+            <div><dt>Likes on their boards</dt><dd data-count-received>0</dd></div>
+          </dl>
+        </div>
+        <div class="made-thing-body made-profile-body" data-profile-body hidden>
+          <div class="made-tabs-bar" role="tablist" aria-label="Their boards and likes"><button type="button" role="tab" id="tab-boards" aria-selected="true" aria-controls="panel-boards">Boards <span data-tab-boards>0</span></button><button type="button" role="tab" id="tab-likes" aria-selected="false" aria-controls="panel-likes" tabindex="-1">Likes <span data-tab-likes>0</span></button></div>
+          <section class="made-tab made-profile-tab" id="panel-boards" role="tabpanel" aria-labelledby="tab-boards">
+            <div class="made-grid" data-profile-boards></div>
+            <p class="made-hint" data-empty-boards hidden>No boards here yet.</p>
+          </section>
+          <section class="made-tab made-profile-tab" id="panel-likes" role="tabpanel" aria-labelledby="tab-likes" hidden>
+            <div class="made-grid" data-profile-likes></div>
+            <p class="made-hint" data-empty-likes hidden>No likes yet.</p>
+          </section>
+        </div>
+        <template data-example-cards>
+{cards}
+        </template>
+      </div>
+
+      <dialog class="made-dialog" id="made-profile-edit" aria-labelledby="made-profile-edit-title">
+        <form class="made-form" data-profile-form novalidate>
+          <h2 id="made-profile-edit-title">Edit profile</h2>
+          <label>Name<input name="name" maxlength="60" autocomplete="off"></label>
+          <label>About you <small>a line or two</small><textarea name="bio" maxlength="280" rows="3"></textarea></label>
+          <p class="made-error" data-error role="alert" hidden></p>
+          <div class="made-form-end">
+            <button type="button" class="made-quiet" data-close>Cancel</button>
+            <button type="submit" class="made-go">Save it</button>
+          </div>
+        </form>
+      </dialog>"""
+    return shell(
+        "A profile · Made with Via",
+        "A person's boards on Made with Via, and the boards they like.",
+        "",
+        "../",
+        body,
+        SCRIPTS,
+        home=HOME,
+        address="%MADE%/",
+        header=top,
+    )
+
+
 def pages() -> dict[Path, str]:
     """Every file this script writes, with its text."""
     green, waiting = listed(examples())
@@ -735,6 +811,7 @@ def pages() -> dict[Path, str]:
         MADE: made_page(green, waiting, things),
         LIKEABLE: likeable(green),
         PAGES / "board.html": added_page(things, top),
+        PAGES / "profile.html": profile_page(things, top),
     }
     for t in things:
         others = [o for o in things if o is not t]

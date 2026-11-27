@@ -16,6 +16,9 @@
 //   gates say GREEN and an admin (MADE_ADMINS) has looked at it: a board's own code runs in its check,
 //   so its result is the board's word until someone looks.
 // - A like is 1 file for each board and person; the count is the number of files.
+// - Each person has a profile at /u/<id> (the owner's word, 2026-11-27: "there needs to be a profile
+//   page"): their name, picture, a line about them, their boards and the boards they like. A person
+//   edits their own name and line.
 // - The check workflow also makes each board's Gerbers, and each example's, in Via's image, for the
 //   Order menu of the board's page: JLCPCB and PCBWay take them as 1 zip.
 //
@@ -34,7 +37,9 @@ export const ISSUER = "https://token.actions.githubusercontent.com";
 export const SESSION = "made_session";
 const STATE = "made_state";
 const DAY = 24 * 60 * 60;
-export const MOST = { name: 60, summary: 280, licence: 60, report: 20000, verdict: 200, boards: 20, picture: 3_000_000, zip: 4_000_000 };
+// A person's id: the way in, then its own id for them.
+export const PERSON = /^(google|microsoft|github)-[A-Za-z0-9_-]{1,100}$/;
+export const MOST = { bio: 280, name: 60, summary: 280, licence: 60, report: 20000, verdict: 200, boards: 20, picture: 3_000_000, zip: 4_000_000 };
 // The files the check workflow makes for a board, by kind: the Gerbers and drill files JLCPCB and
 // PCBWay take, in 1 zip.
 export const KINDS = ["gerbers"];
@@ -443,6 +448,53 @@ export async function made(request, ctx) {
       likes: counts[id] || 0,
       liked: Boolean(user && (by[user.id] || []).includes(id)),
       files: await filesOf(store, id),
+    });
+  }
+
+  if (step === "profile") {
+    const id = request.method === "POST" ? user?.id || "" : url.searchParams.get("id") || "";
+    if (request.method === "POST") {
+      if (!ours(request)) return refuse(403, "That came from another site.");
+      if (!user) return refuse(401, "You'll need to log in first.");
+      const data = await body(request);
+      const known = (await store.get(`made/users/${user.id}.json`)) || { ...user, first: now.toISOString() };
+      if ("name" in data) known.display = text(data.name, MOST.name);
+      if ("bio" in data) known.bio = text(data.bio, MOST.bio);
+      known.edited = now.toISOString();
+      await store.put(`made/users/${user.id}.json`, known);
+    }
+    if (!PERSON.test(id)) return refuse(404, "We couldn't find that person.");
+    const person = await store.get(`made/users/${id}.json`);
+    if (!person) return refuse(404, "We couldn't find that person.");
+    const own = Boolean(user && user.id === id);
+    const paths = (await store.list(`made/boards/${id}/`)).filter((p) => p.endsWith(".json"));
+    const theirs = (await Promise.all(paths.map((p) => store.get(p)))).filter((b) => b && (own || listed(b)));
+    theirs.sort((a, b) => (a.created < b.created ? 1 : -1));
+    const [all, { counts, by }] = await Promise.all([allBoards(store), likes(store)]);
+    const likedIds = by[id] || [];
+    return json({
+      person: {
+        id,
+        provider: person.provider,
+        name: person.display || person.login,
+        avatar: person.avatar || "",
+        bio: person.bio || "",
+        first: person.first || "",
+        github: person.provider === "github" ? person.login : "",
+      },
+      own,
+      boards: theirs.map((b) => shown(b, own)),
+      liked: {
+        examples: likedIds.filter((i) => EXAMPLES.includes(i)),
+        boards: all.filter((b) => likedIds.includes(b.id) && listed(b)).map((b) => shown(b, false)),
+      },
+      likes: counts,
+      myLiked: user ? by[user.id] || [] : [],
+      counts: {
+        boards: theirs.filter(listed).length,
+        likes: likedIds.length,
+        received: theirs.filter(listed).reduce((n, b) => n + (counts[b.id] || 0), 0),
+      },
     });
   }
 

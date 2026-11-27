@@ -5016,3 +5016,180 @@ main:has(.made-thing-wrap) {
   margin-top: 1.25rem;
   font-size: 0.8125rem;
 }
+
+/* A person's profile (made.via.computer/u/<id>): a white box with their picture, name, GitHub login,
+   when they joined and a line about them, their own buttons at the right, and 3 counts under it;
+   then the tabs of their boards and the boards they like, each a grid of cards. */
+.made-profile-page {
+  padding-bottom: 4rem;
+}
+
+.made-profile[hidden],
+.made-profile-body[hidden] {
+  display: none;
+}
+
+.made-profile {
+  max-width: 1440px;
+  margin: 1.5rem auto 0;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--edge);
+}
+
+@media (min-width: 1000px) {
+  .made-profile {
+    margin-inline: 1.5rem;
+    padding: 2rem;
+  }
+}
+
+@media (min-width: 1488px) {
+  .made-profile {
+    margin-inline: auto;
+  }
+}
+
+.made-profile-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem 1.5rem;
+}
+
+.made-profile-face {
+  width: 6rem;
+  height: 6rem;
+  flex: none;
+  border-radius: 999px;
+  object-fit: cover;
+  background: var(--secondary);
+  box-shadow: 0 0 0 3px var(--card), 0 0 0 4px var(--edge);
+}
+
+.made-profile-face[hidden] {
+  display: none;
+}
+
+.made-profile-initials {
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: 1.75rem;
+  font-weight: 650;
+}
+
+.made-profile-who {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.made-profile-who h1 {
+  font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.made-profile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin-top: 0.25rem;
+  font-size: 0.9375rem;
+  color: var(--muted-foreground);
+}
+
+.made-profile-meta [hidden] {
+  display: none;
+}
+
+.made-profile-bio {
+  max-width: 46rem;
+  margin-top: 0.75rem;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.made-profile-do {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.made-profile-do[hidden] {
+  display: none;
+}
+
+.made-profile-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2.5rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--edge);
+}
+
+.made-profile-counts div {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.made-profile-counts dt {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.made-profile-counts dd {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.made-profile-body {
+  max-width: 1440px;
+  margin: 1.5rem auto 0;
+  padding-inline: 0;
+}
+
+@media (min-width: 1000px) {
+  .made-profile-body {
+    margin-inline: 1.5rem;
+    padding-inline: 0;
+  }
+}
+
+@media (min-width: 1488px) {
+  .made-profile-body {
+    margin-inline: auto;
+  }
+}
+
+.made-profile-tab {
+  display: block;
+}
+
+.made-profile-tab[hidden] {
+  display: none;
+}
+
+.made-profile-tab .made-grid {
+  padding-block: 0;
+}
+
+a.thing-maker:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.thing-state[data-status="waiting"],
+.thing-state[data-status="checking"] {
+  color: var(--muted-foreground);
+}
+
+.thing-state[data-status="red"],
+.thing-state[data-status="error"] {
+  color: var(--status-red);
+}
