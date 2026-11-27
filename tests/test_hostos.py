@@ -556,6 +556,32 @@ def test_write_text_leaves_a_carriage_return_the_text_holds(hostos, tmp_path):
     assert path.read_bytes() == b"a\r\nb\n"
 
 
+# ------------------------------------------------------------------ installer_command
+
+
+def test_installer_command_on_linux_is_todays_line_of_next(hostos, monkeypatch):
+    """tools/guide.py:834 at cea464d: `sudo <src>/install.sh`."""
+    on(monkeypatch, "linux")
+    src = Path("/opt/workcenters/ee/src")
+    assert hostos.installer_command(src) == "sudo /opt/workcenters/ee/src/install.sh"
+
+
+def test_installer_command_on_macos_needs_no_sudo_and_quotes_a_space(hostos, monkeypatch):
+    on(monkeypatch, "darwin")
+    src = Path("/Users/ada/Library/Application Support/via/src")
+    assert hostos.installer_command(src) == f"'{src}/install-macos.sh'"
+    assert hostos.installer_command(Path("/opt/via")) == "/opt/via/install-macos.sh"
+
+
+def test_installer_command_on_windows_runs_the_powershell_script_in_double_quotes(hostos, monkeypatch):
+    """Double quotes hold a path in cmd.exe and in PowerShell alike; a Windows file name holds none."""
+    on(monkeypatch, "win32")
+    src = "C:\\Users\\Ada Lovelace\\AppData\\Local\\Via\\src"
+    said = hostos.installer_command(src)
+    assert said == f'powershell -NoProfile -ExecutionPolicy Bypass -File "{src}\\install.ps1"'
+    assert "sudo" not in said and "'" not in said
+
+
 # ------------------------------------------------------------------ the module
 
 # Run in a child process, so this session's import path and modules stay as they are: each pair is
@@ -653,3 +679,4 @@ def test_every_function_answers_on_every_platform(hostos, monkeypatch, tmp_path,
     assert set(hostos.kicad_dirs()) == {"symbols", "footprints", "3dmodels"}
     assert isinstance(hostos.awt_lib(tmp_path), Path)
     assert signal.SIGTERM in hostos.stop_signals()
+    assert isinstance(hostos.installer_command(tmp_path), str)
