@@ -54,7 +54,12 @@ same line and verdict into the report. With `--json`, stdout holds the
 gates' records alone, as before; the ratings line and the verdict line go
 to stderr.
 
-`workcenter doctor` reports each engine as ok, absent or MISSING. A gate
+`workcenter doctor` reports each engine as ok, absent or MISSING, or n/a
+(the xvfb row off Linux, where renders through Xvfb do not run). Its
+`kicad-python` and `pcbnew` rows are advisory: KiCad's own Python, asked
+as a child whether it imports pcbnew; `design --route` stitches pours
+there (`tools/kicadchild.py`). Off Linux, the `kicad-cli` and `ngspice`
+rows name the program found and where doctor looked. A gate
 whose engine is absent is skipped with the engine's name. Its first line
 reads `ok`, or `degraded` or `fail` with the names of what is absent:
 `workcenter ee: degraded, without freerouting`. `fail` is a required
@@ -97,6 +102,18 @@ honestly passes it.
 | Chip projects | this repo | `workcenter chip init <dir> --top NAME`, `workcenter chip gates <project>` (`tools/chipflow.py`, `tools/chipfront.py`, `tools/chipback.py`, a process table in `pdks/`); all 10 gates run and tests hold each; the acceptance processor (760 cells, a 40 ns clock, the sky130A process) is GREEN with `--strict` | the checkout; the engines in `<root>/chip` (`sudo ./install.sh --chip`) |
 
 On your own computer the install has no time limit: a slow line finishes, and apt gives up a stalled file by itself; to set one, pass it through sudo with env (`sudo env APT_DOWNLOAD_TIMEOUT=900 ./install.sh`). CI sets `APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570`, so a stall ends with apt's own line before the job's limit. Run the script as a file, not through a pipe or `bash <(...)`.
+
+The table is the toolchain of Linux (Ubuntu 24.04) and the image. macOS and Windows have installers
+of their own, for 1 user each, not yet run on either system: the first GitHub run of the desktop legs
+proves or refutes them (`INSTALL.md`, `ee-agent-kit/CI.md` "Windows and macOS").
+`install-macos.sh` installs Homebrew's Python 3.12 and ngspice, KiCad 10.0.8 from its pinned DMG into
+`/Applications/KiCad`, Temurin 21, the FreeRouting 1.9.0 jar and the venv under
+`~/Library/Application Support/via`, and a `workcenter` command in `~/.local/bin`. `install.ps1` installs
+KiCad 10.0.8 and Python 3.12 by winget for the user, Temurin 21, ngspice 47 (`ngspice_con.exe`), the
+jar and the venv under `%LOCALAPPDATA%\Via`, and puts `workcenter.cmd` on the user's PATH. Both check
+every download by its SHA256 from `toolchain/desktop.json`. Off Linux, openEMS, the chip flow, renders
+through Xvfb, and the tools that need pcbnew in the venv (`placement`, `inspect`, `copper`, the
+assembly pictures, the legend's ink rule) do not run; ngspice is 47 there, 42 on Ubuntu 24.04.
 
 ## Skills
 
@@ -548,7 +565,8 @@ procedure.
 Not a gate: `workcenter new <dir>` starts a board project
 (`tools/newboard.py`). It writes `design.py` from
 `templates/project/design.py` under the folder's name with a namespace of
-its own, `.gitignore`, `parts.csv` with the header `procure` reads, and
+its own, `.gitignore`, `.gitattributes` (`* -text`, so Git converts no
+line end of the project), `parts.csv` with the header `procure` reads, and
 `library/sources.csv` with the header `fetch --row` appends to; a
 `library/sources.csv` above, found as `fetch --row` finds it (it stops
 at the project's own `.git`), serves instead. A file that is there is
@@ -556,7 +574,10 @@ kept. A folder that holds `design.py`, `chip.json` or a KiCad project
 file is refused in 1 line, and so are an empty name and a path that
 cannot be written; every path is judged before the first write, so
 nothing is written. It runs no engine. `workcenter next` names it on a
-folder with no design.
+folder with no design. `--empty` makes the folder alone; `--deck
+<template>` copies `templates/project/sim/<template>.cir` and its
+`.expect.json` into the project's `sim/` under a free name (`--as`
+names it): the 2 steps `next` names, so no step needs `mkdir -p` or `cp`.
 
 Not a gate: `workcenter next <project>` names the one next step
 (`tools/guide.py`): what to do, the command, why, what to read, and when
@@ -618,7 +639,10 @@ the design's own, the step a board repository's CI runs. It holds the
 project's library tables (`fp-lib-table`, `sym-lib-table`) to what the
 design writes in its own folder: each project library named from that
 folder, never by an absolute path. It exits 1 on a difference, and on the
-design step's own exit 1 even when every file is the same (M85).
+design step's own exit 1 even when every file is the same (M85). A file
+that differs only in CRLF line ends is named `line ends`, with the fix:
+`* -text` in the project's `.gitattributes`, which `workcenter new`
+writes.
 
 Not a gate: `workcenter design <design.py> --rules-only` writes the
 project's copied fab rule file (`<name>.kicad_dru`) again, and no other
@@ -729,7 +753,9 @@ command does, and the server answers `ping` and other calls meanwhile;
 `notifications/cancelled` stops the command and its engines, and a
 `progressToken` gets each printed line as a progress notification. Closing
 stdin lets running calls finish; SIGTERM or Ctrl-C stops them, and on Linux
-so does a SIGKILL to the server. stdio only: no HTTP, no authentication.
+so does a SIGKILL to the server. On Windows (not yet run there) Ctrl-C and
+Ctrl-Break stop them; a server ended by force leaves its commands running,
+and it says so in 1 line: a host stops it by closing stdin. stdio only: no HTTP, no authentication.
 The `mcp` skill is the procedure.
 
 Not a gate: `workcenter highspeed <project> [--strict] [--verbose] [--out
@@ -989,7 +1015,7 @@ Not a gate: `workcenter image [--rev REV] [--json]` prints the content tag of th
 
 | Purpose | Path |
 |---|---|
-| Install root | `/opt/workcenters/ee` |
+| Install root | `/opt/workcenters/ee` on Linux and in the image; `~/Library/Application Support/via` on macOS; `%LOCALAPPDATA%\Via` on Windows (`WORKCENTER_ROOT`, `tools/hostos.py`) |
 | Engine environment | `/opt/workcenters/ee/env.sh` |
 | Tool cache | the session scratchpad; the engines write nothing outside the output directory |
 | Project output | `<project>/build/` (reports, `fab/`, `sim/`, `route/`, `render/`, `ratings/`, `board-rules/`, `measure/`, `fields/`, `copper/`, `highspeed/`) |

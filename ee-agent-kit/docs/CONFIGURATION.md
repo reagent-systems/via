@@ -41,23 +41,54 @@ unset variable never causes a failure.
 | `JVM_DIR` | path | `/usr/lib/jvm` | Where the JVM of the 21 is looked for: `java-21-openjdk-<arch>/bin/java`, the first in name order whose java runs and whose `lib/libawt_xawt.so` is there. install.sh records its path in `$WORKCENTER_ROOT/java.path`, and installs `openjdk-21-jre` when no such JVM has the library; another JVM's library under this folder does not count (the tests move it). |
 | `CA_BUNDLE` | path | `/etc/ssl/certs/ca-certificates.crt` | The certificates the first step looks for; when it is empty or absent, the first step installs `ca-certificates` (the tests move it). |
 
+## `install-macos.sh` (macOS)
+
+Not yet run on a Mac: the first run of CI's macOS leg proves or refutes it.
+
+| Field | Type | Default | Use |
+|---|---|---|---|
+| `WORKCENTER_ROOT` | path | `~/Library/Application Support/via` | The root: Java 21 (`java21`), `java.path`, FreeRouting, the venv, and `downloads/`, where the KiCad DMG and the Java archive are kept for a run again (and for CI's cache). |
+| `WORKCENTER_LINK` | path | `~/.local/bin/workcenter` | The `workcenter` command it writes: a bash file that sets the root, the engines' paths and KiCad's library folders, then runs the venv's Python on `tools/workcenter`. |
+| `KICAD_DIR` | path | `/Applications/KiCad` | Where KiCad 10.0.8 is copied. Another KiCad there stops the run; `KICAD_DIR="$HOME/Applications/KiCad"` puts 10 beside it with no sudo. |
+| `--dry-run` | flag | off | Print every step and every command; run none, write nothing. |
+| `--yes` | flag | off | Answer yes to the questions (sudo, when `/Applications` is not writable). |
+| `--check` | flag | off | Run `workcenter doctor` only. |
+| `toolchain/desktop.json` | file | in the checkout | The pins: each tool's `macos` entry (KiCad's DMG, Java's archive by machine), `ngspice.macos_formula`, `python.macos_formula`, `homebrew`, `freerouting`. |
+
+## `install.ps1` and `workcenter.cmd` (Windows)
+
+Not yet run on Windows: the first run of CI's Windows leg proves or refutes them.
+
+| Field | Type | Default | Use |
+|---|---|---|---|
+| `-Root` | parameter of `install.ps1` | `%LOCALAPPDATA%\Via` | The root: Java 21 (`java21`), ngspice, FreeRouting, the venv, `bin\workcenter.cmd`. |
+| `-Downloads` | parameter of `install.ps1` | `<Root>\downloads` | Where downloads are kept and used again (CI's cache keeps this folder). |
+| `-Yes` | switch of `install.ps1` | off | Answer yes to each question. Without it, a run with nobody to answer stops at the first question with exit 4. |
+| `-DryRun`, `-WhatIf` | switch of `install.ps1` | off | Print every step and run none. |
+| `toolchain/desktop.json` | file | in the checkout | The pins: each tool's `windows_x64` entry (with the tool's `version` when the entry names none) and `freerouting`. |
+| `WORKCENTER_ROOT` | path, read by `workcenter.cmd` | `%LOCALAPPDATA%\Via` | Whose `venv\Scripts\python.exe` runs `tools\workcenter`. |
+| `NGSPICE`, `KICAD_CLI` | command, set by `workcenter.cmd` when unset | where install.ps1 or winget put them | The engines, when PATH does not name them. |
+| `PYTHONUTF8` | `1`, set by `workcenter.cmd` when unset | `1` | Python's UTF-8 mode, so a text read or written without an encoding is UTF-8 on Windows too. |
+
 ## `tools/workcenter`
 
 | Field | Type | Default | Use |
 |---|---|---|---|
-| `WORKCENTER_ROOT` | path | `/opt/workcenters/ee` | Locates the venv and the JAR. Doctor's `requirements` row holds the venv `$WORKCENTER_ROOT/venv` to the `requirements.txt` of the checkout the `workcenter` script lives in; the venv's Python is asked for its `sys.path` and marker environment (up to 60 s), and no pip runs. |
+| `WORKCENTER_ROOT` | path | `/opt/workcenters/ee` on Linux, `~/Library/Application Support/via` on macOS, `%LOCALAPPDATA%\Via` on Windows (`tools/hostos.py` `default_root`) | Locates the venv (`venv/bin/python`, on Windows `venv\Scripts\python.exe`) and the JAR. Doctor's `requirements` row holds the venv `$WORKCENTER_ROOT/venv` to the `requirements.txt` of the checkout the `workcenter` script lives in; the venv's Python is asked for its `sys.path` and marker environment (up to 60 s), and no pip runs. |
 | `FREEROUTING_JAR` | path | `$WORKCENTER_ROOT/freerouting/freerouting.jar` | The autoroute engine. |
 | `FREEROUTING2_JAR` | path | `$WORKCENTER_ROOT/freerouting2/freerouting.jar` | The jar of `--router freerouting2`, FreeRouting 2.5.0. |
 | `FREEROUTING2_JAVA` | command | `$WORKCENTER_ROOT/java25/bin/java` | The Java that runs it; Java 25 or newer, else the router is absent. |
-| `KICAD_CLI` | command | `kicad-cli` | The KiCad engine. |
-| `NGSPICE` | command | `ngspice` | The simulation engine. |
-| `JAVA` | command | the path in `$WORKCENTER_ROOT/java.path`; the first java on PATH when there is no record, or when the record cannot be read, holds more than 1 line, or names a java that fails the check below and the one on PATH passes it | Runs the FreeRouting 1.9.0 JAR, for `autoroute` and for `design --route`; doctor reads the same java. Set, it comes before the record and PATH. Every java is held to 1 check: it is there, its JVM (links resolved) has `lib/libawt_xawt.so`, and it is Java 21 or newer (from the JVM's `release` file, else `-version`). When the picked java fails it, the route and `autoroute` are skipped with the java, where it came from and why, and doctor says absent with the same reason. |
-| `KICAD10_3DMODEL_DIR` | path | `/usr/share/kicad/3dmodels` | Where `render` looks for the library 3D bodies footprints name, to list the parts drawn without one (`KICAD9_` and `KICAD8_3DMODEL_DIR` likewise). |
+| `KICAD_CLI` | command | `kicad-cli` on PATH; on macOS and Windows then the install's program (`ee-agent-kit/docs/ENGINES.md`) | The KiCad engine. On macOS and Windows it also names the install whose Python (`kicad-python`, `pcbnew` rows; `tools/kicadchild.py`) and library folders Via reads. |
+| `NGSPICE` | command | `ngspice` on PATH; on macOS then Homebrew's (`/opt/homebrew/bin`, `/usr/local/bin`); on Windows `ngspice_con`, then `ngspice`, on PATH and in `C:\Spice64\bin` | The simulation engine. |
+| `LOCALAPPDATA`, `ProgramFiles` | folder | Windows' own | Windows only: `LOCALAPPDATA` holds the default root and the default lock folder (`%LOCALAPPDATA%\Via`, `%LOCALAPPDATA%\Via\lock`) and KiCad's per-user install (`Programs\KiCad\10.0`); `ProgramFiles` holds KiCad's machine install. |
+| `JAVA_HOME` | path | unset | Read on macOS for Apple's `/usr/bin/java` launcher and on Windows for a `javapath` launcher: the JVM the java check holds. Not read on Linux. |
+| `JAVA` | command | the path in `$WORKCENTER_ROOT/java.path`; the first java on PATH when there is no record, or when the record cannot be read, holds more than 1 line, or names a java that fails the check below and the one on PATH passes it | Runs the FreeRouting 1.9.0 JAR, for `autoroute` and for `design --route`; doctor reads the same java. Set, it comes before the record and PATH. Every java is held to 1 check: it is there, its JVM (links resolved; on macOS `/usr/bin/java` leads to `JAVA_HOME` or `/usr/libexec/java_home`; on Windows a `javapath` launcher leads to `JAVA_HOME`) has its system's AWT library (`lib/libawt_xawt.so` on Linux, `lib/libawt_lwawt.dylib` on macOS, `bin\awt.dll` on Windows), and it is Java 21 or newer (from the JVM's `release` file, else `-version`). When the picked java fails it, the route and `autoroute` are skipped with the java, where it came from and why, and doctor says absent with the same reason. Off Linux, a java with no JDK behind it (a Scoop or asdf shim, Oracle's javapath, Apple's launcher with no JDK) is refused with a line that names this variable. |
+| `KICAD10_3DMODEL_DIR` | path | the install's 3dmodels folder (`/usr/share/kicad/3dmodels` on Linux) | Where `render` looks for the library 3D bodies footprints name, to list the parts drawn without one (`KICAD9_` and `KICAD8_3DMODEL_DIR` likewise). |
 | `OPENEMS` | command | `$WORKCENTER_ROOT/openems/bin/openEMS`, else `openEMS` on `PATH` | The field solver `workcenter fields` runs; `doctor` reports it. |
 | `KIKIT_PYTHON` | command | the venv's Python (`$WORKCENTER_ROOT/venv/bin/python`) | The Python that imports KiKit; EXPORT runs `tools/panel.py` with it for a project that holds `panel.json`. |
 | `KISTACK_DIR` | path | `<checkout>/third_party/kistack` | The kistack copy whose `skills/layout-placement/scripts` `workcenter placement` runs. |
 | `SOURCE_DATE_EPOCH` | integer, seconds since 1970-01-01 00:00:00 UTC | unset: the clock, read once at the command's start | Pins the day and the time a command writes into a file: the gates report's `GREEN on <day>`, the ledger's `at` of `references`, the card's `Updated` and `build/verify.json`'s `time`. It does not pin a judgement of now: `procure` and `costs` judge a price's age, and `fetch` writes its `Checked`, on the machine's day of the same run; the engine lock's times are the machine's clock. The pinned day is the moment's day in UTC; unset, the machine's local day. A value that is no integer, or a moment outside years 1 to 9999, ends the command with exit 1 and 1 line (SOURCE_DATE_EPOCH specification, revision 1.1, section SOURCE_DATE_EPOCH). A shell that exports it for other builds pins those days too. |
-| `WORKCENTER_LOCK_DIR` | absolute path | `/tmp/workcenter-lock-<uid>` (`/tmp/workcenter-lock-0` for root), whatever TMPDIR says | The engine lock's folder: 1 per machine and user, never inside a project. Each run of a long command keeps 1 ticket file there while it waits and runs. A path that is a file, a link, relative or not writable, or (the default only) another user's folder, is refused in 1 line that names the setting, the path and why (exit 2). |
+| `WORKCENTER_LOCK_DIR` | absolute path | `/tmp/workcenter-lock-<uid>` (`/tmp/workcenter-lock-0` for root) on Linux and macOS, whatever TMPDIR says; `%LOCALAPPDATA%\Via\lock` on Windows, with no owner check there | The engine lock's folder: 1 per machine and user, never inside a project. Each run of a long command keeps 1 ticket file there while it waits and runs. A path that is a file, a link, relative or not writable, or (the default only) another user's folder, is refused in 1 line that names the setting, the path and why (exit 2). |
 | `WORKCENTER_LOCK` | `off` or empty | empty (on) | `off` (or `0`, `no`, `false`): no command takes the lock or waits on it. |
 | `WORKCENTER_LOCK_EVERY` | seconds | `30` | How often a waiting run repeats its line (at least 0.05). |
 | `WORKCENTER_LOCK_LOG` | path (absolute) | unset: stderr | Where a waiting run writes its 2 lines (`waiting on the engine lock`, `took the engine lock after`): appended to this file. A test session names 1 (`tests/conftest.py`), so another session's run adds no line to the stderr a test compares. A file that cannot be written loses no line: they go to stderr. Every other line, and the line of a run stopped by a signal, stays on stderr. |
@@ -81,6 +112,9 @@ unset variable never causes a failure.
 | `--keep` | sim | off | Run each deck from `<out>/sim/run/<deck>/`, a deck the gate runs in place too (with the deck folder's own `.spiceinit`), leave the folder, and print the one command that reruns it by hand: `env -C <run folder> ngspice -b <deck>.cir` (M94). |
 | `PROJECT` | next | none | The project directory. `next` prints the one next step for it: `NEXT` (what to do), `RUN` (the command), `WHY`, `READ` (the section that explains it) and `DONE WHEN`; with `--json`, the same as an object. Exit 0 when nothing is left, 1 when a step is; a finished project gets no `RUN` line. It reads `build/gates.json` and `build/verify.json` and writes nothing. |
 | `--trust-design` | next | off | Do not run `design --check` on the project's design file. That check takes a few seconds and needs the KiCad libraries; without it the KiCad files are taken to match the design file. |
+| `--empty` | new | off | Make the folder alone and write nothing in it: `next`'s step for a folder that is not there. |
+| `--deck TEMPLATE` | new | none | Copy `templates/project/sim/TEMPLATE.cir` and its `.expect.json` into the folder's `sim/`, under a name `sim/` does not hold; a folder that holds a design takes it. `next`'s step for a deck the board asks for. |
+| `--as NAME` | new | the template's name, else a free one | With `--deck`: the copy's name, `sim/NAME.cir`. |
 | `--nominal` | sim | off | Run each deck as written only. The corners of `sim/corners.json` are left out, and the result names that as a warning, so a quick run is never taken for a full one. |
 | `--bundle DIR` | sim | none | Also write each deck into `DIR/<deck>/` as a folder any machine with ngspice runs: `run.sp` (sets the mode the models need, changes to its own folder, then reads the deck), the deck with its includes pointing into `models/`, every included file there (the translated copy where its row lists fixes), the other files of the deck's folder, `expect.json`, `measures.json` and `README.md`. The command then runs each folder from a copy in another place with an empty home folder and fails when a measure differs from the gate's (M105). An earlier bundle in `DIR/<deck>/` is replaced; a folder of that name that holds no `run.sp` is refused. The receiver runs `ngspice -b run.sp`. |
 | `URL` | fetch | none; give it or `--file` | The maker's URL for one file. Fetched once under Via's own user agent; a refusal is reported and never retried. A body that is empty, cut short, served as `text/html`, starting as an HTML page, or a `.pdf` that does not start `%PDF` is refused and nothing is written. |
@@ -330,7 +364,9 @@ part by `mpn` or `mpns` and whose `source.sha256` is a row of
 | `WORKCENTER_ENGINE_LOG` | path | a temp file per pytest run | Where each engine start of a test run is written; the `engine` marker is held against it. |
 | `-p testshards` | pytest option of `make verify-site` | on | Ends the run with its `not judged:` lines and writes `not-judged.txt` into pytest's base folder (`verify/testshards.py`). |
 | `TESTSHARDS_HIDES` | environment variable, set by `make verify-site` | `KiCad's symbol and footprint libraries and every engine` | What the lane hides on purpose. With it set, the `not judged:` lines start with what the run hides, and a mark's groups say `in this run`, not `on this machine`. Unset elsewhere. |
-| `--repo`, `--base`, `--head`, `--paths`, `--github-output` | `tools/ci/scope.py` flags | repo: here; head: the working tree | The change to judge; an empty `--base` is full; `--github-output` appends `scope=<answer>` to `$GITHUB_OUTPUT`. |
+| `--repo`, `--base`, `--head`, `--paths`, `--github-output` | `tools/ci/scope.py` flags | repo: here; head: the working tree | The change to judge; an empty `--base` is full; `--github-output` appends `scope=<answer>` and `desktop=yes` or `desktop=no` to `$GITHUB_OUTPUT`. |
+| `--desktop` | `tools/ci/scope.py` flag | off | Ask the Windows and macOS legs whatever the paths (the scope step passes it on a push to main). Without it a path of `DESKTOP_FILES` or `DESKTOP_FOLDERS`, no base, or a diff git cannot read asks them. |
+| `--repo`, `--workcenter`, `--python`, `--work`, `--only STEP...`, `--list` | `tools/ci/desktop_smoke.py` flags | the checkout, `workcenter` on PATH, this Python, a new folder | The smoke of a Windows or macOS leg: which checkout, which installed command, the Python with pytest, where the fixtures' copies and logs go, the steps to run alone, or the steps' list. A step's bound is 900 s, the tests' 1800 s; a pipe still held after the kill is waited on 30 s. |
 | `CI_APT_UBUNTU_ARCHIVE` | repository variable (Settings, Secrets and variables, Actions, Variables) | unset | `0` leaves the runner's apt files as they are on CI's install path and in the nightly run; anything else runs `tools/ci/apt_archive.sh`, which keeps the runner's mirror and Ubuntu's own archive in the mirror list, sets their priorities fastest first by a sample of 1 MiB from each, at most 5 s, and writes `/etc/apt/apt.conf.d/80apt-archive-ci` (a 15 s timeout and no retry on the same host: a file whose host is silent goes to the next host). In `apt-get update` only: install.sh's download sets its own retries and timeout on apt's command line, which win. Anything but `0` also sets install.sh's `APT_SLOW_PASS_COMMAND` to the script's `--slow` mode. |
 | `verdict` as a required check | the repository's settings (Settings, Branches, the rule of `main`) | not stated here | When it is required, GitHub refuses to merge a pull request whose `verdict` is not green. It is a setting, not a file; no document says whether it is on, nor whether GitHub's rule that a branch be up to date is on. |
 | `APT_ARCHIVE_CI`, `APT_DIR` and the 1 argument | `tools/ci/apt_archive.sh` | the argument, else `APT_DIR`, else /etc/apt | The folder of apt's files to change. The script refuses /etc/apt unless `APT_ARCHIVE_CI=1`, which the workflows set; a test gives it a folder of its own. Exit 0 when it ran, 2 when it refused or found no folder. |
@@ -342,10 +378,12 @@ part by `mpn` or `mpns` and whose `source.sha256` is a row of
 
 | Field | Type | Default | Use |
 |---|---|---|---|
-| `verify/shards.csv` | CSV: `file`, `seconds`, `engine`, `alone` | 105 rows and `*` | Each test file's seconds in a shard, whether it starts an engine (its `no` files run first in a shard), and why it must run alone (it runs in the shard `serial`, after the others). `*` is the row for a file not listed (41.9 s). `verify/README.md` says how to keep it true. |
+| `verify/shards.csv` | CSV: `file`, `seconds`, `engine`, `alone` | 114 rows and `*` | Each test file's seconds in a shard, whether it starts an engine (its `no` files run first in a shard), and why it must run alone (it runs in the shard `serial`, after the others). `*` is the row for a file not listed (41.9 s). `verify/README.md` says how to keep it true. |
 | `--jobs` | flag of `verify/testshards.py run` | the processors (`os.cpu_count()`) | How many shards run side by side. |
 | `--work` | flag of `verify/testshards.py run` | a new folder under `$TMPDIR` | Where the shards' logs go. A folder named here is kept, and must be empty or new; a folder of its own is deleted when green, or kept with `not-judged.txt` alone when a test was not judged, and kept whole when red. |
 | `--table` | flag of `verify/testshards.py run` and `table` | `verify/shards.csv` | The table the files are split by, or written from. |
+| `--only LIST` | flag of `verify/testshards.py run` | unset: every test file | Run only the files a CSV with a `file` column names; with a `runs` column, its `desktop` rows. A name that is not a test file, or a list that names none, exits 2 before the work folder is made. |
+| `verify/desktop.csv` | CSV: `file`, `runs`, `reason` | 1 row per test file | Where each test file runs: `desktop` (Linux, macOS and Windows), `posix` (not Windows), `linux` (Linux only). `tests/conftest.py` skips a file at collection where its row leaves the system out, with the row's reason; `tests/test_desktop.py` fails on a test file with no row. |
 | `not-judged.txt` | file in the `--work` folder, or in pytest's base folder under `make verify-site` | written only when a test or a file was skipped | Every test the run did not judge for a reason of where it ran: skipped by a mark, inside the test, or with its whole file at collection, by reason. The summary's last `not judged:` line names it. |
 
 ## The container image (`Dockerfile`, `.github/workflows/image.yml`, `tools/image.py`)
@@ -534,8 +572,9 @@ checkout) and `--json` stand before the listing's name.
 
 | Field | Type | Default | Use |
 |---|---|---|---|
-| `KICAD_SYMBOL_DIR` | path | `/usr/share/kicad/symbols` | Symbol libraries to read. |
-| `KICAD_FOOTPRINT_DIR` | path | `/usr/share/kicad/footprints` | Footprint libraries to read. |
+| `KICAD_SYMBOL_DIR` | path | `/usr/share/kicad/symbols` on Linux; the install's `symbols` folder on macOS and Windows (`tools/hostos.py` `kicad_dirs`) | Symbol libraries to read. |
+| `KICAD_FOOTPRINT_DIR` | path | `/usr/share/kicad/footprints` on Linux; the install's `footprints` folder on macOS and Windows | Footprint libraries to read. |
+| `KICAD10_SYMBOL_DIR`, `KICAD10_FOOTPRINT_DIR` | folder | the install's | KiCad's own variables for its libraries. Read on macOS and Windows after `KICAD_SYMBOL_DIR` and `KICAD_FOOTPRINT_DIR`; not on Linux, where Via's own variables do that job. |
 | `FREEROUTING_JAR` | path | `/opt/workcenters/ee/freerouting/freerouting.jar` | Used by `route()`. |
 | `Design.files` | dict | `{}` | Text files `workcenter design` writes beside the project, by path under it: a block's deck, `ratings.json`, `parts.csv`. A path that is absolute, climbs out with `..`, names the project folder, or names a file `write()` makes itself is refused before anything is written. |
 | `place_designators` | bool | `False` | `True`: the board is written with every designator placed round its part (tools/legend.py), the same on every run. |

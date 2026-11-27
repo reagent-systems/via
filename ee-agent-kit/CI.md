@@ -196,6 +196,13 @@ Not confirmed until the first run of the merged branch on GitHub; that run answe
 - `wsl --install` works on windows-latest without a restart.
 - The WSL job shows red in the run's list of jobs when its last step fails, though the job is marked `continue-on-error` (its summary line says the state either way).
 - The time of each leg, for its limit.
+- Every macOS and Windows value of `tools/hostos.py` (the bundle's and the install's paths, KiCad's Python and its pcbnew, the AWT library, msvcrt's lock, taskkill, SIGBREAK), and the pins of `toolchain/desktop.json` as each installer downloads them.
+
+Nothing in this section has run on a Mac or on Windows yet: the first run of this branch's legs proves or refutes it, and the README and `INSTALL.md` say "not yet proven" until it has.
+
+On macOS and Windows a test file is judged when `verify/desktop.csv` names it `desktop`; a `posix` row is skipped at collection on Windows, and a `linux` row on both, each with its row's reason in the `not judged:` lines. The table is the source; this file does not copy it. The tests' engine guard (`tools/ci/guard/engine_watch.py`) knows an engine by `hostos.program_name` there: `kicad-cli.exe` is kicad-cli, and `ngspice_con` is an engine.
+
+Step 8 runs the tests with the venv's Python and the runner's own `PATH`. The tests that skip on `shutil.which("kicad-cli")` or `"ngspice"` find neither on macOS, where KiCad sits in its bundle and the installer names it only in the `workcenter` command it writes, and may not on Windows, where winget's KiCad is not on `PATH` for the step: those tests are not judged on the legs until the step puts the installer's engines on its `PATH` (left).
 
 ## What GitHub does not judge
 

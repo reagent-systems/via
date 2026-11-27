@@ -54,6 +54,16 @@ CI's `full` job the build had taken about 669 s of the file's 674.6 s
 `tests/test_no_home.py`'s 1.5 s were measured alone on 2026-11-19, 1 run,
 with no lock (it starts no engine): `6 passed in 1.53s`.
 
+## Only the files a list names
+
+`run --only <list>` runs the files a list names: a CSV with a `file` column, and with a `runs`
+column its `desktop` rows. `verify/desktop.csv` is that list for macOS and Windows: every test
+file with where it runs (`desktop`, `posix`, `linux`) and why. 1 process collects the same files,
+so the ids still match. The clean-up ends each shard's tree through `tools/hostos.py`
+(`kill_tree`: its process group on Linux and macOS, taskkill on Windows), and the runner stops
+on `hostos.stop_signals()`. A new test file needs a row in `verify/desktop.csv`:
+`tests/test_desktop.py` fails without one. Nothing has run on macOS or Windows yet.
+
 ## How the split works
 
 1. The files are sorted by their seconds, the longest first.
