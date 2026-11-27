@@ -227,6 +227,35 @@ order and stop at the first red. The last line of a run is the verdict:
 GREEN, RED or SKIPPED. The fabrication outputs of a GREEN board are in
 `build/fab/`.
 
+## Install
+
+You can hand Via's install to your coding agent: Claude Code, Codex, Cursor, Copilot, Gemini CLI or
+any other. Paste this to it:
+
+```text
+Set up Via on this computer for me.
+Read https://raw.githubusercontent.com/reagent-systems/via/main/INSTALL.md and follow it step by step.
+Ask me before any command that needs sudo, an administrator, a restart, or a large download.
+Stop when its "Done when" holds, and show me the last lines of each check.
+If a step fails twice, stop and tell me what it printed.
+```
+
+By hand, [INSTALL.md](INSTALL.md) has every step, its check, and what to do when it fails. Each
+installer runs from a clone of Via (`git clone https://github.com/reagent-systems/via`):
+
+| Computer | Command | State |
+|---|---|---|
+| Linux, Ubuntu 24.04 | `sudo ./install.sh` | Proven on GitHub's runners (ubuntu-24.04). |
+| macOS, Apple Silicon | `./install-macos.sh` | Not yet proven: the first CI run will say (macos-latest). |
+| macOS, Intel | `./install-macos.sh` | Best effort: no CI job runs on an Intel Mac. |
+| Windows 10 or 11, native (x64) | `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1` | Not yet proven: the first CI run will say (windows-latest). It needs Via's Windows port, which is not on `main` yet. |
+| Windows 10 or 11, WSL2 | `wsl --install -d Ubuntu-24.04` as an administrator, a restart, then the Ubuntu row inside Ubuntu | Not yet proven: the first CI run will say (an experimental leg on windows-latest). |
+| Docker, on any of them | `docker run --rm ghcr.io/reagent-systems/via:main` | Not proven, and no GitHub runner can prove it on macOS or Windows (Docker Desktop). The image build runs the gates in it on Linux, amd64 and arm64. Today ghcr.io refuses an anonymous pull of it; `ghcr.io/thyfriendlyfox/via:main`, older, answers one. |
+
+Install is done when `workcenter doctor` says `ok`, the gates say GREEN on
+`tests/boards/pass-first-design`, and RED on `tests/boards/fail-drc-clearance`: lines 2 to 4 of
+the quick start below.
+
 ## Quick start
 
 ```sh
@@ -355,7 +384,7 @@ docker run --rm -v "%cd%:/work" ghcr.io/reagent-systems/via:v0.1.0 workcenter ga
 - On arm64 (an Apple Silicon Mac, a Windows on Arm PC) the image has no openEMS; `--platform linux/amd64` runs the amd64 image, with openEMS, under emulation.
 - Docker Desktop on Windows and macOS runs Linux containers, and this image is a Linux image (Ubuntu 24.04).
 - The chip engines are not in the image; `sudo ./install.sh --chip` installs them on Ubuntu 24.04.
-- The image build runs the Linux command on Linux; nobody has run these commands on Windows or macOS yet.
+- The image build runs the Linux command on Linux, on amd64 and arm64. No GitHub runner runs Docker Desktop, so on Windows and macOS these commands are proven only by a person's run; none is recorded yet.
 
 A board repository gets the gates on every pull request from 1 workflow that calls `reagent-systems/via/.github/workflows/board-gates.yml@main`: 1 job per project folder, the gates table in the job's summary, a red check on RED, SKIPPED, or a project with no board to judge. It runs in Via's public image, and installs with install.sh where the registry holds no image of that toolchain. The `board-ci` skill holds the caller.
 

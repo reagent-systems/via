@@ -12,6 +12,10 @@ Read in this order:
    every mistake lands in `ee-agent-kit/MISTAKES.md` with its process, in
    the same PR.
 
+Setting Via up on a computer (Linux, macOS, Windows, or Docker): follow
+`INSTALL.md` step by step until its "Done when" holds. Ask the person
+before sudo, an administrator, a restart, or a large download.
+
 On a board, `workcenter next <project>` names the one next step: what to
 do, the command, why, what to read, and when the step is done. Follow it
 until it says nothing is left. A chip project, a folder with `chip.json`,
