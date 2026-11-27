@@ -348,8 +348,13 @@ def test_2_installs_of_1_package_in_1_folder_are_a_fault(tmp_path):
     assert row["missing"] == [] and row["other"] == [] and row["version"] == "1 of 1 pins met"
     assert row["ok"] is False and len(row["broken"]) == 1
     # 2 metadata folders of 1 version (Ubuntu's python3-cryptography ships a dist-info and an
-    # egg-info): the version does not hang on the order, so no fault.
-    row = check(tmp_path / "3", "a==1.0\n", ("a", "a", "1.0"), ("y", "y", "41.0.7"), ("Y", "y", "41.0.7"))
+    # egg-info): the version does not hang on the order, so no fault. The 2 folders differ by more
+    # than case: macOS's and Windows' file systems ignore case, and `Y-41.0.7.dist-info` beside
+    # `y-41.0.7.dist-info` was 1 folder there (run 46067841222: FileExistsError).
+    site = tmp_path / "3" / "venv" / "lib" / "python3.12" / "site-packages"
+    raw_dist(site, "y-41.0.7.egg-info", b"Metadata-Version: 2.1\nName: y\nVersion: 41.0.7\n")
+    row = check(tmp_path / "3", "a==1.0\n", ("a", "a", "1.0"), ("y", "y", "41.0.7"))
+    assert len(list(site.glob("y-41.0.7.*-info"))) == 2
     assert row["ok"] is True and row["broken"] == []
 
 
