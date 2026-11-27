@@ -743,6 +743,36 @@ def copy_deck(cli, project, quoted: str, stem: str, line: str, gates: str) -> St
     )
 
 
+def kicad_python_step(cli, project) -> Step | None:
+    """The step for a generated board with a pour where KiCad's own Python is not found: `design
+    --route` stitches the pours with KiCad's pcbnew, run in that Python (tools/kicadchild.py), and
+    without it leaves the islands to the DRC. On Linux the venv's Python stands in, so this never
+    comes; on macOS and Windows the installer puts KiCad in."""
+    pcb = project.pcb
+    if not ((project.dir / "design.py").is_file() and pcb and pcb.is_file()):
+        return None
+    if "(zone" not in pcb.read_text(encoding="utf-8", errors="replace"):
+        return None
+    import kicadchild
+
+    if kicadchild.python() is not None:
+        return None
+    if sys.platform == "darwin":
+        run = str(cli.SRC_DIR / "install-macos.sh")
+    elif sys.platform == "win32":
+        run = f"powershell -ExecutionPolicy Bypass -File {cli.SRC_DIR / 'install.ps1'}"
+    else:
+        run = f"sudo {cli.SRC_DIR / 'install.sh'}"
+    return Step(
+        "Install KiCad 10 with its own Python: `design --route` stitches the pours with KiCad's pcbnew, "
+        "run in that Python, and none is found.",
+        run,
+        f"{pcb.name} has a pour, and {kicadchild.NOT_FOUND}",
+        "ee-agent-kit/docs/ENGINES.md",
+        "`workcenter doctor` shows the pcbnew row ok",
+    )
+
+
 def next_step(cli, target: str, run_check=True) -> Step:
     """The first step a project has not done. `run_check` runs `design --check` for a project with a
     design file (a few seconds); without it the design file is trusted to match."""
@@ -836,6 +866,10 @@ def next_step(cli, target: str, run_check=True) -> Step:
             "ee-agent-kit/docs/ENGINES.md",
             f"`{wc} doctor` prints ok or degraded",
         )
+
+    stitch = kicad_python_step(cli, project)
+    if stitch is not None:
+        return stitch
     design = project.dir / "design.py"
     if design.is_file() and run_check:
         # The check imports the design file. Bytecode beside it would be a file `next` wrote.
