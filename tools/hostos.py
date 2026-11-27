@@ -2,7 +2,8 @@
 
 Each function reads `sys.platform` when it is called ("linux", "darwin", "win32"), never `os.name`, so a
 test sets the platform with 1 attribute. On Linux each returns what the code returns today; the comment
-of each names the file and line that holds that value at main cea464d. No caller uses this module yet.
+of each names the file and line that holds that value at main cea464d. tools/enginelock.py calls
+lock_dir, user_id, lock_file, unlock_file, flock_files and stop_signals; no other caller uses it yet.
 
 The macOS and Windows values come from vendor documents and build files, named beside each. None was
 seen on a Mac or a Windows machine: each is marked "not confirmed in a run" until a run there shows it.
