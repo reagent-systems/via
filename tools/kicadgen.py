@@ -201,13 +201,19 @@ def lib_uri(lib: Path, project: Path) -> str:
 def lib_table_at(text: str, written_in: Path, project: Path) -> str:
     """A library table that was written into `written_in`, as the same design writes it into `project`:
     each library named from the folder the table lies in. `design --check` regenerates into a scratch
-    folder, and holds the project's own tables to this."""
+    folder, and holds the project's own tables to this. A library named by its absolute path is one
+    lib_uri found no relative path to from `written_in` (a scratch folder on drive C:, the library on D:,
+    as on GitHub's Windows runner in run 46067841222): it is named from the project too."""
 
     def moved(found: re.Match) -> str:
         uri = found.group(1)
-        if not uri.startswith(KIPRJMOD):
+        if uri.startswith(KIPRJMOD):
+            lib = Path(written_in) / uri[len(KIPRJMOD) :]
+        elif Path(uri).is_absolute():
+            lib = Path(uri)
+        else:
             return found.group(0)
-        return f'(uri "{lib_uri(Path(written_in) / uri[len(KIPRJMOD) :], project)}")'
+        return f'(uri "{lib_uri(lib, project)}")'
 
     return URI_RE.sub(moved, text)
 

@@ -1760,6 +1760,34 @@ SHARED_LIB_PY = DIVIDER_PY.replace(
 )
 
 
+def test_a_table_written_where_no_relative_path_reached_the_library_reads_as_the_projects(
+    tmp_path, monkeypatch
+):
+    """`design --check` writes into a scratch folder under %TEMP%, on drive C: of GitHub's Windows
+    runner, while the project and its library sat on D: (run 46067841222: the check exited 1). From C:
+    no relative path reaches D:, so the scratch table names the library by its absolute path; the
+    project's table, written in the project, names it from ${KIPRJMOD}. The check reads the scratch
+    table as the project's: the absolute path is named from the project as well."""
+    lib = tmp_path / "footprints" / "Mine.pretty"
+    scratch, project = tmp_path / "scratch", tmp_path / "board"
+    real_relpath = os.path.relpath
+
+    def other_drive(path, start=os.curdir):
+        if Path(start) == scratch.resolve():
+            raise ValueError(f"path is on mount 'D:', start on mount 'C:': {path}, {start}")
+        return real_relpath(path, start)
+
+    monkeypatch.setattr(kicadgen.os.path, "relpath", other_drive)
+    written = kicadgen.lib_uri(lib, scratch)
+    assert written == lib.resolve().as_posix()  # no relative path from the scratch folder
+    text = f'(fp_lib_table\n  (lib (name "Mine")(type "KiCad")(uri "{written}")(options "")(descr ""))\n)\n'
+    said = kicadgen.lib_table_at(text, scratch, project)
+    assert '(uri "${KIPRJMOD}/../footprints/Mine.pretty")' in said, said
+    # A table entry that is no path of a library stays as written.
+    kept = '(lib (name "K")(type "KiCad")(uri "${KICAD10_FOOTPRINT_DIR}/K.pretty")(options "")(descr ""))'
+    assert kicadgen.lib_table_at(kept, scratch, project) == kept
+
+
 @needs_libs
 def test_a_library_table_names_a_project_library_from_the_project_not_from_the_machine(tmp_path):
     """51 of the 61 library tables under examples/ held a path that began /home/user/via: a library
