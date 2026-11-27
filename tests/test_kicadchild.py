@@ -14,6 +14,7 @@ import importlib.util
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -298,7 +299,9 @@ def test_stitch_zones_keeps_the_vias_of_the_rounds_before_a_child_that_cannot_lo
 def test_a_child_that_does_not_answer_in_time_stops_the_step_in_1_line(tmp_path, monkeypatch):
     stand_in(tmp_path, monkeypatch, [{"sleep": 30, "contract": 1, "stitches": [], "left": []}])
     monkeypatch.setattr(kicadchild, "TIMEOUT", 1)
-    with pytest.raises(RuntimeError, match=r"^KiCad's Python \S+ did not answer stitch in 1 s$"):
+    # The whole path: on macOS the venv's Python is under "Application Support" (run 46067841222).
+    said = re.escape(f"KiCad's Python {sys.executable} did not answer stitch in 1 s")
+    with pytest.raises(RuntimeError, match=f"^{said}$"):
         kicadgen.stitch_zones(bare_board(), tmp_path / "bare.kicad_pcb")
 
 
@@ -307,7 +310,8 @@ def test_an_answer_that_is_not_json_stops_the_step_in_1_line(tmp_path, monkeypat
     """A KiCad library that writes past the child's swap of fd 1 (on Windows, through its own C
     runtime) would put its text before the answer: 1 line that shows the start of it, no traceback."""
     stand_in(tmp_path, monkeypatch, [{"raw": raw}])
-    with pytest.raises(RuntimeError, match=r"^KiCad's Python \S+ answered stitch with no JSON: b'") as got:
+    said = re.escape(f"KiCad's Python {sys.executable} answered stitch with no JSON: b'")
+    with pytest.raises(RuntimeError, match=f"^{said}") as got:
         kicadgen.stitch_zones(bare_board(), tmp_path / "bare.kicad_pcb")
     assert "\n" not in str(got.value)
 

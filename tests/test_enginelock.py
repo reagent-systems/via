@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -599,13 +600,15 @@ def test_a_child_and_a_grandchild_of_the_holder_run_at_once(bench):
     """A holds and starts its own long command (`hold` again) as a child, and through a shell as a
     grandchild; both run while A holds. B, a stranger, still waits."""
     child = [PY, str(LOCK), "hold", "--what", "child", "--", PY, str(bench.engine), "C", str(bench.tmp)]
-    grand = " ".join(
+    # Quoted for sh: on macOS the venv's Python is under "Application Support" (run 46067841222).
+    grand = shlex.join(
         [PY, str(LOCK), "hold", "--what", "grandchild", "--", PY, str(bench.engine), "G", str(bench.tmp)]
     )
+    inner = f"sh -c {shlex.quote(grand)}"
     script = (
         "import subprocess, sys; "
         f"subprocess.run({child!r}, check=True); "
-        f"subprocess.run(['sh', '-c', 'sh -c \"{grand}\"'], check=True)"
+        f"subprocess.run(['sh', '-c', {inner!r}], check=True)"
     )
     cmd = [PY, str(LOCK), "hold", "--what", "engine A", "--", PY, "-c", script]
     bench.start(cmd, "A")
@@ -865,7 +868,7 @@ def test_a_child_of_a_holder_runs_the_workcenter_at_once(bench):
     """`hold` in front of a shell that runs `workcenter sim`, as `make verify` runs the suite: the sim
     is the holder's grandchild and runs while the holder holds."""
     project = sim_project(bench)
-    shell = f"{PY} {CLI} sim {project} --out {bench.tmp / 'out-c'}"
+    shell = shlex.join([PY, str(CLI), "sim", str(project), "--out", str(bench.tmp / "out-c")])
     env = {"NGSPICE": str(bench.ngspice), "ENGINE_TAG": "C", "ENGINE_DIR": str(bench.tmp)}
     bench.start([PY, str(LOCK), "hold", "--what", "make verify", "--", "sh", "-c", shell], "H", **env)
     until("the sim's engine", lambda: started(bench, "C"))
