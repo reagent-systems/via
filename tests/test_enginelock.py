@@ -420,6 +420,20 @@ def started(b: Bench, tag: str) -> bool:
     return f"start {tag}" in b.log()
 
 
+def holder_pid(b: Bench, proc: subprocess.Popen, what: str) -> int:
+    """The process that holds the lock as `what`: the one the test started, on Linux and macOS. On
+    Windows a venv's python.exe is a launcher that runs the base Python as its child, and the child
+    takes the lock (run 46067841222: Popen's pid 1832, the waiting line's 3332): its pid is its
+    ticket's."""
+    if sys.platform != "win32" or sys.prefix == sys.base_prefix:
+        return proc.pid
+    for ticket in b.dir.glob("*.ticket"):
+        held = json.loads(ticket.read_text(encoding="utf-8"))
+        if held.get("what") == what:
+            return held["pid"]
+    raise AssertionError(f"no ticket names {what}: {b.tickets()}")
+
+
 def test_two_long_commands_take_turns(bench):
     """A holds; B comes second and runs only after A's engine ended: start A, end A, start B."""
     a = bench.hold("A")
@@ -593,7 +607,8 @@ def test_the_waiting_line_names_the_holder_and_the_count(bench):
     assert len(lines) >= 3, lines
     first = lines[0]
     assert "waiting on the engine lock: 2 runs ahead" in first, first
-    assert "held by `engine A`" in first and f"pid {a.pid}" in first and "since " in first, first
+    pid = holder_pid(bench, a, "engine A")
+    assert "held by `engine A`" in first and f"pid {pid}" in first and "since " in first, first
 
 
 def test_a_child_and_a_grandchild_of_the_holder_run_at_once(bench):
@@ -721,11 +736,16 @@ def test_two_runs_that_come_in_the_same_millisecond_get_2_tickets_and_take_turns
     never both: the log is start X, end X, start Y, end Y."""
     go = bench.tmp / "go"
     for tag in "PQ":
+        # Windows' execv passes each argument unquoted, so `engine P` came as 2 words (run 46067841222:
+        # "enginelock.py: no command P"): there each is quoted as its C runtime reads it.
         script = (
-            "import os, sys, time\n"
+            "import os, subprocess, sys, time\n"
             f"while not os.path.exists({str(go)!r}): time.sleep(0.001)\n"
-            f"os.execv(sys.executable, [sys.executable, {str(LOCK)!r}, 'hold', '--what', 'engine {tag}', "
-            f"'--', sys.executable, {str(bench.engine)!r}, '{tag}', {str(bench.tmp)!r}])\n"
+            f"argv = [sys.executable, {str(LOCK)!r}, 'hold', '--what', 'engine {tag}', "
+            f"'--', sys.executable, {str(bench.engine)!r}, '{tag}', {str(bench.tmp)!r}]\n"
+            "if sys.platform == 'win32':\n"
+            "    argv = [subprocess.list2cmdline([word]) for word in argv]\n"
+            "os.execv(sys.executable, argv)\n"
         )
         bench.start([PY, "-c", script], tag)
     time.sleep(0.3)
@@ -760,6 +780,11 @@ def test_tickets_left_by_a_restart_block_nothing(bench):
     assert bench.err("A") == ""
 
 
+@posix_only(
+    "Popen.send_signal(SIGTERM) on Windows is TerminateProcess: the waiter ends at once with exit 1 and "
+    "writes no last line (run 46067841222: `assert 1 == -<Signals.SIGTERM: 15>`); Windows stops a run "
+    "with Ctrl+Break, which hostos.stop_signals names"
+)
 def test_a_waiter_stopped_by_sigterm_says_so(bench):
     """B waits and gets SIGTERM, as a host's time limit sends it: its last line says it was stopped
     while waiting, after how long and behind how many runs; it exits as a SIGTERM does."""
@@ -822,7 +847,8 @@ def test_two_sim_runs_take_turns_and_the_second_names_the_first(bench):
     until("A's engine", lambda: started(bench, "A"))
     workcenter(bench, "B", "sim", str(project), "--out", str(bench.tmp / "out-b"))
     until("B's waiting line", lambda: "waiting" in bench.err("B"))
-    assert f"held by `workcenter sim {project} --out {bench.tmp / 'out-a'}` (pid {a.pid})" in bench.err("B")
+    what = f"workcenter sim {project} --out {bench.tmp / 'out-a'}"
+    assert f"held by `{what}` (pid {holder_pid(bench, a, what)})" in bench.err("B")
     assert not started(bench, "B")
     bench.release("A")
     until("B's engine", lambda: started(bench, "B"), timeout=20)
@@ -994,14 +1020,15 @@ def test_doctor_prints_the_state_of_the_lock(bench):
     until("B's ticket", lambda: len(bench.tickets()) == 2)
     held = subprocess.run([PY, str(CLI), "doctor"], env=env, capture_output=True, text=True, timeout=120)
     line = next(ln for ln in held.stdout.splitlines() if "engine lock" in ln)
-    assert f"held by `engine A` (pid {a.pid}) since " in line and "1 waiting" in line, line
+    pid = holder_pid(bench, a, "engine A")
+    assert f"held by `engine A` (pid {pid}) since " in line and "1 waiting" in line, line
     data = json.loads(
         subprocess.run(
             [PY, str(CLI), "--json", "doctor"], env=env, capture_output=True, text=True, timeout=120
         ).stdout
     )
     lock = data["engine_lock"]
-    assert lock["holder"]["what"] == "engine A" and lock["holder"]["pid"] == a.pid
+    assert lock["holder"]["what"] == "engine A" and lock["holder"]["pid"] == pid
     assert lock["waiting"] == 1 and lock["dir"] == str(bench.dir)
 
 
