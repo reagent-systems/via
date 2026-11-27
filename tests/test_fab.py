@@ -254,7 +254,7 @@ def test_rules_only_writes_the_older_header_again_and_nothing_else(tmp_path):
     dru = tmp_path / "t.kicad_dru"
     written = dru.read_text(encoding="utf-8")
     assert written.count(TODAY) == 1
-    dru.write_text(written.replace(TODAY, OLDER), encoding="utf-8")
+    dru.write_text(written.replace(TODAY, OLDER), encoding="utf-8", newline="\n")
     before = project_bytes(tmp_path)
     proc = rules_only(design)
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -291,7 +291,7 @@ def test_rules_only_refuses_a_rule_file_changed_beyond_its_header(tmp_path):
     lines = text.split("\n")
     hole = next(i for i, ln in enumerate(lines) if "(constraint hole_clearance" in ln)
     lines[hole] = lines[hole].replace("(min ", "(min 0")  # a rule changed by hand: 0.33 -> 00.33
-    dru.write_text("\n".join(lines), encoding="utf-8")
+    dru.write_text("\n".join(lines), encoding="utf-8", newline="\n")
     before = project_bytes(tmp_path)
     proc = rules_only(design)
     assert proc.returncode == 1
@@ -307,7 +307,11 @@ def test_rules_only_refuses_a_header_that_names_another_source(tmp_path):
     design = rules_project(tmp_path)
     dru = tmp_path / "t.kicad_dru"
     text = dru.read_text(encoding="utf-8")
-    dru.write_text(text.replace("from sierra-circuits-web.kicad_dru", "from jlcpcb-2layer.kicad_dru"))
+    dru.write_text(
+        text.replace("from sierra-circuits-web.kicad_dru", "from jlcpcb-2layer.kicad_dru"),
+        encoding="utf-8",
+        newline="\n",
+    )
     before = project_bytes(tmp_path)
     proc = rules_only(design)
     assert proc.returncode == 1 and len(proc.stdout.strip().split("\n")) == 1, proc.stdout
@@ -382,7 +386,7 @@ def older_rule_file(folder: Path) -> tuple[Path, str]:
     """The project's rule file with the header written before 2026-11-19, and the text the design writes."""
     dru = folder / "t.kicad_dru"
     written = dru.read_text(encoding="utf-8")
-    dru.write_text(written.replace(TODAY, OLDER), encoding="utf-8")
+    dru.write_text(written.replace(TODAY, OLDER), encoding="utf-8", newline="\n")
     return dru, written
 
 
@@ -464,7 +468,7 @@ def test_rules_only_json_names_the_lines_written_and_differing(tmp_path):
     data = json.loads(proc.stdout)
     assert (data["state"], data["lines"], data["exit"]) == ("written", [header], 0)
 
-    dru.write_text(written.replace("(min ", "(min 0", 1), encoding="utf-8")
+    dru.write_text(written.replace("(min ", "(min 0", 1), encoding="utf-8", newline="\n")
     first = next(i for i, ln in enumerate(written.split("\n"), start=1) if "(min " in ln)
     proc = rules_only(design, "--json")
     data = json.loads(proc.stdout)
@@ -476,7 +480,7 @@ def test_rules_only_names_12_lines_and_the_json_names_them_all(tmp_path):
     design = rules_project(tmp_path)
     dru, written = older_rule_file(tmp_path)
     end = len(written.split("\n"))  # the empty piece after the final newline
-    dru.write_text(dru.read_text(encoding="utf-8") + "(rule added)\n" * 14, encoding="utf-8")
+    dru.write_text(dru.read_text(encoding="utf-8") + "(rule added)\n" * 14, encoding="utf-8", newline="\n")
     added = list(range(end, end + 15))  # the 14 lines, and the empty piece that moved past them
     proc = rules_only(design)
     assert proc.returncode == 1
