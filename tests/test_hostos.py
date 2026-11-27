@@ -15,6 +15,7 @@ import errno
 import importlib.util
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -387,6 +388,42 @@ def test_kicad_dirs_on_windows_follow_kicad_cli_first(hostos, monkeypatch, tmp_p
     assert hostos.kicad_dirs()["footprints"] == tmp_path / "D" / "KiCad" / "share" / "kicad" / "footprints"
 
 
+# ------------------------------------------------------------------ kicad_share
+
+
+def test_kicad_share_on_linux_is_the_ppas_folder_whatever_the_variables(hostos, monkeypatch, tmp_path):
+    """tools/workcenter:70 keeps the install's 3D folder apart from every variable: a board's
+    ${KICAD9_3DMODEL_DIR} unset falls back to it, never to KICAD10_3DMODEL_DIR's value."""
+    on(monkeypatch, "linux")
+    for name in ("KICAD_SYMBOL_DIR", "KICAD10_SYMBOL_DIR", "KICAD10_3DMODEL_DIR"):
+        monkeypatch.setenv(name, str(tmp_path / name))
+    assert hostos.kicad_share() == Path("/usr/share/kicad")
+
+
+def test_kicad_share_on_macos_is_the_bundles_sharedsupport(hostos, monkeypatch, tmp_path):
+    on(monkeypatch, "darwin")
+    monkeypatch.setenv("KICAD10_3DMODEL_DIR", str(tmp_path / "models"))
+    assert hostos.kicad_share() == MAC_SHARED
+
+
+def test_kicad_share_on_windows_is_the_first_install_with_a_share(hostos, monkeypatch, tmp_path):
+    on(monkeypatch, "win32")
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "pf"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    share = tmp_path / "local" / "Programs" / "KiCad" / "10.0" / "share" / "kicad"
+    share.mkdir(parents=True)
+    monkeypatch.setenv("KICAD10_3DMODEL_DIR", str(tmp_path / "models"))
+    assert hostos.kicad_share() == share
+
+
+@pytest.mark.parametrize("platform", PLATFORMS)
+def test_kicad_dirs_without_variables_are_the_folders_of_kicad_share(hostos, monkeypatch, tmp_path, platform):
+    on(monkeypatch, platform)
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "pf"))
+    share = hostos.kicad_share()
+    assert hostos.kicad_dirs() == {name: share / name for name in ("symbols", "footprints", "3dmodels")}
+
+
 # ------------------------------------------------------------------ awt_lib
 
 
@@ -557,10 +594,38 @@ def test_write_text_leaves_a_carriage_return_the_text_holds(hostos, tmp_path):
     assert path.read_bytes() == b"a\r\nb\n"
 
 
+# ------------------------------------------------------------------ shell_word
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_shell_word_on_posix_quotes_a_path_with_a_space_for_sh(hostos, monkeypatch, platform):
+    on(monkeypatch, platform)
+    pip = "/Users/a/Library/Application Support/via/venv/bin/pip"
+    assert hostos.shell_word(pip) == f"'{pip}'"
+    assert shlex.split(hostos.shell_word(pip) + " install") == [pip, "install"]
+
+
+@pytest.mark.parametrize("platform", PLATFORMS)
+def test_shell_word_leaves_a_plain_path_as_written(hostos, monkeypatch, platform):
+    """Linux's command lines stay as they are today."""
+    on(monkeypatch, platform)
+    assert hostos.shell_word("/opt/workcenters/ee/venv/bin/pip") == "/opt/workcenters/ee/venv/bin/pip"
+
+
+def test_shell_word_on_windows_puts_a_path_with_a_space_in_double_quotes(hostos, monkeypatch):
+    """cmd.exe and PowerShell take double quotes, not sh's single ones (subprocess.list2cmdline)."""
+    on(monkeypatch, "win32")
+    pip = "C:\\Users\\John Smith\\AppData\\Local\\Via\\venv\\Scripts\\pip.exe"
+    assert hostos.shell_word(pip) == f'"{pip}"'
+
+
 # ------------------------------------------------------------------ the module
 
 # Run in a child process, so this session's import path and modules stay as they are: each pair is
-# (what the code holds today, what hostos returns on Linux).
+# (what the code held at main cea464d, written out as it was there, what hostos or its caller returns on
+# Linux now). The callers take these values from hostos, so comparing with them would compare hostos with
+# itself: the first of each pair is cea464d's own expression (tools/workcenter:40-44 and 70,
+# tools/routers.py:31 and 49, tools/kicadgen.py:46-47, tools/enginelock.py:132 and 466).
 TODAY = """
 import importlib.machinery, importlib.util, json, os, signal, sys
 from pathlib import Path
@@ -576,22 +641,35 @@ class P:
 sent = []
 os.killpg = lambda pid, sig: sent.append([pid, int(sig)])
 hostos.kill_tree(P())
-home = Path("/java/home")
-root = os.environ.get("WORKCENTER_ROOT", str(hostos.default_root()))
-models = os.environ.get("KICAD10_3DMODEL_DIR", wc.DEFAULT_3DMODEL_DIR)
+env = os.environ.get
+root = env("WORKCENTER_ROOT", "/opt/workcenters/ee")
+venv_py = root + "/venv/bin/python"
+kicad_py = venv_py if os.path.exists(venv_py) else sys.executable
+symbols = env("KICAD_SYMBOL_DIR", "/usr/share/kicad/symbols")
+footprints = env("KICAD_FOOTPRINT_DIR", "/usr/share/kicad/footprints")
+models = env("KICAD10_3DMODEL_DIR", "/usr/share/kicad/3dmodels")
+lock = f"/tmp/workcenter-lock-{os.getuid()}"
 pairs = {
-    "default_root": [str(wc.WC_ROOT), root],
-    "routers_root": [str(routers.WC_ROOT), root],
-    "lock_dir": [str(enginelock.lock_dir()), str(hostos.lock_dir())],
-    "venv_python": [str(wc.WC_ROOT / "venv" / "bin" / "python"), str(hostos.venv_python(wc.WC_ROOT))],
-    "kicad_python": [wc.venv_python(), hostos.kicad_python()],
-    "kicad_cli": [[wc.KICAD_CLI], hostos.kicad_cli_candidates()],
-    "ngspice": [[wc.NGSPICE], hostos.ngspice_candidates()],
-    "symbols": [str(kicadgen.SYMBOL_DIR), str(hostos.kicad_dirs()["symbols"])],
-    "footprints": [str(kicadgen.FOOTPRINT_DIR), str(hostos.kicad_dirs()["footprints"])],
+    "default_root": [root, env("WORKCENTER_ROOT", str(hostos.default_root()))],
+    "wc_root": [root, str(wc.WC_ROOT)],
+    "routers_root": [root, str(routers.WC_ROOT)],
+    "lock_dir": [lock, str(hostos.lock_dir())],
+    "enginelock_dir": [lock, str(enginelock.lock_dir())],
+    "venv_python": [venv_py, str(hostos.venv_python(root))],
+    "kicad_python": [kicad_py, hostos.kicad_python()],
+    "wc_venv_python": [kicad_py, wc.venv_python()],
+    "kicad_cli": [[env("KICAD_CLI", "kicad-cli")], hostos.kicad_cli_candidates()],
+    "wc_kicad_cli": [env("KICAD_CLI", "kicad-cli"), wc.KICAD_CLI],
+    "ngspice": [[env("NGSPICE", "ngspice")], hostos.ngspice_candidates()],
+    "wc_ngspice": [env("NGSPICE", "ngspice"), wc.NGSPICE],
+    "symbols": [symbols, str(hostos.kicad_dirs()["symbols"])],
+    "kicadgen_symbols": [symbols, str(kicadgen.SYMBOL_DIR)],
+    "footprints": [footprints, str(hostos.kicad_dirs()["footprints"])],
+    "kicadgen_footprints": [footprints, str(kicadgen.FOOTPRINT_DIR)],
     "3dmodels": [models, str(hostos.kicad_dirs()["3dmodels"])],
-    "awt_lib": [str(home / routers.AWT_X11), str(hostos.awt_lib(home))],
-    "stop_signals": [[int(s) for s in enginelock._STOPS], [int(s) for s in hostos.stop_signals()]],
+    "wc_3dmodels": ["/usr/share/kicad/3dmodels", wc.DEFAULT_3DMODEL_DIR],
+    "awt_lib": ["/java/home/lib/libawt_xawt.so", str(hostos.awt_lib(Path("/java/home")))],
+    "stop_signals": [[int(signal.SIGTERM), int(signal.SIGHUP)], [int(s) for s in hostos.stop_signals()]],
     "kill_tree": [[[1, int(signal.SIGKILL)]], sent],
 }
 print(json.dumps(pairs))
@@ -620,7 +698,7 @@ def test_on_linux_hostos_returns_what_the_code_returns_today(tmp_path, venv, nam
     )
     assert proc.returncode == 0, proc.stderr
     pairs = json.loads(proc.stdout)
-    assert len(pairs) == 13
+    assert len(pairs) == 21
     today = {name: pair[0] for name, pair in pairs.items()}
     assert today == {name: pair[1] for name, pair in pairs.items()}
 

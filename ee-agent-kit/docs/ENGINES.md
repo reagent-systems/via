@@ -14,6 +14,23 @@ the KiCad PPA by `install.sh`, in a machine or in the container image.
 KICAD_CLI=kicad-cli   # default
 ```
 
+With `KICAD_CLI` unset, Via looks on PATH first, then where KiCad's install puts the program
+(`tools/hostos.py`): on macOS `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli`, on Windows
+`bin\kicad-cli.exe` under `%ProgramFiles%\KiCad\10.0`, then under `%LOCALAPPDATA%\Programs\KiCad\10.0`.
+On Linux it looks on PATH alone, as before. Where it looked in more than 1 place, the `kicad-cli` row of
+`workcenter doctor` names the whole path of the program it found; when none is there, the row says
+where it looked. Its `kicad-python` row names the Python that imports KiCad's `pcbnew` (on Linux Via's
+venv's, on macOS the one in KiCad's bundle, on Windows `bin\python.exe` of the install), and its
+`pcbnew` row asks that Python to import it, as a child process. Both rows are advisory: without pcbnew
+the row says why, and `design --route` leaves out stitching and pours. The `symbols` row reads the
+install's own `symbols` folder, whatever `KICAD_SYMBOL_DIR` says.
+
+On macOS and Windows, KiCad's Python and library folders are looked for in the install that
+`KICAD_CLI` names, then in the default install (`/Applications`, `%ProgramFiles%`,
+`%LOCALAPPDATA%\Programs`), not beside a kicad-cli found on PATH. With KiCad in another place, set
+`KICAD_CLI` to the whole path of its kicad-cli. None of the macOS or Windows paths has been seen in a
+run on those systems.
+
 Reports are JSON (`--format json`). Exit code 5 with
 `--exit-code-violations` means "ran, found violations"; the CLI parses
 the report rather than trusting the code.
@@ -27,6 +44,10 @@ deck's `.control` block prints. Installed from the Ubuntu archive.
 ```sh
 NGSPICE=ngspice       # default
 ```
+
+With `NGSPICE` unset, Via looks on PATH first, then on macOS in Homebrew's `/opt/homebrew/bin` and
+`/usr/local/bin`, and on Windows for `ngspice_con`, then `ngspice`, on PATH and in `C:\Spice64\bin`
+(`tools/hostos.py`). `workcenter doctor` says where it looked when it finds none.
 
 ## FreeRouting
 
@@ -82,7 +103,9 @@ FREEROUTING2_JAVA=/opt/workcenters/ee/java25/bin/java              # default
 
 `tools/kicadgen.py` is not an engine but the way designs reach the
 engines without a GUI. It parses the KiCad symbol and footprint libraries
-(`KICAD_SYMBOL_DIR`, `KICAD_FOOTPRINT_DIR`), flattens derived symbols,
+(`KICAD_SYMBOL_DIR`, `KICAD_FOOTPRINT_DIR`; on macOS and Windows then KiCad's own
+`KICAD10_SYMBOL_DIR`, `KICAD10_FOOTPRINT_DIR`; then the install's folders, `/usr/share/kicad` on
+Linux, through `tools/hostos.py`), flattens derived symbols,
 strips the KiCad 10 library tokens the 9.0 file formats do not know, and
 writes the schematic (stub wires and labels, power symbols, PWR_FLAG
 pairs, no-connects with KiCad's `unconnected-(...)` pad nets), the board
