@@ -222,6 +222,24 @@ def copy_fixtures(repo: Path, work: Path) -> None:
         )
 
 
+def on_path(name: str) -> str | None:
+    """`name` as PATH finds it, never the working folder. On Windows shutil.which looks in the working
+    folder first unless NoDefaultCurrentDirectoryInExePath is set (Microsoft's
+    NeedCurrentDirectoryForExePath), and the smoke runs in the checkout, which holds workcenter.cmd: run
+    46067841222 found `.\\workcenter.CMD` there, not the command install.ps1 put on PATH. A hit that
+    is not a whole path came from the working folder and is not taken."""
+    before = os.environ.get("NoDefaultCurrentDirectoryInExePath")
+    os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
+    try:
+        found = shutil.which(name)
+    finally:
+        if before is None:
+            del os.environ["NoDefaultCurrentDirectoryInExePath"]
+        else:
+            os.environ["NoDefaultCurrentDirectoryInExePath"] = before
+    return found if found and os.path.isabs(found) else None
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -236,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
     work = (args.work or Path(tempfile.mkdtemp(prefix="desktop-smoke-"))).resolve()
-    wc = args.workcenter or shutil.which("workcenter") or ""
+    wc = args.workcenter or on_path("workcenter") or ""
     plan = steps(repo, wc or "workcenter", args.python, work)
     if args.list:
         for step in plan:

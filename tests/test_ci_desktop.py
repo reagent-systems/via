@@ -342,6 +342,28 @@ def test_a_child_that_escapes_the_kill_and_holds_the_pipe_does_not_hang_the_run(
     assert "  | a process it started held its output open 1 s after the kill; what was read is above" in lines
 
 
+def test_the_command_is_the_installed_one_on_path_not_the_checkouts(tmp_path, monkeypatch):
+    """Run 46067841222, Windows: `desktop-smoke: win32, workcenter .\\workcenter.CMD`. shutil.which on
+    Windows looks in the working folder before PATH unless NoDefaultCurrentDirectoryInExePath is set
+    (Microsoft's NeedCurrentDirectoryForExePath), and the smoke runs in the checkout, which holds
+    workcenter.cmd: the smoke ran the checkout's file, not the one install.ps1 put on PATH. This
+    stand-in `which` answers as Windows' does."""
+    installed = str(tmp_path / "Via" / "bin" / "workcenter.cmd")
+
+    def which(cmd, mode=os.F_OK | os.X_OK, path=None):
+        if os.environ.get("NoDefaultCurrentDirectoryInExePath"):
+            return installed
+        return ".\\workcenter.CMD"
+
+    monkeypatch.delenv("NoDefaultCurrentDirectoryInExePath", raising=False)
+    monkeypatch.setattr(desktop_smoke.shutil, "which", which)
+    assert desktop_smoke.on_path("workcenter") == installed
+    assert "NoDefaultCurrentDirectoryInExePath" not in os.environ
+    # A hit that is still not a whole path came from the working folder: it is no installed command.
+    monkeypatch.setattr(desktop_smoke.shutil, "which", lambda *a, **k: ".\\workcenter.CMD")
+    assert desktop_smoke.on_path("workcenter") is None
+
+
 def test_misuse_exits_2(stage, capsys, monkeypatch):
     """No `workcenter` to run, or a step the smoke does not have: exit 2 and 1 line on stderr."""
     monkeypatch.setenv("PATH", str(stage["work"]))
