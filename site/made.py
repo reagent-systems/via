@@ -215,6 +215,27 @@ def thing(ex: Example) -> Thing:
     )
 
 
+# The share card of every page here: made-og.png, drawn from made-og.html, with the owner's tagline
+# "Share PCB Designs!" (2026-11-28). All its tags are on 1 line, which build.sh fills with the
+# gallery's address or leaves out.
+SHARE_ALT = (
+    "The Via wordmark and the line Share PCB Designs!, beside the boards Hush, Lark, Signet and Basalt"
+)
+
+
+def share_card(title: str, description: str, path: str | None) -> str:
+    url = "" if path is None else f'<meta property="og:url" content="%MADE%/{path}">'
+    return (
+        '<meta property="og:type" content="website"><meta property="og:site_name" content="Made with Via">'
+        f'<meta property="og:title" content="{html.escape(title)}">'
+        f'<meta property="og:description" content="{html.escape(description)}">{url}'
+        '<meta property="og:image" content="%MADE%/made-og.png"><meta property="og:image:type" content="image/png">'
+        '<meta property="og:image:width" content="1280"><meta property="og:image:height" content="640">'
+        f'<meta property="og:image:alt" content="{SHARE_ALT}"><meta name="twitter:card" content="summary_large_image">'
+        f'<meta name="twitter:image" content="%MADE%/made-og.png"><meta name="twitter:image:alt" content="{SHARE_ALT}">'
+    )
+
+
 def licence() -> str:
     """The examples' licence: the repository's, as the first line of LICENSE names it."""
     return (ROOT / "LICENSE").read_text(encoding="utf-8").splitlines()[0].strip()
@@ -448,13 +469,16 @@ def made_page(green: list[Example], waiting: list[Example], things: list[Thing])
           <p>The first boards here are ours.{later}</p>
         </div>
       </section>"""
+    title = "Made with Via"
+    description = "Boards made with Via that pass its checks: search them, sort them by parts, layers and size, and open each one in 3D."
     return shell(
-        "Made with Via",
-        "Boards made with Via that pass its checks: search them, sort them by parts, layers and size, and open each one in 3D.",
+        title,
+        description,
         "",
         "",
         body,
         SCRIPTS,
+        head=share_card(title, description, ""),
         home=HOME,
         address="%MADE%/",
         header=bar(things),
@@ -651,13 +675,16 @@ def board_page(t: Thing, others: list[Thing], top: str) -> str:
           </div>
         </div>
       </section>"""
+    title = f"{ex.name} · Made with Via"
+    description = f"{line}. {ex.name} is made with Via, and its files pass Via's checks."
     return shell(
-        f"{ex.name} · Made with Via",
-        f"{line}. {ex.name} is made with Via, and its files pass Via's checks.",
+        title,
+        description,
         "",
         "../",
         body,
         SCRIPTS,
+        head=share_card(title, description, f"b/{ex.slug}"),
         home=HOME,
         address=f"%MADE%/b/{ex.slug}",
         header=top,
@@ -724,6 +751,7 @@ def added_page(things: list[Thing], top: str) -> str:
         "../",
         body,
         SCRIPTS,
+        head=share_card("Made with Via", "A board made with Via, checked by Via's gates.", None),
         home=HOME,
         address="%MADE%/",
         header=top,
@@ -796,6 +824,9 @@ def profile_page(things: list[Thing], top: str) -> str:
         "../",
         body,
         SCRIPTS,
+        head=share_card(
+            "Made with Via", "A person's boards on Made with Via, and the boards they like.", None
+        ),
         home=HOME,
         address="%MADE%/",
         header=top,
