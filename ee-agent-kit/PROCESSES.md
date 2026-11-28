@@ -810,6 +810,12 @@ When: a change is about to be called done.
    a file, its last line read for `0 failed`), not only the test files it
    touched: a test anywhere may scan a whole folder, every workflow or
    every document, and meets a new file only in a whole run (M316).
+   A change that adds or removes a test sets that file's count in
+   `STATUS.md` to what pytest collects and runs
+   `tests/test_docs.py::test_a_count_of_tests_in_the_status_file_is_what_pytest_collects`,
+   also when the owner's word leaves Via's package tests out: that word
+   covers a change `make scope` calls `site`, and a change to `tests/` is
+   not one (M333).
 2. Chain the push behind the verdict itself, never behind a look at the
    log: `make -C /path check TESTS="..." && git push ...`. A `tail`
    succeeds whatever the log says. Every check you run before a push is in
