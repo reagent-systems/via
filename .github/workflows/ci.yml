@@ -66,7 +66,7 @@ jobs:
       - name: Keep the logs of the failed gate
         if: failure() && steps.gate.outcome == 'failure'
         run: python3 tools/ci/kept_logs.py "$RUNNER_TEMP/kept-logs" "${TMPDIR:-/tmp}/pytest-of-*"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure() && steps.gate.outcome == 'failure'
         with:
           name: gate-logs-fast-gate
@@ -196,7 +196,7 @@ jobs:
       - name: Keep the logs of the failed gate
         if: failure() && steps.verify.outcome == 'failure'
         run: python3 tools/ci/kept_logs.py "$RUNNER_TEMP/kept-logs" "${TMPDIR:-/tmp}/ee-verify-*"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure() && steps.verify.outcome == 'failure'
         with:
           name: gate-logs-full-verify
@@ -218,7 +218,7 @@ jobs:
       - name: Keep the logs of the failed gate
         if: failure() && steps.inside.outcome == 'failure'
         run: python3 tools/ci/kept_logs.py "$RUNNER_TEMP/kept-logs" "$RUNNER_TEMP/image-tmp/ee-verify-*"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure() && steps.inside.outcome == 'failure'
         with:
           name: gate-logs-full-inside
@@ -260,7 +260,7 @@ jobs:
       - name: Keep the logs of the failed gate
         if: failure() && steps.gate.outcome == 'failure'
         run: python3 tools/ci/kept_logs.py "$RUNNER_TEMP/kept-logs" "${TMPDIR:-/tmp}/pytest-of-*"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure() && steps.gate.outcome == 'failure'
         with:
           name: gate-logs-site-gate
@@ -341,7 +341,7 @@ jobs:
           & (Join-Path $env:LOCALAPPDATA 'Via\venv\Scripts\python.exe') tools/ci/desktop_smoke.py --work (Join-Path $env:RUNNER_TEMP 'desktop-smoke')
       # A red smoke keeps its work folder (the fixtures' copies with what the gates wrote, the tests'
       # logs) for 7 days. Never on success.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure() && (steps.smoke-macos.outcome == 'failure' || steps.smoke-windows.outcome == 'failure')
         with:
           name: desktop-smoke-${{ matrix.os }}

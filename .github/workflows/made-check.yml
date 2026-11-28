@@ -145,7 +145,7 @@ jobs:
           echo "result=$(printf '%s' "$result" | jq -c .)" >> "$GITHUB_OUTPUT"
       - name: The Gerbers, for the report job
         if: hashFiles('files/gerbers.zip') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gerbers
           path: files/gerbers.zip
