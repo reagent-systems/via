@@ -161,6 +161,7 @@ GATES = {
     ("full", "verify"): '"${TMPDIR:-/tmp}/ee-verify-*"',
     ("full", "inside"): '"$RUNNER_TEMP/image-tmp/ee-verify-*"',
     ("fast", "gate"): '"${TMPDIR:-/tmp}/pytest-of-*"',
+    ("site", "gate"): '"${TMPDIR:-/tmp}/pytest-of-*"',
 }
 
 

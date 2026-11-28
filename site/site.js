@@ -162,10 +162,10 @@
   for (const button of document.querySelectorAll("[data-copy]")) {
     button.addEventListener("click", async () => {
       const pre = (button.closest("[data-copyable]") || button.parentElement).querySelector("pre");
-      // The commands without their prompts, 1 per line.
+      // The commands without their prompts (a shell's `$ `, PowerShell's `PS> `), 1 per line.
       const text = pre.textContent
         .split("\n")
-        .map((line) => line.replace(/^\$ /, ""))
+        .map((line) => line.replace(/^(?:\$|PS>) /, ""))
         .join("\n");
       try {
         await navigator.clipboard.writeText(text);

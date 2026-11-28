@@ -41,7 +41,7 @@ if [ -e "$out" ] && [ -n "$(ls -A "$out" 2>/dev/null)" ]; then
 fi
 
 here=$(dirname -- "$0")
-mkdir -p "$out/fonts" "$out/showcase/datasheets" "$out/vendor" "$out/examples" "$out/made"
+mkdir -p "$out/fonts" "$out/showcase/datasheets" "$out/vendor" "$out/examples" "$out/made" "$out/guide"
 
 # What the site serves: the examples' pictures, Herald's 3D model and its datasheets' first pages,
 # the agents' marks, Motion, model-viewer and the meshopt decoder with their licenses. og.html,
@@ -105,7 +105,7 @@ else
 fi
 
 for path in "$here/index.html" "$here/404.html" "$here/examples.html" "$here"/examples/*.html "$here/blog.html" "$here"/blog/*.html \
-  "$here/feedback.html" "$here/guide.html" "$here/made.html" "$here"/made/*.html; do
+  "$here/feedback.html" "$here/guide.html" "$here"/guide/*.html "$here/made.html" "$here"/made/*.html; do
   [ -f "$path" ] || continue
   page=${path#"$here"/}
   if [ -n "$origin" ]; then

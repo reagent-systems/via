@@ -82,9 +82,10 @@
             <p class="lede">Here's the whole path from an idea to the files a board maker needs, in plain English. Your AI agent does most of the typing, and Via's checks tell it what's wrong until the board passes.</p>
           </header>
           <div class="prose">
+
             <h2 id="where"><span class="guide-n" aria-hidden="true">1</span> Where Via runs</h2>
-            <p>Via runs on Ubuntu 24.04. If that's your computer, you can go straight to step 2.</p>
-            <p>On Windows or a Mac, the way in today is a Claude Code cloud environment. It's a Linux machine in the cloud that you use from your browser, and we've written a setup script that installs Via on it. Nobody has run that script on a real environment yet, so we'd like to hear how it goes. <a class="link" href="https://github.com/reagent-systems/via/blob/main/environment/README.md">The environment's settings</a> are in the repository. We're also making a Docker image, but it isn't public yet.</p>
+            <p>Via runs on Ubuntu 24.04, on a Mac with Apple Silicon, and on Windows 10 or 11. If you're on Ubuntu, you can go straight to step 2. A Mac and a Windows PC each have their own install page: <a class="link" href="guide/macos.html">installing Via on a Mac</a> and <a class="link" href="guide/windows.html">installing Via on Windows</a>.</p>
+            <p>A Claude Code cloud environment works too. It's a Linux machine in the cloud that you use from your browser, and we've written a setup script that installs Via on it. Nobody has run that script on a real environment yet, so we'd like to hear how it goes. <a class="link" href="https://github.com/reagent-systems/via/blob/main/environment/README.md">The environment's settings</a> are in the repository. We're also making a Docker image, but it isn't public yet.</p>
             <h2 id="install"><span class="guide-n" aria-hidden="true">2</span> Installing the tools</h2>
             <p>One script installs the tools Via uses, including KiCad 10, ngspice, Java 21 and FreeRouting. It adds system packages, so it asks for sudo.</p>
             <div class="guide-cmd" data-copyable>
@@ -96,6 +97,19 @@
               </button>
             </div>
             <p>On a cloud environment, the setup script does this step for you.</p>
+            <p>You can hand the whole install to your coding agent: Claude Code, Codex, Cursor, Copilot, Gemini CLI or any other. Paste this to it, and it follows <a class="link" href="https://github.com/reagent-systems/via/blob/main/INSTALL.md">INSTALL.md</a> one step at a time. It asks you before anything that needs sudo, an administrator, a restart or a big download.</p>
+            <div class="guide-cmd" data-copyable>
+              <pre>Set up Via on this computer for me.
+Read https://raw.githubusercontent.com/reagent-systems/via/main/INSTALL.md and follow it step by step.
+If you cannot fetch it, clone https://github.com/reagent-systems/via and read INSTALL.md there.
+Ask me before any command that needs sudo, an administrator, a restart, or a large download.
+Stop when its "Done when" holds, and show me the last lines of each check.
+If a step fails twice, stop and tell me what it printed.</pre>
+              <button class="copy" type="button" data-copy aria-label="Copy the text">
+                <svg class="todo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg>
+                <svg class="done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+              </button>
+            </div>
             <h2 id="doctor"><span class="guide-n" aria-hidden="true">3</span> Checking the install</h2>
             <p><code>workcenter doctor</code> lists each tool Via needs and whether it found it. When nothing's missing, you're ready.</p>
             <div class="guide-cmd" data-copyable>

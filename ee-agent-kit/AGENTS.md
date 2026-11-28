@@ -12,6 +12,7 @@ make lint        # shellcheck + ruff
 make check       # fast checks before a push to a work branch: lint + kit checks + the kit's tests, no engine
 make verify      # full health gate: a `full` change passes it before `main` takes it (in CI)
 make verify-site # fast gate: what a `fast` change passes instead (make scope says which)
+make verify-www  # the site's gate: what a `site` change, every path under site/, passes instead
 ```
 
 Requires Ubuntu 24.04, Python 3.12, KiCad 10.0, Java 21. `sudo ./install.sh`
@@ -185,6 +186,10 @@ provides them. `python3 tools/workcenter doctor` says what is present.
   rewritten.
 - A change that `make scope` calls `fast` may be pushed straight to
   `main` on `make verify-site`. CI's `fast` job runs it again there.
+- A change `make scope` calls `site` (every path under `site/`) passes
+  `make verify-www` instead: the site's pages, its build and the tests
+  `verify/www.txt` names, and none of Via's own tests (the owner's word,
+  2026-11-28). CI's `site` job runs it, and `fast` does not run.
 - The table of what runs where: `CI.md`, "Where the health gate runs".
 - After adding/removing/renaming source files, run the stack's
   regeneration step (project gen, lockfile, tidy) and commit the result.

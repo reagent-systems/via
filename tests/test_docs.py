@@ -535,6 +535,11 @@ def blog_pages() -> list[Path]:
     return [SITE / "blog.html", *sorted((SITE / "blog").glob("*.html"))]
 
 
+def guide_pages() -> list[Path]:
+    """The pages site/guide.py writes: the guide, and its install pages at /guide/<platform>."""
+    return [SITE / "guide.html", *sorted((SITE / "guide").glob("*.html"))]
+
+
 # The 1 address a page names that the host answers and no file of the repository holds: Vercel's Web
 # Analytics script, served by the owner's Vercel project (pull request 62) on each deployment. Neither
 # the tree nor the build holds the file; another static host answers it with a 404, and the page works
@@ -564,7 +569,7 @@ def test_every_page_a_reader_opens_loads_the_hosts_analytics_script_once():
         SITE / "index.html",
         SITE / "404.html",
         SITE / "feedback.html",
-        SITE / "guide.html",
+        *guide_pages(),
         SITE / "made.html",
         *sorted((SITE / "made").glob("*.html")),
         *example_pages(),
@@ -592,7 +597,7 @@ def test_every_link_on_the_site_names_what_exists():
         SITE / "404.html",
         SITE / "og.html",
         SITE / "feedback.html",
-        SITE / "guide.html",
+        *guide_pages(),
         SITE / "made.html",
         *sorted((SITE / "made").glob("*.html")),
         *example_pages(),
@@ -647,6 +652,65 @@ def test_the_guide_is_what_site_guide_writes_and_names_what_exists():
             if word.startswith(("tests/", "examples/")):
                 assert (ROOT / word).is_dir(), line
     assert used == {"doctor", "gates", "next", "new"}
+
+
+def test_the_install_guides_are_what_site_guide_writes_from_the_installers():
+    """The guide's install pages, /guide/macos and /guide/windows (the owner's ask, 2026-11-28).
+    `site/guide.py` writes them from INSTALL.md, README.md, the 2 installers and
+    toolchain/desktop.json. Each command a page shows is a line INSTALL.md gives a person or an agent,
+    each flag of an installer is one it takes, each `workcenter` command is one the tool has, with its
+    paths in the tree. Each page carries README.md's prompt for a coding agent and links INSTALL.md;
+    the guide and the home page link both pages."""
+    run = subprocess.run(
+        [sys.executable, str(SITE / "guide.py"), "--check"], capture_output=True, text=True, check=False
+    )
+    assert run.returncode == 0, run.stderr
+    pages = {page.stem: page.read_text(encoding="utf-8") for page in guide_pages()[1:]}
+    assert set(pages) == {"macos", "windows"}
+    for linking in (SITE / "guide.html", SITE / "index.html"):
+        text = linking.read_text(encoding="utf-8")
+        assert 'href="guide/macos.html"' in text and 'href="guide/windows.html"' in text, linking.name
+    install = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
+    prompt = re.search(r"Paste this to it:\n\n```text\n(.*?)\n```", README, re.S).group(1)
+    usage = (ROOT / "install-macos.sh").read_text(encoding="utf-8")
+    macos_flags = set(
+        re.search(r"Usage: \./install-macos\.sh ([^\"]+)", usage).group(1).strip("[]").split("] [")
+    )
+    ps1 = (ROOT / "install.ps1").read_text(encoding="utf-8")
+    ps1_flags = {f"-{name}" for name in re.findall(r"\[switch\]\$(\w+)", ps1)}
+    if "SupportsShouldProcess = $true" in ps1:
+        ps1_flags.add("-WhatIf")
+    tools = "".join(
+        p.read_text(encoding="utf-8")
+        for p in (ROOT / "tools").iterdir()
+        if p.is_file() and p.suffix in ("", ".py")
+    )
+    for name, text in pages.items():
+        assert f"<pre>{html.escape(prompt, quote=False)}</pre>" in text, name
+        assert 'href="https://github.com/reagent-systems/via/blob/main/INSTALL.md"' in text, name
+        lines = [
+            html.unescape(line)
+            for line in re.findall(r'<span class="prompt">(?:\$|PS&gt;) </span>([^<\n]*)', text)
+        ]
+        assert len(lines) >= 8, name
+        for line in lines:
+            assert line in install, f"{name}: {line} is not a line of INSTALL.md"
+            words = line.replace(";", " ").split()
+            if "install-macos.sh" in " ".join(words):
+                assert set(w for w in words if w.startswith("--")) <= macos_flags, (name, line)
+            if "install.ps1" in words:
+                after = words[words.index("install.ps1") + 1 :]
+                assert set(after) <= ps1_flags, (name, line)
+            if words[0] == "workcenter":
+                assert re.search(rf'add_parser\(\s*"{words[1]}"', tools), line
+                for word in words[2:]:
+                    if word.startswith(("tests/", "examples/")):
+                        assert (ROOT / word).is_dir(), line
+    assert "<code>-WhatIf</code>" in pages["windows"] and "-DryRun" in pages["windows"]
+    assert "--dry-run" in pages["macos"] and "--dry-run" in macos_flags
+    # The folders an installer writes, as the installer names them.
+    assert "~/Library/Application Support/via" in pages["macos"]
+    assert "%LOCALAPPDATA%\\Via" in pages["windows"]
 
 
 def test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards():
@@ -885,7 +949,7 @@ def test_the_site_builds_for_an_address_and_without_one(tmp_path):
         "index.html",
         "404.html",
         "feedback.html",
-        "guide.html",
+        *(str(p.relative_to(SITE)) for p in guide_pages()),
         "made.html",
         *(str(p.relative_to(SITE)) for p in sorted((SITE / "made").glob("*.html"))),
         *(str(p.relative_to(SITE)) for p in (*example_pages(), *blog_pages())),

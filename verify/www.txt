@@ -1,0 +1,38 @@
+# The tests of the site's gate, `make verify-www` (verify.sh www): 1 test file, or 1 test of a file, a line.
+# A change whose every path is under site/ runs these and no other test (tools/ci/scope.py's `site`,
+# the owner's word of 2026-11-28: Via's package tests do not run for the website). Each reads the
+# site's files. tests/test_ci_scope.py holds that each is there, and that every test of test_docs.py
+# that reads site/ and starts no engine is named here.
+
+# The site's own test files: the forms' functions, the gallery's API and its check, the product's
+# name in the text a visitor reads on each page.
+tests/test_forms.py
+tests/test_made.py
+tests/test_product_name.py
+
+# The tests of the documents that read the site: each page is what its script writes, each link names
+# what exists, the build serves what a page names, the guide's commands are the tool's.
+tests/test_docs.py::test_a_site_generator_changes_nothing_a_later_import_of_guide_gets
+tests/test_docs.py::test_every_flag_a_document_gives_a_command_is_a_flag_of_that_command
+tests/test_docs.py::test_no_file_names_the_repository_by_its_old_name
+tests/test_docs.py::test_no_file_read_today_links_the_repository_at_its_old_home
+tests/test_docs.py::test_every_page_a_reader_opens_loads_the_hosts_analytics_script_once
+tests/test_docs.py::test_every_link_on_the_site_names_what_exists
+tests/test_docs.py::test_the_guide_is_what_site_guide_writes_and_names_what_exists
+tests/test_docs.py::test_the_install_guides_are_what_site_guide_writes_from_the_installers
+tests/test_docs.py::test_the_gallery_is_what_site_made_writes_and_lists_only_green_boards
+tests/test_docs.py::test_each_board_has_a_page_with_an_order_menu_from_the_fabs_own_pages
+tests/test_docs.py::test_the_site_builds_for_an_address_and_without_one
+tests/test_docs.py::test_the_open_graph_image_has_the_size_the_page_states
+tests/test_docs.py::test_every_picture_and_link_in_a_readme_names_a_file
+tests/test_docs.py::test_the_code_a_page_shows_is_a_run_of_lines_of_its_file
+tests/test_docs.py::test_the_blog_is_what_site_blog_writes
+tests/test_docs.py::test_each_post_follows_the_website_writing_rules
+tests/test_docs.py::test_the_example_pages_are_what_site_examples_writes
+tests/test_docs.py::test_the_gates_drawings_hold_numbers_their_boards_give
+
+# Every commit names the owner as its author: a rule of every commit, the site's too.
+tests/test_docs.py::test_no_commit_names_an_assistant_as_its_author
+
+# No script of site/ reads the clock but through tools/clock.py.
+tests/test_clock.py::test_only_the_clock_module_reads_the_clock

@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
-"""scope — what a change needs: `fast` when it touches only what no engine reads, `full` otherwise.
+"""scope — what a change needs: `site` when every path is the website's, `fast` when it touches only
+what no engine reads, `full` otherwise.
 
-A path is judged by its folder and its kind (RULES). A document is judged by its text too: the runs it
-shows and the README's quick start are run by tests/test_docs.py with the engines, so a change inside
-one makes the change full. `runs_in`, `document_text` and `quick_start` are the readers that
-tests/test_docs.py uses; it imports them from here, so the 2 cannot read a block differently.
+A path is judged by its folder and its kind (`rule_of`). A path under site/ is `site`: a change whose
+every path is the site's runs the site's gate alone, `make verify-www`, and none of Via's own tests (the
+owner's word, 2026-11-28). 1 path beside the site makes the change `fast` or `full`, as before. A
+document is judged by its text too: the runs it shows and the README's quick start are run by
+tests/test_docs.py with the engines, so a change inside one makes the change full. `runs_in`,
+`document_text` and `quick_start` are the readers that tests/test_docs.py uses; it imports them from
+here, so the 2 cannot read a block differently.
 
     scope.py --base B [--head H]   the diff from commit B to commit H (to the working tree without H)
     scope.py --paths P [P ...]     a list of paths, read from the working tree
 
-Each judged path prints 1 line, `<answer>  <path>: <why>`; the last line is the answer alone. A path
-no rule names is full; a diff git cannot read is full. Exit code 0 for either answer, 2 for misuse.
+Each judged path prints 1 line, `<answer>  <path>: <why>`; the last line is the answer alone, the widest
+of the paths' (site, then fast, then full). A path no rule names is full; a diff git cannot read is
+full; no path at all is fast. Exit code 0 for each answer, 2 for misuse.
 The GitHub workflow and the Makefile both call this script. Standard library only.
 
 It also answers whether the change asks CI's Windows and macOS legs: a path of install or platform code
 (DESKTOP_FILES, or a file under DESKTOP_FOLDERS) prints `desktop  <path>: <why>` before the last line,
 and so do a run with no base and a diff git cannot read. `--desktop` asks the legs whatever the paths (a
-push to main). With `--github-output` it writes desktop=yes or desktop=no beside scope=.
+push to main), but for a `site` change: the legs run Via's tests, and the site changes nothing they
+judge. With `--github-output` it writes desktop=yes or desktop=no beside scope=.
 """
 
 from __future__ import annotations
@@ -29,7 +35,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-FAST, FULL = "fast", "full"
+SITE, FAST, FULL = "site", "fast", "full"
+# The answers from the narrowest to the widest: a change takes the widest of its paths'.
+WIDTH = {SITE: 0, FAST: 1, FULL: 2}
 
 # Folders whose documents a command or a gate reads: a fixture's or an example's files, the templates
 # `workcenter verify init` copies, the skills `workcenter next` names by heading, vendored skills.
@@ -134,7 +142,7 @@ def rule_of(path: str) -> tuple[str, str]:
     """The answer for a path by its folder and kind, before its text is read."""
     top = path.split("/", 1)[0]
     if top == "site":
-        return FAST, "the site"
+        return SITE, "the site"
     if path.endswith(".md"):
         if top in ENGINE_FOLDERS and "/" in path:
             return FULL, f"a command reads the files under {top}/"
@@ -235,12 +243,12 @@ def decide(
             ref = head or None
             lines = [(*judge(p, text_at(repo, base, p), text_at(repo, ref, p), texts=True), p) for p in found]
             asks = [(p, DESKTOP_WHY) for p in found if is_desktop(p)]
-    if desktop and not asks:
+    answer = max((a for a, _, _ in lines), key=WIDTH.__getitem__)
+    if desktop and not asks and answer != SITE:
         asks = [("(asked)", "the run asks the Windows and macOS legs whatever its paths")]
     judged = [
-        (answer, f"{shown(path)}: {why}") for answer, why, path in sorted(lines, key=lambda x: (x[0], x[2]))
+        (a, f"{shown(path)}: {why}") for a, why, path in sorted(lines, key=lambda x: (WIDTH[x[0]], x[2]))
     ]
-    answer = FULL if any(a == FULL for a, _ in judged) else FAST
     return [*judged, *((DESKTOP, f"{shown(p)}: {why}") for p, why in asks), (answer, "")]
 
 
@@ -258,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--github-output",
         action="store_true",
-        help="also append scope=<answer> and desktop=yes|no to $GITHUB_OUTPUT",
+        help="also append scope=site|fast|full and desktop=yes|no to $GITHUB_OUTPUT",
     )
     args = parser.parse_args(argv)
     if (args.base is None) == (args.paths is None):

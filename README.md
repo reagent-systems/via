@@ -400,6 +400,8 @@ README, its `TIMELINE.md` and its board. It is live at <https://via.computer>.
 `python3 -m http.server 8000 --directory site` serves it at
 http://localhost:8000. Vercel deploys a push that changes `site/`: `main`
 to production, any other branch to a preview.
+The guide's install pages, `/guide/macos` and `/guide/windows`, are written by
+`site/guide.py` from `INSTALL.md`, the installers and `toolchain/desktop.json`.
 [`site/README.md`](site/README.md) has the commands, the files and how the
 images are drawn.
 
@@ -459,7 +461,7 @@ images are drawn.
 | `tools/pdfcurve.py`, `tools/kistack_board.py` | A PDF page's vector paths; the board reader kistack's checks run on. |
 | `tools/harvest.py` | What the projects taught Via, read from the repository: each branch's work that main lacks, the scripts projects wrote for themselves, the mistakes made again; and the roadmap's rated candidates held to their scores. |
 | `tools/hooks/` | Claude Code hooks: no `cd` in a command, no test written by a script. |
-| `tools/ci/` | `scope.py`: what a change needs, `fast` or `full`; the `engine` marker's plugin and its guard; `nightly_issue.py`: what the nightly run does with its `ci-failure` issue. `make scope`, `make verify-site`. |
+| `tools/ci/` | `scope.py`: what a change needs, `site`, `fast` or `full`; the `engine` marker's plugin and its guard; `nightly_issue.py`: what the nightly run does with its `ci-failure` issue. `make scope`, `make verify-site`. |
 | `WORKCENTER.md` | The contract a project gets from this workcenter. |
 | `AGENTS.md`, `CLAUDE.md` | Where an agent starts. The same text. |
 | `.claude/skills/` | `attached-repos`, `autoroute`, `blocks`, `blog-post`, `board-ci`, `board-design`, `board-gates`, `board-loop`, `board-rules`, `charger-block`, `chip-design`, `chip-gates`, `copper`, `fabrication`, `fields`, `highspeed`, `kistack`, `land`, `lead`, `legend`, `mcp`, `now`, `procurement`, `ratings`, `references`, `simulate`, `standards`, `user-round`, `verification`. |
@@ -478,7 +480,7 @@ images are drawn.
 
 ## Working on this repository
 
-`main` takes no commit that its gate did not pass on that exact commit. The gate is `make verify` for a change `make scope` calls `full`, and `make verify-site` for one it calls `fast`; on GitHub it is the `verdict` check. A pull request merges only when `verdict` is green on its head and the branch holds `main`'s tip, by `gh pr merge <number> --merge --match-head-commit <sha>` (with no CI, run `make verify` on the machine). A push to a work branch needs only `make check`. A change `make scope` calls `fast` may be pushed straight to `main` on `make verify-site`. [`ee-agent-kit/CI.md`](ee-agent-kit/CI.md#where-the-health-gate-runs) shows what runs where.
+`main` takes no commit that its gate did not pass on that exact commit. The gate is `make verify` for a change `make scope` calls `full`, and `make verify-site` for one it calls `fast`; on GitHub it is the `verdict` check. A pull request merges only when `verdict` is green on its head and the branch holds `main`'s tip, by `gh pr merge <number> --merge --match-head-commit <sha>` (with no CI, run `make verify` on the machine). A push to a work branch needs only `make check`. A change `make scope` calls `fast` may be pushed straight to `main` on `make verify-site`. A change whose every path is under `site/`, which `make scope` calls `site`, passes `make verify-www`: the site's pages, its build and its tests, and none of Via's own tests (the owner's word, 2026-11-28). [`ee-agent-kit/CI.md`](ee-agent-kit/CI.md#where-the-health-gate-runs) shows what runs where.
 [`ee-agent-kit/AGENTS.md`](ee-agent-kit/AGENTS.md) is binding;
 [`ee-agent-kit/ROADMAP.md`](ee-agent-kit/ROADMAP.md) decides what gets built.
 [`ee-agent-kit/CONTRIBUTING.md`](ee-agent-kit/CONTRIBUTING.md) has the rules

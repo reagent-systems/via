@@ -39,6 +39,24 @@ Evidence: <commit / tag / gate run / screenshot>
 
 ---
 
+## 2026-11-28 — Install pages for a Mac and for Windows, and a site change runs only the site's checks
+
+The owner asked for a macOS and a Windows install guide on the site, and
+for the website's changes not to run Via's package tests. The guide now
+has 2 pages, /guide/macos and /guide/windows. `site/guide.py` writes them
+from INSTALL.md, the README's prompt for a coding agent, the 2 installers
+and the pinned versions, and stops when 1 of those files no longer holds
+a line it reads. A test holds every command they show to a line of
+INSTALL.md. The guide's first step said a Mac or a Windows PC needed the
+cloud environment; it now links the 2 pages. `tools/ci/scope.py` has a
+third answer, `site`, for a change whose every path is under `site/`.
+CI then runs only `make verify-www`: each page's script with `--check`,
+the build, and 53 tests that read the site. A change with 1 path outside
+`site/` keeps the lanes it had.
+
+Evidence: `tests/test_ci_scope.py` and the site's tests on this branch;
+screenshots of both pages at 390 and 1280 px in both themes.
+
 ## 2026-11-28 — Windows is proven, and its tests now look for KiCad where Via does
 
 The fourth run of the desktop legs was green everywhere, Windows native

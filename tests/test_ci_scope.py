@@ -1,4 +1,5 @@
-"""The scope of a change: `fast` when it touches only what no engine reads, `full` for anything else.
+"""The scope of a change: `site` when every path is the website's, `fast` when it touches only what no
+engine reads, `full` for anything else.
 
 `tools/ci/scope.py` answers from the diff between 2 commits, or from a list of paths. A path is judged
 by its folder and kind; a document is judged by its shown runs too, read with the reader that
@@ -9,6 +10,7 @@ workflow is held here by its parsed structure: GitHub Actions does not run on th
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCOPE = ROOT / "tools" / "ci" / "scope.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 UNKNOWN = "no rule names this path, so it needs the full gate"
+WWW = ROOT / "verify" / "www.txt"
 SAME = "a document; its shown runs are as they were"
 DESKTOP = "install or platform code, so the Windows and macOS legs run"
 # The paths of the desktop scope, named here a second time on purpose: a path dropped from scope.py, or
@@ -201,7 +204,7 @@ def test_a_shown_run_on_a_page_of_the_site_is_read_as_the_page_shows_it(repo):
     base = git(repo, "rev-parse", "HEAD")
     prose = commit(repo, {"site/index.html": PAGE.replace("Read the report.", "Read its report.")}, "prose")
     _, lines = scope("--repo", repo, "--base", base, "--head", prose)
-    assert lines == ["fast  site/index.html: the site; its shown runs are as they were", "fast"]
+    assert lines == ["site  site/index.html: the site; its shown runs are as they were", "site"]
     run = commit(
         repo, {"site/index.html": PAGE.replace("0 errors, 0 warnings", "0 errors, 2 warnings")}, "run"
     )
@@ -226,8 +229,8 @@ def test_one_path_an_engine_reads_makes_the_whole_change_full(repo):
     )
     _, lines = scope("--repo", repo, "--base", base, "--head", head)
     assert lines == [
+        "site  site/site.css: the site",
         f"fast  ee-agent-kit/ROADMAP.md: {SAME}",
-        "fast  site/site.css: the site",
         f"full  tools/workcenter: {UNKNOWN}",
         "full",
     ]
@@ -252,11 +255,11 @@ def test_a_list_of_paths_is_judged_by_folder_and_kind_alone():
         ".github/workflows/ci.yml",
     )
     assert code == 0, lines
-    # The lines are in the order of (answer, path): fast before full, and "." and capitals first.
+    # The lines are in the order of (answer, path): site, fast, then full, and "." and capitals first.
     assert lines == [
+        "site  site/build.sh: the site",
+        "site  site/media/README.md: the site",
         "fast  ee-agent-kit/STATUS.md: a document",
-        "fast  site/build.sh: the site",
-        "fast  site/media/README.md: the site",
         "full  .claude/skills/ratings/SKILL.md: a command reads the files under .claude/",
         f"full  .github/workflows/ci.yml: {UNKNOWN}",
         f"full  LICENSE: {UNKNOWN}",
@@ -310,7 +313,7 @@ def test_a_rename_is_judged_at_both_of_its_paths(repo):
     head = commit(repo, {}, "move")
     _, lines = scope("--repo", repo, "--base", base, "--head", head)
     assert lines == [
-        "fast  site/workcenter: the site",
+        "site  site/workcenter: the site",
         f"full  tools/workcenter: {UNKNOWN}",
         "full",
     ]
@@ -465,6 +468,99 @@ def test_a_run_that_asks_the_desktop_legs_gets_them_whatever_its_paths(repo, tmp
     assert out.read_text(encoding="utf-8") == "scope=fast\ndesktop=yes\n"
 
 
+# ---------------------------------------------------------------- the site's own scope
+
+
+def test_a_change_whose_every_path_is_the_sites_is_site(repo, tmp_path):
+    """The owner's word (2026-11-28): a change to the website runs the site's checks and not Via's
+    tests. Every path under site/, a new page among them, and no shown run changed: site."""
+    base = git(repo, "rev-parse", "HEAD")
+    head = commit(
+        repo,
+        {
+            "site/site.css": "body { color: black; }\n",
+            "site/guide/macos.html": "<html><body><p>A Mac.</p></body></html>\n",
+            "site/index.html": PAGE.replace("Read the report.", "Read its report."),
+        },
+        "the site",
+    )
+    out = tmp_path / "out"
+    code, lines = scope(
+        "--repo", repo, "--base", base, "--head", head, "--github-output", env={"GITHUB_OUTPUT": str(out)}
+    )
+    assert code == 0, lines
+    assert lines == [
+        "site  site/guide/macos.html: the site; its shown runs are as they were",
+        "site  site/index.html: the site; its shown runs are as they were",
+        "site  site/site.css: the site",
+        "site",
+    ]
+    assert out.read_text(encoding="utf-8") == "scope=site\ndesktop=no\n"
+
+
+def test_a_change_with_1_path_beside_the_site_keeps_the_lanes_of_today(repo):
+    """Mixed is never site: a change file beside the site is fast, the CLI beside it is full, and a
+    page whose shown run changed is full on its own."""
+    base = git(repo, "rev-parse", "HEAD")
+    head = commit(
+        repo,
+        {
+            "site/site.css": "a { color: blue; }\n",
+            "ee-agent-kit/changes/2026-11-28-a.md": "### Added\n- A.\n",
+        },
+        "the site and a change file",
+    )
+    _, lines = scope("--repo", repo, "--base", base, "--head", head)
+    assert lines == [
+        "site  site/site.css: the site",
+        f"fast  ee-agent-kit/changes/2026-11-28-a.md: {SAME}",
+        "fast",
+    ]
+    head = commit(repo, {"site/site.css": "a { color: red; }\n", "tools/workcenter": "print(2)\n"}, "cli")
+    _, lines = scope("--repo", repo, "--base", base, "--head", head)
+    assert lines[-1] == "full" and f"full  tools/workcenter: {UNKNOWN}" in lines
+    run = commit(
+        repo, {"site/index.html": PAGE.replace("0 errors, 0 warnings", "0 errors, 3 warnings")}, "run"
+    )
+    _, lines = scope("--repo", repo, "--base", head, "--head", run)
+    assert lines[-1] == "full", lines
+
+
+def test_a_list_of_the_sites_paths_is_site_and_a_page_that_shows_a_run_is_full(repo):
+    """A list carries no text: the site's paths are site, but a listed page that shows a run is full,
+    as any document that shows one."""
+    (repo / "site" / "site.css").write_text("body {}\n", encoding="utf-8")
+    _, lines = scope("--repo", repo, "--paths", "site/site.css", "site/build.sh")
+    assert lines == ["site  site/build.sh: the site", "site  site/site.css: the site", "site"]
+    _, lines = scope("--repo", repo, "--paths", "site/site.css", "site/index.html")
+    assert lines == [
+        "site  site/site.css: the site",
+        "full  site/index.html: a list of paths cannot show whether its shown runs changed",
+        "full",
+    ]
+
+
+def test_a_site_change_pushed_to_main_does_not_ask_the_desktop_legs(repo, tmp_path):
+    """A push to main asks the Windows and macOS legs whatever its paths, but a push of the site alone:
+    the legs run Via's tests, and a change to the site changes nothing they judge."""
+    base = git(repo, "rev-parse", "HEAD")
+    head = commit(repo, {"site/site.css": "p { margin: 0; }\n"}, "css")
+    out = tmp_path / "out"
+    _, lines = scope(
+        "--repo",
+        repo,
+        "--base",
+        base,
+        "--head",
+        head,
+        "--desktop",
+        "--github-output",
+        env={"GITHUB_OUTPUT": str(out)},
+    )
+    assert lines == ["site  site/site.css: the site", "site"]
+    assert out.read_text(encoding="utf-8") == "scope=site\ndesktop=no\n"
+
+
 # ---------------------------------------------------------------- the workflow, by its parsed structure
 
 
@@ -485,7 +581,7 @@ def test_the_workflow_is_1_workflow_whose_first_job_alone_decides_the_scope():
     assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}
     assert all("paths" not in (t or {}) and "paths-ignore" not in (t or {}) for t in triggers.values())
     jobs = flow["jobs"]
-    assert list(jobs) == ["scope", "fast", "full", "desktop", "desktop-wsl", "verdict"]
+    assert list(jobs) == ["scope", "fast", "full", "site", "desktop", "desktop-wsl", "verdict"]
     assert "tools/ci/scope.py" in run_lines(jobs["scope"])
     assert [name for name, job in jobs.items() if "scope.py" in run_lines(job)] == ["scope"]
     assert jobs["scope"]["outputs"] == {
@@ -493,10 +589,14 @@ def test_the_workflow_is_1_workflow_whose_first_job_alone_decides_the_scope():
         "desktop": "${{ steps.scope.outputs.desktop }}",
     }
     assert jobs["fast"]["needs"] == "scope" and jobs["full"]["needs"] == "scope"
-    # The fast job runs on every change, beside the full one: a test that needs KiCad's files and
-    # does not say so fails on the pull request that adds it, not on main's next fast push (P12).
-    assert "if" not in jobs["fast"]
+    assert jobs["site"]["needs"] == "scope"
+    # The fast job runs on every change but the site's, beside the full one: a test that needs KiCad's
+    # files and does not say so fails on the pull request that adds it, not on main's next fast push
+    # (P12). A change of the site alone runs the site job and nothing of Via's tests (the owner's word,
+    # 2026-11-28).
+    assert jobs["fast"]["if"] == "needs.scope.outputs.scope != 'site'"
     assert jobs["full"]["if"] == "needs.scope.outputs.scope == 'full'"
+    assert jobs["site"]["if"] == "needs.scope.outputs.scope == 'site'"
 
 
 # CI's install line: the 2 bounds, and the command install.sh runs after a download pass too slow to
@@ -509,22 +609,25 @@ INSTALL_LINE = (
 
 def test_the_fast_job_installs_no_engine_and_the_full_job_is_the_gate_of_today():
     jobs = workflow()["jobs"]
-    fast, full = run_lines(jobs["fast"]), run_lines(jobs["full"])
+    fast, full, site = run_lines(jobs["fast"]), run_lines(jobs["full"]), run_lines(jobs["site"])
     assert "install.sh" not in fast and "make verify-site" in fast
     assert "make verify-site" not in full
+    # The site job runs the site's gate alone: no engine, no fast gate, no full gate.
+    assert "install.sh" not in site and "make verify-www" in site.split("\n")
+    assert "make verify-site" not in site and "make verify\n" not in site + "\n"
     install = INSTALL_LINE
     assert install in full.split("\n") and "make verify" in full.split("\n")
 
 
 def test_the_last_job_always_runs_and_passes_only_when_the_asked_jobs_passed(tmp_path):
-    """The verdict job needs the 4 jobs it judges, runs with `if: always()`, and its 1 step is run here
-    with each answer: green only when the fast job succeeded, for a full change the full job too, and
-    when the scope asked the desktop legs, both of them. A skipped job is not a success, and a scope job
-    that failed leaves no answer. The WSL leg is experimental: verdict does not wait for it, and the leg
-    reports its own state (tests/test_ci_desktop.py)."""
+    """The verdict job needs the 5 jobs it judges, runs with `if: always()`, and its 1 step is run here
+    with each answer: green only when the fast job succeeded, for a full change the full job too, for
+    a site change the site job alone, and when the scope asked the desktop legs, both of them. A skipped
+    job is not a success, and a scope job that failed leaves no answer. The WSL leg is experimental:
+    verdict does not wait for it, and the leg reports its own state (tests/test_ci_desktop.py)."""
     jobs = workflow()["jobs"]
     verdict = jobs["verdict"]
-    assert verdict["needs"] == ["scope", "fast", "full", "desktop"]
+    assert verdict["needs"] == ["scope", "fast", "full", "site", "desktop"]
     assert verdict["if"] == "always()"
     (step,) = verdict["steps"]
     script = tmp_path / "verdict.sh"
@@ -534,8 +637,10 @@ def test_the_last_job_always_runs_and_passes_only_when_the_asked_jobs_passed(tmp
         "DESKTOP_ASKED": "${{ needs.scope.outputs.desktop }}",
         "FAST": "${{ needs.fast.result }}",
         "FULL": "${{ needs.full.result }}",
+        "SITE": "${{ needs.site.result }}",
         "DESKTOP": "${{ needs.desktop.result }}",
     }
+    # (scope, desktop asked, fast, full, desktop, site); site is skipped where the case does not name it.
     cases = {
         ("fast", "no", "success", "skipped", "skipped"): 0,
         ("full", "no", "success", "success", "skipped"): 0,
@@ -561,8 +666,19 @@ def test_the_last_job_always_runs_and_passes_only_when_the_asked_jobs_passed(tmp
         # a scope job that wrote a scope and no desktop answer
         ("full", "", "success", "success", "success"): 1,
         ("full", "maybe", "success", "success", "success"): 1,
+        # a site change: the site job alone, and the jobs of Via's tests skipped
+        ("site", "no", "skipped", "skipped", "skipped", "success"): 0,
+        ("site", "no", "skipped", "skipped", "skipped", "failure"): 1,
+        ("site", "no", "skipped", "skipped", "skipped", "skipped"): 1,
+        ("site", "no", "skipped", "skipped", "skipped", "cancelled"): 1,
+        ("site", "yes", "skipped", "skipped", "success", "success"): 0,
+        ("site", "yes", "skipped", "skipped", "failure", "success"): 1,
+        # a fast or full change does not count the site job, which did not run
+        ("fast", "no", "success", "skipped", "skipped", "success"): 0,
+        ("fast", "no", "failure", "skipped", "skipped", "success"): 1,
     }
-    for (asked, desk, fast, full, desktop), code in cases.items():
+    for key, code in cases.items():
+        asked, desk, fast, full, desktop, site = (*key, "skipped")[:6]
         env = {
             **os.environ,
             "SCOPE": asked,
@@ -570,13 +686,14 @@ def test_the_last_job_always_runs_and_passes_only_when_the_asked_jobs_passed(tmp
             "FAST": fast,
             "FULL": full,
             "DESKTOP": desktop,
+            "SITE": site,
         }
         ran = subprocess.run(["bash", "-e", str(script)], env=env, capture_output=True, text=True)
-        assert ran.returncode == code, (asked, desk, fast, full, desktop, ran.stdout, ran.stderr)
+        assert ran.returncode == code, (key, ran.stdout, ran.stderr)
         said = ran.stdout.splitlines()[0]
         assert said == (
             f"scope: {asked or 'none'}; desktop asked: {desk or 'none'}; fast: {fast}; full: {full}; "
-            f"desktop: {desktop}"
+            f"site: {site}; desktop: {desktop}"
         ), said
 
 
@@ -603,6 +720,10 @@ def test_the_makefile_asks_the_same_script_and_names_no_path_of_its_own():
     lines = ran.stdout.splitlines()
     assert any("tools/ci/scope.py --base" in line for line in lines)
     assert lines[-2:] == ["verify/verify.sh site", "verify/verify.sh"]
+    www = subprocess.run(
+        ["make", "-n", "--no-print-directory", "-C", str(ROOT), "verify-www"], capture_output=True, text=True
+    )
+    assert www.returncode == 0 and www.stdout.splitlines() == ["verify/verify.sh www"], www.stderr
     # The scope's folders and kinds are in scope.py alone: the 2 targets' lines name none. Other
     # targets may name a test file (`mutate-ratings` names tests/ratings_mutations.py).
     ours = "\n".join(line for line in lines if "scope.py" in line or "verify.sh" in line)
@@ -654,13 +775,13 @@ def test_each_gate_takes_the_engine_lock_under_its_own_name():
     line = next(x for x in text.splitlines() if "enginelock.py hold --what" in x)
     what = line.split("--what ", 1)[1].split(" -- ", 1)[0]
     named = {}
-    for argv in ([], ["site"]):
+    for argv in ([], ["site"], ["www"]):
         ran = subprocess.run(
             ["bash", "-c", f"set -u; printf %s {what}", "verify.sh", *argv], capture_output=True, text=True
         )
         assert ran.returncode == 0, ran.stderr
         named[" ".join(argv)] = ran.stdout
-    assert named == {"": "make verify", "site": "make verify-site"}
+    assert named == {"": "make verify", "site": "make verify-site", "www": "make verify-www"}
 
 
 # The longest `fast` job measured: 711 s on pull request 128's head 797bff6 (job 135849299580), against
@@ -673,3 +794,84 @@ FAST_LONGEST = 711
 def test_the_fast_job_s_limit_keeps_half_again_beyond_its_longest_measured_run():
     fast = workflow()["jobs"]["fast"]
     assert fast["timeout-minutes"] * 60 >= 1.5 * FAST_LONGEST, fast["timeout-minutes"]
+
+
+# ---------------------------------------------------------------- the site's gate, make verify-www
+
+
+def www_tests() -> list[str]:
+    """The ids verify/www.txt names, 1 a line, without its comments."""
+    lines = WWW.read_text(encoding="utf-8").splitlines()
+    return [line.split("#", 1)[0].strip() for line in lines if line.split("#", 1)[0].strip()]
+
+
+def test_the_site_gate_runs_the_sites_checks_and_its_tests_alone(tmp_path):
+    """`verify.sh www` is the gate of a site change: shellcheck of build.sh, each generator's --check,
+    the build, and pytest on the ids of verify/www.txt alone, KiCad's libraries hidden and no engine
+    started, as in the fast gate. It names no folder of tests, so Via's own tests stay out. Its lines
+    are run here with stand-ins for the programs."""
+    text = (ROOT / "verify" / "verify.sh").read_text(encoding="utf-8")
+    www = text.split('if [[ "$mode" == www ]]; then', 1)[1].split("\nfi\n", 1)[0]
+    (pytest_line,) = [line for line in www.splitlines() if "-m pytest" in line]
+    assert 'KICAD_SYMBOL_DIR="$nokicad/symbols"' in pytest_line
+    assert "WORKCENTER_NO_ENGINES=1" in pytest_line and '-m "not engine"' in pytest_line
+    assert not re.search(r"\stests/?(\s|$)", pytest_line), pytest_line
+    for generator in ("examples", "blog", "forms", "guide", "made"):
+        assert generator in www, generator
+    assert "kit_checks" not in www
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    report = tmp_path / "report"
+    for name in ("shellcheck", "sh"):
+        (bin_dir / name).write_text(f'#!/bin/bash\necho "{name} $*" >> {report}\n', encoding="utf-8")
+        (bin_dir / name).chmod(0o755)
+    py = bin_dir / "py"
+    py.write_text(f'#!/bin/bash\necho "py $*" >> {report}\n', encoding="utf-8")
+    py.chmod(0o755)
+    script = tmp_path / "www.sh"
+    script.write_text(f"set -euo pipefail\nstep() {{ :; }}\nPY={py}\n{www}\n", encoding="utf-8")
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    ran = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True, cwd=ROOT)
+    assert ran.returncode == 0, ran.stderr
+    assert "VERIFY-WWW GREEN" in ran.stdout
+    said = report.read_text(encoding="utf-8").splitlines()
+    assert said[0] == "shellcheck site/build.sh"
+    checks = [line for line in said if line.endswith(" --check")]
+    assert checks == [f"py site/{g}.py --check" for g in ("examples", "blog", "forms", "guide", "made")]
+    assert any(line.startswith("sh site/build.sh ") for line in said)
+    (tests,) = [line for line in said if " -m pytest " in line]
+    assert tests.split(" -m not engine ", 1)[1].split() == www_tests()
+
+
+def test_each_test_the_site_gate_names_exists_and_every_site_test_of_the_docs_is_named():
+    """verify/www.txt names a test file or 1 test of a file, and each is there. Every test of
+    tests/test_docs.py that reads the site's folder and starts no engine is named: a site change
+    that breaks one of them fails the site gate. A test of the docs that starts an engine is left out:
+    a site change whose shown run changed is full (tools/ci/scope.py)."""
+    import ast
+
+    named = www_tests()
+    assert named and len(set(named)) == len(named)
+    for test_id in named:
+        file, _, name = test_id.partition("::")
+        path = ROOT / file
+        assert path.is_file() and file.startswith("tests/test_"), test_id
+        if name:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            assert name in {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}, test_id
+    docs = ROOT / "tests" / "test_docs.py"
+    source = docs.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    reads_site = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef) or not node.name.startswith("test_"):
+            continue
+        body = ast.get_source_segment(source, node) or ""
+        engine = any("engine" in ast.unparse(d) for d in node.decorator_list)
+        if not engine and re.search(r"\bSITE\b|site_module\(|example_pages\(|blog_pages\(", body):
+            reads_site.append(f"tests/test_docs.py::{node.name}")
+    assert len(reads_site) >= 12
+    assert [t for t in reads_site if t not in named] == []
+    # The site's own test files, whole: the forms, the gallery and the product's name on the pages.
+    for whole in ("tests/test_forms.py", "tests/test_made.py", "tests/test_product_name.py"):
+        assert whole in named, whole
