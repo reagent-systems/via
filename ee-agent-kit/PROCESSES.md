@@ -732,6 +732,15 @@ that may be absent.
     file names it the same way. A test of such a line names a folder
     with a space: on Linux it shows the split that Windows shows with
     `\` (M327).
+20. A mark that skips a test for an absent kicad-cli or ngspice asks
+    where Via finds it, `conftest.engine_absent(name)` (tools/hostos.py's
+    candidates, as the CLI takes them), never `shutil.which` of the name:
+    the installers of macOS and Windows put neither on `PATH`. A test
+    that runs the engine itself takes the path from
+    `hostos.found_program`. `tests/test_desktop.py` fails on a `desktop`
+    file that looks the name up on `PATH` alone. Before a run off Linux
+    is called proven, its `not judged:` lines are read for an engine the
+    same run's gates used (M328).
 
 Done when: the summary shows no unexpected skips, the engine test is
 green on the runner, and a run with an engine taken away is not GREEN.

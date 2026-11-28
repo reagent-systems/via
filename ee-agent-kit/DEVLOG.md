@@ -39,6 +39,23 @@ Evidence: <commit / tag / gate run / screenshot>
 
 ---
 
+## 2026-11-28 — Windows is proven, and its tests now look for KiCad where Via does
+
+The fourth run of the desktop legs was green everywhere, Windows native
+included: it installed, the smoke passed all 8 steps, and 788 of 963
+tests passed with none failed. So the README and `INSTALL.md` now call
+native Windows proven on GitHub's runners. But the same run skipped 99
+tests on Windows and 44 on macOS that need KiCad's command line or
+ngspice, though its own gates had just used both. The tests looked for
+them on `PATH`, and neither installer puts them there; Via finds them
+where the installer put them. The tests now ask Via's own lookup, the
+test step adds the engines' folders to its `PATH`, and on Windows Via
+finds its own ngspice without the help of `workcenter.cmd`. The next run
+is the first to judge those tests off Linux.
+
+Evidence: run 46093588252 (head 935b3a6); MISTAKES M328; PROCESSES P12
+step 20; branch `claude/windows-proven`.
+
 ## 2026-11-27 — Via is ported to Windows and macOS; nothing has run there yet
 
 The owner asked for Windows and macOS support, and for instructions that

@@ -1972,3 +1972,9 @@ Cost: 1 GitHub run (the Windows leg 5 min 55 s), and a fix of 1 line in tools/gu
 Root cause: 2 lines of 1 tool built a path for the same file by 2 hands, and the tests of those lines used folders with no space, where sh's and cmd.exe's rules agree with both.
 Process: P12
 
+## M328 — 2026-11-28 — The desktop legs skipped the engine tests whose engines the same run's gates used
+What happened: Run 46093588252 of pull request 140 (head 935b3a6) was green on every leg. Its Windows leg ran the gates through the installed `workcenter.CMD` (ERC and DRC by kicad-cli, SIM by ngspice), and its tests step printed `not judged: 57 tests skipped by a mark on this machine ('ngspice is not installed')` and `42 ... ('kicad-cli is not installed')`; the macOS leg printed `44 ... ('kicad-cli is not installed')`. The marks were `shutil.which("kicad-cli")` and `shutil.which("ngspice")`, and neither installer puts the engines on `PATH`: the command each writes sets `KICAD_CLI` and `NGSPICE`, and `tools/workcenter` also finds KiCad through `tools/hostos.py`'s candidates (the bundle, the per-user install). The tests step ran with the runner's `PATH` and without those variables. CI.md named the gap as left; the README and INSTALL.md were about to call Windows proven on a run that judged none of its engine tests.
+Cost: 143 tests not judged off Linux in a green run; no product fault is known, and none is ruled out until a run judges them.
+Root cause: An engine test's mark asked where a Linux shell finds the engine, not where Via does; P12 asked a mark to name the engine, not to ask the CLI's own lookup.
+Process: P12
+

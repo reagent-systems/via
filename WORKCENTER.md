@@ -104,8 +104,8 @@ honestly passes it.
 On your own computer the install has no time limit: a slow line finishes, and apt gives up a stalled file by itself; to set one, pass it through sudo with env (`sudo env APT_DOWNLOAD_TIMEOUT=900 ./install.sh`). CI sets `APT_UPDATE_TIMEOUT=120 APT_DOWNLOAD_TIMEOUT=570`, so a stall ends with apt's own line before the job's limit. Run the script as a file, not through a pipe or `bash <(...)`.
 
 The table is the toolchain of Linux (Ubuntu 24.04) and the image. macOS and Windows have installers
-of their own, for 1 user each, not yet run on either system: the first GitHub run of the desktop legs
-proves or refutes them (`INSTALL.md`, `ee-agent-kit/CI.md` "Windows and macOS").
+of their own, for 1 user each, proven on GitHub's runners (macos-latest, windows-latest) by the desktop
+legs (`INSTALL.md`, `ee-agent-kit/CI.md` "Windows and macOS").
 `install-macos.sh` installs Homebrew's Python 3.12 and ngspice, KiCad 10.0.8 from its pinned DMG into
 `/Applications/KiCad`, Temurin 21, the FreeRouting 1.9.0 jar and the venv under
 `~/Library/Application Support/via`, and a `workcenter` command in `~/.local/bin`. `install.ps1` installs
