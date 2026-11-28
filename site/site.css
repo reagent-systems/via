@@ -3175,8 +3175,11 @@ html[data-shot] .ticker {
 .guide-cmd {
   position: relative;
 }
+/* A long command wraps rather than scrolling under the copy button; the button copies it whole. */
 .guide-cmd pre {
   padding-right: 3.5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .guide-cmd .prompt {
   color: var(--muted-foreground);
@@ -3185,6 +3188,10 @@ html[data-shot] .ticker {
 .guide-cmd .copy {
   top: 0.6875rem;
   right: 0.6875rem;
+}
+/* A long path in a sentence breaks where it must, so a phone never scrolls sideways. */
+.guide .prose :not(pre) > code {
+  overflow-wrap: anywhere;
 }
 
 /* --------------------------------------------------------------- sticker */

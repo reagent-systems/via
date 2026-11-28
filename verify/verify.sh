@@ -13,10 +13,13 @@ cd "$(dirname "$0")/.."
 # is refused (WORKCENTER_NO_ENGINES=1) and fails (tools/ci/engine_marker.py).
 # `verify.sh kit` runs the kit checks alone (make kit, inside make check): it reads a few files,
 # takes no lock and leaves no gate record.
+# `verify.sh www` is the site's gate (make verify-www), for a change whose every path is under site/
+# (tools/ci/scope.py's `site`): the site's pages, its build and the tests verify/www.txt names, and none
+# of Via's own tests (the owner's word, 2026-11-28).
 mode=${1:-full}
 case "$mode" in
-  full | site | kit) ;;
-  *) echo "usage: verify/verify.sh [site|kit]"; exit 2 ;;
+  full | site | www | kit) ;;
+  *) echo "usage: verify/verify.sh [site|www|kit]"; exit 2 ;;
 esac
 
 # The gate runs alone: it waits its turn on the machine's engine lock and holds it to its end. The
@@ -80,6 +83,33 @@ echo "kit checks ok"
 
 if [[ "$mode" == kit ]]; then
   kit_checks
+  exit 0
+fi
+
+# The site's gate leaves no gate record either. Its tests run as the fast gate's do: KiCad's libraries
+# hidden, no engine started, the tests marked `engine` left out.
+if [[ "$mode" == www ]]; then
+  step "1/4 shellcheck site/build.sh"
+  shellcheck site/build.sh
+  step "2/4 each page is what its script writes"
+  for script in examples blog forms guide made; do
+    "$PY" "site/$script.py" --check
+  done
+  step "3/4 site build"
+  built=$(mktemp -d)
+  trap 'rm -rf "$built"' EXIT
+  sh site/build.sh "$built/site"
+  echo "site built: $(find "$built/site" -type f | wc -l) files"
+  step "4/4 the site's tests"
+  nokicad="$built/no-kicad"
+  mkdir -p "$nokicad/symbols" "$nokicad/footprints"
+  tests=()
+  while read -r line; do
+    line=${line%%#*}
+    [[ -n "${line// /}" ]] && tests+=("${line// /}")
+  done < verify/www.txt
+  TESTSHARDS_HIDES="KiCad's symbol and footprint libraries and every engine" PYTHONPATH="verify${PYTHONPATH:+:$PYTHONPATH}" KICAD_SYMBOL_DIR="$nokicad/symbols" KICAD_FOOTPRINT_DIR="$nokicad/footprints" WORKCENTER_NO_ENGINES=1 "$PY" -m pytest -q -p testshards -p no:cacheprovider -m "not engine" "${tests[@]}"
+  printf '\nVERIFY-WWW GREEN in %ss\n' "$SECONDS"
   exit 0
 fi
 

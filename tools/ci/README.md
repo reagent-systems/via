@@ -1,14 +1,15 @@
-# tools/ci: what a change needs, fast or full
+# tools/ci: what a change needs, site, fast or full
 
-A change that touches only what no engine reads gets the fast gate: no
-toolchain, no engine. Any other change gets the full health gate. CI and a
+A change whose every path is under `site/` gets the site's gate alone, with
+none of Via's own tests. A change that touches only what no engine reads gets
+the fast gate: no toolchain, no engine. Any other change gets the full health gate. CI and a
 developer's machine ask the same script. The fast gate's time on this
 workcenter's shared machine is in `ee-agent-kit/STATUS.md`; it is not yet
 the minute the roadmap asks for.
 
 | File | What it does |
 |---|---|
-| `scope.py` | Reads a change and prints `fast` or `full`, with 1 line per path saying why. |
+| `scope.py` | Reads a change and prints `site`, `fast` or `full`, with 1 line per path saying why. |
 | `engine_marker.py` | The pytest plugin behind the `engine` marker. `tests/conftest.py` loads it. |
 | `guard/engine_watch.py` | Writes a line for each engine a Python process starts; refuses it in the fast run. |
 | `guard/sitecustomize.py` | Loads the watch in every Python process that has `guard/` on PYTHONPATH. |
@@ -20,7 +21,8 @@ the minute the roadmap asks for.
 
 ## The rules of `scope.py`
 
-1. A path under `site/` is fast.
+1. A path under `site/` is site. A change whose every path is site is
+   `site`; the widest answer of its paths wins (site, then fast, then full).
 2. A `.md` file is fast, unless it is under `tests/`, `examples/`,
    `templates/`, `third_party/` or `.claude/`: a command reads the files there.
 3. Any other path is full. A path no rule names is full.
@@ -36,7 +38,8 @@ the minute the roadmap asks for.
    each such byte as `\xe9`.
 8. A path of install or platform code (scope.py's `DESKTOP_FILES` and
    `DESKTOP_FOLDERS`) also asks the Windows and macOS legs: desktop=yes.
-   So do no base, a diff git cannot read, and `--desktop` (a push to main).
+   So do no base, a diff git cannot read, and `--desktop` (a push to main),
+   but not for a `site` change.
 
 ## Before a push
 
@@ -44,8 +47,11 @@ the minute the roadmap asks for.
    `git merge-base origin/main HEAD` (set `SCOPE_BASE=<ref>` for another base).
    - A line `fast  <path>: <why>`: this path needs no engine.
    - A line `full  <path>: <why>`: this path needs the full gate.
-   - The last line is the answer: `fast` or `full`.
-2. Run `make verify-site` for every answer. It ends with
+   - A line `site  <path>: <why>`: this path is the website's.
+   - The last line is the answer: `site`, `fast` or `full`.
+   - For `site`, run `make verify-www`. It ends with `VERIFY-WWW GREEN in <n>s`,
+     and CI's `site` job runs it in place of `fast`.
+2. Run `make verify-site` for every other answer. It ends with
    `VERIFY-SITE GREEN in <n>s`. Any other end is red: read the step above it.
    It is the only local run that hides KiCad's libraries, and CI's `fast`
    job runs it on every change. A change whose answer is `fast` may be
@@ -91,16 +97,18 @@ program under the temporary folder is a test's stand-in, not an engine.
 
 ## The workflow
 
-`.github/workflows/ci.yml` has 6 jobs. `scope` runs `scope.py` and is the
-only job that decides fast or full, and whether the Windows and macOS legs
-run. `fast` runs `make verify-site` with no toolchain, on every change: for
-a full change it runs beside `full`. `full` gets the toolchain and runs
+`.github/workflows/ci.yml` has 7 jobs. `scope` runs `scope.py` and is the
+only job that decides site, fast or full, and whether the Windows and macOS legs
+run. `fast` runs `make verify-site` with no toolchain, on every change but a
+`site` one: for a full change it runs beside `full`. `site` runs
+`make verify-www` for a `site` change, and nothing else runs then. `full` gets the toolchain and runs
 `make verify`. `desktop` runs on macos-latest and windows-latest when the
 scope says desktop=yes: the installer a person runs, then
 `desktop_smoke.py`. `desktop-wsl` is the experimental WSL leg; it reports
 its own state and nothing waits for it. `verdict` always runs and needs
-`scope`, `fast`, `full` and `desktop`: it passes only when `fast` passed
-and, when asked, `full` and `desktop` passed too: make `verdict` the
+`scope`, `fast`, `full`, `site` and `desktop`: it passes only when `fast`
+passed (`site` for a `site` change) and, when asked, `full` and `desktop`
+passed too: make `verdict` the
 required check. The nightly run (`nightly.yml`) stays the full gate, with
 the same desktop legs.
 

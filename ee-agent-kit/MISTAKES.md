@@ -2002,3 +2002,9 @@ What happened: Run 46105129254 judged the tests M328 had left unjudged. Windows 
 Cost: 1 red run of both desktop legs (Windows 262.9 s and macOS 415.2 s in step 8) and a fix commit.
 Root cause: P12 step 20 changed what the marks ask and said where a test that runs the engine takes its path, but no step asked for a grep of the newly judged tests for a bare start, POSIX quoting, a path compared by its case, or another engine the test needs.
 Process: P12
+
+## M333 — 2026-11-28 — The site's install pages added 7 tests and left their files' counts in STATUS.md
+What happened: Commit fe2e2a9 (pull request 142) added 6 tests to `tests/test_ci_scope.py` and 1 to `tests/test_docs.py`, and STATUS.md still said 26 and 31. Run 46155230003 failed `tests/test_docs.py::test_a_count_of_tests_in_the_status_file_is_what_pytest_collects` in `fast` (`1 failed, 4199 passed, 405 skipped, 453 deselected`) and in `full` (`4983 passed, 1 failed, 72 skipped, 2 xfailed`): `{'test_ci_scope.py': (26, 32), 'test_docs.py': (31, 32)}`.
+Cost: 1 red run of `fast` (750.99 s of tests) and `full` (1086 s on the wall clock), and a fix commit.
+Root cause: The owner's word was not to run Via's package tests for the website. The author applied it to a change that also touched `tests/` and `tools/ci/`, ran `make verify-www` and the CI tests alone, and none of them holds the counts; P14 step 1 asks for the whole of `tests/test_docs.py` after a landing, and it was not run.
+Process: P14

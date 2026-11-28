@@ -11,11 +11,12 @@ permissions:
   contents: read
 jobs:
   # The 1 job that decides what the change needs: tools/ci/scope.py prints each path's answer and
-  # fast or full. A run with no base or a base it cannot read is full. A run by hand
+  # site, fast or full. A run with no base or a base it cannot read is full. A run by hand
   # (workflow_dispatch: `gh workflow run ci.yml --ref <branch>`) gates a candidate with no pull
   # request; it is given no base, so it is always full (ee-agent-kit/CI.md, "Where the health gate runs").
   # It also answers desktop=yes or no: yes for a change to install or platform code (scope.py's
-  # DESKTOP_FILES and DESKTOP_FOLDERS), for a run with no base, and for every push to main (--desktop).
+  # DESKTOP_FILES and DESKTOP_FOLDERS), for a run with no base, and for every push to main (--desktop)
+  # but a push of the site alone.
   scope:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -40,11 +41,13 @@ jobs:
           esac
           python3 tools/ci/scope.py --base "$base" --head HEAD ${desktop:+--desktop} --github-output
 
-  # Every change: no toolchain; shellcheck, the site's build, the tests that start no engine, and the
-  # kit's checks (make verify-site). It runs beside `full` too: its runner has no KiCad, so a test that
-  # needs KiCad's files and does not say so fails on the pull request that adds it (PROCESSES.md P12).
+  # Every change but the site's alone: no toolchain; shellcheck, the site's build, the tests that start
+  # no engine, and the kit's checks (make verify-site). It runs beside `full` too: its runner has no
+  # KiCad, so a test that needs KiCad's files and does not say so fails on the pull request that adds it
+  # (PROCESSES.md P12).
   fast:
     needs: scope
+    if: needs.scope.outputs.scope != 'site'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -235,6 +238,36 @@ jobs:
             *) echo "no path was decided"; exit 1 ;;
           esac
 
+  # A change whose every path is under site/: the site's gate alone (make verify-www), no toolchain and
+  # none of Via's own tests (the owner's word, 2026-11-28). Shellcheck of build.sh, each page's script
+  # with --check, the build, and the tests verify/www.txt names, which read the site's files.
+  site:
+    needs: scope
+    if: needs.scope.outputs.scope == 'site'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install the Python packages the tests read (no engine)
+        run: python -m pip install --progress-bar off -r requirements.txt
+      - name: Verify the site
+        id: gate
+        run: make verify-www
+      - name: Keep the logs of the failed gate
+        if: failure() && steps.gate.outcome == 'failure'
+        run: python3 tools/ci/kept_logs.py "$RUNNER_TEMP/kept-logs" "${TMPDIR:-/tmp}/pytest-of-*"
+      - uses: actions/upload-artifact@v4
+        if: failure() && steps.gate.outcome == 'failure'
+        with:
+          name: gate-logs-site-gate
+          path: ${{ runner.temp }}/kept-logs
+          retention-days: 7
+          if-no-files-found: ignore
+
   # Windows and macOS (ee-agent-kit/CI.md, "Windows and macOS"): on a pull request that touches install
   # or platform code, on every push to main, on a run by hand; nightly.yml runs the same steps each
   # night (tests/test_ci_desktop.py holds the 2 copies equal). Each leg installs with the installer a
@@ -378,12 +411,13 @@ jobs:
           echo "$line" >> "$GITHUB_STEP_SUMMARY"
           test "$WSL/$INSTALL/$SMOKE" = success/success/success
 
-  # Always runs, so a required check always resolves: green only when fast passed on every change,
-  # full passed as well for a full change, and both desktop legs passed when the scope asked them. A
+  # Always runs, so a required check always resolves: green only when fast passed on a fast or full
+  # change, full passed as well for a full change, site passed for a site change, and both desktop legs
+  # passed when the scope asked them. A
   # skipped job is not a pass, and a failed scope job leaves no answer. It does not wait for the WSL leg,
   # which reports its own state.
   verdict:
-    needs: [scope, fast, full, desktop]
+    needs: [scope, fast, full, site, desktop]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 2
@@ -394,13 +428,15 @@ jobs:
           DESKTOP_ASKED: ${{ needs.scope.outputs.desktop }}
           FAST: ${{ needs.fast.result }}
           FULL: ${{ needs.full.result }}
+          SITE: ${{ needs.site.result }}
           DESKTOP: ${{ needs.desktop.result }}
         run: |
-          echo "scope: ${SCOPE:-none}; desktop asked: ${DESKTOP_ASKED:-none}; fast: $FAST; full: $FULL; desktop: $DESKTOP"
+          echo "scope: ${SCOPE:-none}; desktop asked: ${DESKTOP_ASKED:-none}; fast: $FAST; full: $FULL; site: $SITE; desktop: $DESKTOP"
           ok=yes
           case "$SCOPE" in
             fast) [ "$FAST" = success ] || ok=no ;;
             full) { [ "$FAST" = success ] && [ "$FULL" = success ]; } || ok=no ;;
+            site) [ "$SITE" = success ] || ok=no ;;
             *) echo "the scope job gave no answer"; ok=no ;;
           esac
           case "$DESKTOP_ASKED" in

@@ -31,12 +31,21 @@ python3 site/blog.py                             # the blog, from the posts in b
 python3 site/blog.py --check                     # exit 1 when a blog page is not what the script writes
 python3 site/forms.py                            # the feedback page
 python3 site/forms.py --check                    # exit 1 when the feedback page is not what the script writes
-python3 site/guide.py                            # the guide
-python3 site/guide.py --check                    # exit 1 when the guide is not what the script writes
+python3 site/guide.py                            # the guide and its install pages for a Mac and for Windows
+python3 site/guide.py --check                    # exit 1 when a page of the guide is not what the script writes
 python3 site/made.py                             # the gallery, made.via.computer
 python3 site/made.py --check                     # exit 1 when the gallery is not what the script writes
 sh site/build.sh out https://example.org         # the files a host serves, in out/
+make verify-www                                  # the site's gate: all of the above that checks, and the site's tests
 ```
+
+A change whose every path is under `site/` runs `make verify-www` and none of
+Via's own tests (the owner's word, 2026-11-28): shellcheck on `build.sh`, each
+script above with `--check`, the build, and the tests `verify/www.txt` names,
+each a test that reads the site's files. `make scope` calls such a change
+`site`, and CI runs its `site` job in place of `fast`. 1 path outside `site/`
+makes it `fast` or `full`, as is a page whose shown `$ workcenter` run
+changed (`ee-agent-kit/CI.md`, "The site's gate").
 
 `site/build.sh OUT [ORIGIN [GALLERY]]` copies what the site serves into `OUT`.
 `ORIGIN` is the address the site is served at. The canonical links, the Open
@@ -59,6 +68,7 @@ it. The script refuses a folder that is not empty.
 | `feedback.html` | The feedback page at `/feedback`. `forms.py` writes it; do not edit it by hand. |
 | `forms.py` | Writes the feedback page, and gives `blog.py` the subscribe form. "The forms" below says where each form goes. |
 | `guide.html`, `guide.py` | The guide at `/guide`: how to use Via, step by step, in plain English, from where Via runs to the files a board maker takes. `guide.py` writes it from the commands of the root README's "Quick start" and "Where it runs"; do not edit the page by hand. A test holds each `workcenter` command it shows to the tool's commands, and each path to the tree. |
+| `guide/macos.html`, `guide/windows.html` | The install pages at `/guide/macos` and `/guide/windows`, at the owner's ask (2026-11-28): what a person needs first, the 1 command with its dry run, what it installs and where, what it asks before, the 3 checks of INSTALL.md's "Done when", what to do when a step fails, WSL2 on Windows, where each route stands, and README.md's prompt that hands the install to a coding agent. `guide.py` writes them from INSTALL.md (routes M, N, W and L, their commands, checks and state), README.md (the prompt, the Windows command), `install-macos.sh` and `install.ps1` (their folders) and `toolchain/desktop.json` (versions and sizes); it stops and names the line when 1 of those files no longer holds what it reads. The guide's first step and the home page's "Get started" link both. A test holds each command they show to a line of INSTALL.md, each installer flag to the installer's own, and each `workcenter` command to the tool's. A PowerShell line's prompt is `PS> `, which the copy button leaves out as it does `$ `. |
 | `made.html`, `made.py`, `made.js` | Made with Via at <https://made.via.computer>, the start of roadmap item 18 at the owner's ask (2026-11-26), in Thingiverse's layout and the site's own colours and type, at the owner's word ("Go to thingiverse and copy their layout into our styling"): a full-width bar with the Via logo, a Community menu, a Categories menu, a Multi-board pill, an orange "Add your board" button, the search, "Get Via" and a round profile icon that opens Log In (once logged in, the person's picture and menu); a row of orders (Popular Boards, Fresh Boards, Most Parts, Most Layers, Biggest) with a layers dropdown and Filters; and a grid of 3 cards across, each a picture with a dot for each of its pictures, the name, its likes, a menu (its page, its story on via.computer, its files on GitHub, copy its link), its maker and its version and verdict. A card is listed when its example's gates say GREEN and leads to its page on `via.computer`. Under the grid, "Adding your board" says how a person adds a board and names the examples not listed yet. At the owner's word (2026-11-27, "This doesn't need to be on the website at all"), no page of the gallery says Via judged the files and nobody built the board, and the Order menu holds no notes, only the fabs. Each order and filter works on the facts each card carries in its `data-` attributes (likes, when it was added, parts, layers, area, boards, category; `made.js`); the likes, the account and the boards people added come from the API (`api/_made.js`). There are no ads and no file uploads, so none is drawn. A category is set by hand per example in `made.py`'s `CATEGORY`. `made.py` writes the page from what `site/examples.py` reads; do not edit it by hand. It loads its files from where it is served and links the rest of the site at `https://via.computer/` (`shell(..., home=..., header=...)` in `frame.py`). |
 | `api/` | The 2 functions the forms post to, and `_forms.js`, their rules. |
 | `package.json`, `package-lock.json` | The functions' only dependency, `@vercel/blob`, at 1 version. |

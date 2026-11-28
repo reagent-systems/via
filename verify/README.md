@@ -8,7 +8,8 @@ by side, and 1 verdict from all of them.
 
 | File | What it is |
 |---|---|
-| `verify.sh` | The health gate. Its last lines give each step's seconds. |
+| `verify.sh` | The health gate. Its last lines give each step's seconds. `verify.sh site` is the fast gate (`make verify-site`), `verify.sh www` the site's gate (`make verify-www`), `verify.sh kit` the kit checks. |
+| `www.txt` | The tests of the site's gate, `make verify-www`: 1 test file or 1 test a line, each a test that reads the site's files. A change whose every path is under `site/` runs these and no other test (`ee-agent-kit/CI.md`, "The site's gate"). |
 | `testshards.py` | Splits `tests/` into shards, runs them, joins the results. Standard library only. Loaded into pytest with `-p testshards`, it logs each collected id and each test report. In a pytest that runs alone (`make verify-site`) it also ends the run with the `not judged:` lines below, and writes `not-judged.txt` into pytest's base folder. |
 | `github_full.py` | Loaded with `-p github_full` into `pytest --collect-only`: the process looks like a runner of GitHub's `full` job (user id 1001, user name `runner`, no chip folder or chip engine, no FreeRouting 2.5.0, no `WORKCENTER_TEST_IMAGE_BUILD`). Only those conditions are faked. `tests/test_ci_notjudged.py` counts the tests a mark skips there, by file and group, and holds ee-agent-kit/CI.md's table to them. |
 | `shards.csv` | Each test file's seconds, whether it starts an engine, and why it must run alone. |
