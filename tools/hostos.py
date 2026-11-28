@@ -11,7 +11,8 @@ tools/newboard.py and the run decks of tools/workcenter, installer_command by to
 shell_word by tools/guide.py, tools/newboard.py and the lines tools/workcenter prints, whose main()
 calls console_streams; split_line is called by the tests that run a RUN line of `next`. The
 test runner (verify/testshards.py: kill_tree, stop_signals) and the engine guard of the tests
-(tools/ci/guard/engine_watch.py: program_name) call it as well.
+(tools/ci/guard/engine_watch.py: program_name) call it as well, and the tests' engine marks
+(tests/conftest.py) and the desktop smoke's tests step (tools/ci/desktop_smoke.py) call found_program.
 
 The macOS and Windows values come from vendor documents and build files, named beside each. None was
 seen on a Mac or a Windows machine: each is marked "not confirmed in a run" until a run there shows it.
@@ -24,6 +25,7 @@ from __future__ import annotations
 import errno
 import os
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -47,6 +49,10 @@ BREW_BINS = ("/opt/homebrew/bin", "/usr/local/bin")
 # Where ngspice's Windows archive is unpacked by convention (ngspice-47_64.7z holds a Spice64 folder).
 # Neither the folder nor the console program's name is confirmed in a run.
 WIN_SPICE = Path("C:\\Spice64") / "bin"
+# Where install.ps1 unpacks that archive: <root>\ngspice, and the console program inside it
+# (toolchain/desktop.json, ngspice.windows_x64.exe). workcenter.cmd sets NGSPICE to the same file; run
+# 46093588252 found it there (doctor's `ngspice 47` on windows-latest).
+WIN_VIA_SPICE = Path("ngspice") / "Spice64" / "bin" / "ngspice_con.exe"
 # Apple's /usr/bin/java is a launcher, not a JVM: it runs the JDK JAVA_HOME names, else the one
 # /usr/libexec/java_home prints (Apple's java_home(1) man page). Not confirmed in a run.
 MAC_JAVA_STUB = Path("/usr/bin/java")
@@ -186,17 +192,36 @@ def ngspice_candidates() -> list[str]:
     """The ngspice programs to try, in order, as kicad_cli_candidates. NGSPICE, when set, is the only one.
 
     Linux: tools/workcenter:44. macOS: Homebrew's formula `ngspice` (47) links it into Homebrew's bin,
-    which a shell that did not read Homebrew's profile lacks on PATH. Windows: the console program first;
-    KiCad's install ships ngspice only as a library. Not confirmed in a run: the name ngspice_con.exe and
-    the Spice64 folder."""
+    which a shell that did not read Homebrew's profile lacks on PATH. Windows: the one install.ps1 put
+    under the root first, as workcenter.cmd prefers it, then the console program on PATH; KiCad's install
+    ships ngspice only as a library. Not confirmed in a run: the C:\\Spice64 folder."""
     named = os.environ.get("NGSPICE")
     if named is not None:
         return [named]
     if _windows():
-        return ["ngspice_con", "ngspice", str(WIN_SPICE / "ngspice_con.exe"), str(WIN_SPICE / "ngspice.exe")]
+        own = Path(os.environ.get("WORKCENTER_ROOT", default_root())) / WIN_VIA_SPICE
+        return [
+            str(own),
+            "ngspice_con",
+            "ngspice",
+            str(WIN_SPICE / "ngspice_con.exe"),
+            str(WIN_SPICE / "ngspice.exe"),
+        ]
     if _mac():
         return ["ngspice", *(f"{b}/ngspice" for b in BREW_BINS)]
     return ["ngspice"]
+
+
+def found_program(candidates: Iterable[str], path: str | None = None) -> str | None:
+    """The whole path of the first of `candidates` that is there, else None: a name looked up on `path`
+    (default PATH), a whole path as itself. tools/workcenter's find_program takes the same first one.
+    The tests' marks and the desktop smoke's tests step ask it, so a test skips only where Via's own
+    lookup finds no engine (M328)."""
+    for candidate in candidates:
+        found = shutil.which(candidate, path=path)
+        if found:
+            return found
+    return None
 
 
 def kicad_share() -> Path:

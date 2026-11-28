@@ -291,14 +291,51 @@ def test_ngspice_on_macos_is_on_path_then_in_homebrews_prefixes(hostos, monkeypa
     assert hostos.ngspice_candidates() == ["ngspice", "/opt/homebrew/bin/ngspice", "/usr/local/bin/ngspice"]
 
 
-def test_ngspice_on_windows_is_the_console_program_first(hostos, monkeypatch):
+def test_ngspice_on_windows_is_vias_own_then_the_console_program(hostos, monkeypatch, tmp_path):
+    """install.ps1 unpacks ngspice under the root and workcenter.cmd prefers that file (NGSPICE); a run
+    of tools/workcenter without the .cmd, such as the desktop leg's tests, finds it the same way."""
     on(monkeypatch, "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    own = tmp_path / "local" / "Via" / "ngspice" / "Spice64" / "bin" / "ngspice_con.exe"
     assert hostos.ngspice_candidates() == [
+        str(own),
         "ngspice_con",
         "ngspice",
         str(Path("C:\\Spice64") / "bin" / "ngspice_con.exe"),
         str(Path("C:\\Spice64") / "bin" / "ngspice.exe"),
     ]
+    monkeypatch.setenv("WORKCENTER_ROOT", str(tmp_path / "root"))
+    assert hostos.ngspice_candidates()[0] == str(
+        tmp_path / "root" / "ngspice" / "Spice64" / "bin" / "ngspice_con.exe"
+    )
+
+
+def test_vias_own_ngspice_is_where_install_ps1_unpacks_it_and_workcenter_cmd_names_it(hostos):
+    """install.ps1 unpacks the archive into <root>\\ngspice (Install-Ngspice) and the pin names the
+    program inside it; workcenter.cmd's NGSPICE line names the same file."""
+    pin = json.loads((ROOT / "toolchain" / "desktop.json").read_text(encoding="utf-8"))["ngspice"][
+        "windows_x64"
+    ]
+    assert hostos.WIN_VIA_SPICE == Path("ngspice", *pin["exe"].split("/"))
+    assert "$dest = Join-Path $Root 'ngspice'" in (ROOT / "install.ps1").read_text(encoding="utf-8")
+    cmd = (ROOT / "workcenter.cmd").read_text(encoding="utf-8")
+    assert '"%WORKCENTER_ROOT%\\ngspice\\Spice64\\bin\\ngspice_con.exe"' in cmd
+
+
+def test_found_program_is_the_first_candidate_there_by_its_whole_path(hostos, tmp_path):
+    """As tools/workcenter's find_program: a name on the given PATH, a whole path as itself; None for none.
+    Paths compare as the system does: Windows' shutil.which ends a name in PATHEXT's `.CMD`, the file is
+    `ngspice.cmd`, and both name 1 file (run 46105129254)."""
+    bin_ = tmp_path / "bin"
+    named = stand_in(bin_ / "ngspice", "import sys; sys.exit(0)\n")
+    whole = stand_in(tmp_path / "own" / "ngspice_con", "import sys; sys.exit(0)\n")
+    missing = str(tmp_path / "no" / "ngspice")
+    found = hostos.found_program([missing, "ngspice", str(whole)], path=str(bin_))
+    assert os.path.normcase(found) == os.path.normcase(str(named))
+    found = hostos.found_program([missing, str(whole), "ngspice"], path=str(bin_))
+    assert os.path.normcase(found) == os.path.normcase(str(whole))
+    assert hostos.found_program([missing, "ngspice"], path=str(tmp_path)) is None
+    assert hostos.found_program([], path=str(bin_)) is None
 
 
 # ------------------------------------------------------------------ kicad_dirs

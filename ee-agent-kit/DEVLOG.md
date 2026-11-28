@@ -39,6 +39,35 @@ Evidence: <commit / tag / gate run / screenshot>
 
 ---
 
+## 2026-11-28 — Windows is proven, and its tests now look for KiCad where Via does
+
+The fourth run of the desktop legs was green everywhere, Windows native
+included: it installed, the smoke passed all 8 steps, and 788 of 963
+tests passed with none failed. So the README and `INSTALL.md` now call
+native Windows proven on GitHub's runners. But the same run skipped 99
+tests on Windows and 44 on macOS that need KiCad's command line or
+ngspice, though its own gates had just used both. The tests looked for
+them on `PATH`, and neither installer puts them there; Via finds them
+where the installer put them. The tests now ask Via's own lookup, the
+test step adds the engines' folders to its `PATH`, and on Windows Via
+finds its own ngspice without the help of `workcenter.cmd`.
+
+The fifth run judged them, and was red on both desktop legs: 8 tests of
+968 failed on Windows and 1 on macOS. Two of the causes were in Via. On
+Windows a user's own ngspice start-up file could still reach the decks
+the simulation gate runs, because ngspice also looks in the Windows
+profile folder; and a misnamed KiKit Python turned the whole export
+check into "engine missing: None". Both are fixed, with tests that fail
+on Linux before the fix. The rest were tests that assumed Linux: the
+bare `ngspice` on Windows is the windowed program, cmd quotes a path
+with double quotes, Windows paths differ only by case, and the layer
+render needs `rsvg-convert`, which the desktop installers do not
+install. The next run says whether the rest pass there.
+
+Evidence: runs 46093588252 (head 935b3a6) and 46105129254 (head
+e87689c); MISTAKES M328, M330 to M332; PROCESSES P12 steps 20 to 22;
+branch `claude/windows-proven`.
+
 ## 2026-11-27 — Via is ported to Windows and macOS; nothing has run there yet
 
 The owner asked for Windows and macOS support, and for instructions that

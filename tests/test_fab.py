@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import importlib.machinery
 import json
-import shutil
 import subprocess
 import sys
 import types
@@ -18,7 +17,7 @@ import uuid
 from pathlib import Path
 
 import pytest
-from conftest import engine, posix_only
+from conftest import engine, engine_absent, posix_only
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
@@ -31,9 +30,7 @@ SIERRA = "sierra-circuits-web"
 needs_libs = pytest.mark.skipif(
     not (kicadgen.SYMBOL_DIR / "power.kicad_sym").is_file(), reason="KiCad symbol libraries are not installed"
 )
-needs_kicad = engine(
-    pytest.mark.skipif(shutil.which("kicad-cli") is None, reason="kicad-cli is not installed")
-)
+needs_kicad = engine(pytest.mark.skipif(engine_absent("kicad-cli"), reason="kicad-cli is not installed"))
 
 
 def run(*args: object) -> tuple[int, list[dict]]:

@@ -23,7 +23,7 @@ import uuid
 from pathlib import Path
 
 import pytest
-from conftest import engine
+from conftest import engine, engine_absent
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -563,14 +563,14 @@ def test_next_asks_nothing_of_kicads_python_where_it_is_found_or_the_board_has_n
 #: The real child under KiCad's Python: what a macOS or Windows leg runs, where Via's venv has no pcbnew.
 needs_kicad_python = engine(
     pytest.mark.skipif(
-        shutil.which("kicad-cli") is None or not LIBS.is_file() or kicadchild.python() is None,
+        engine_absent("kicad-cli") or not LIBS.is_file() or kicadchild.python() is None,
         reason="kicad-cli, KiCad's libraries or KiCad's Python are not installed",
     )
 )
 #: The same search in this process too: Linux alone, where the venv sees pcbnew (install.sh).
 needs_pcbnew = engine(
     pytest.mark.skipif(
-        shutil.which("kicad-cli") is None
+        engine_absent("kicad-cli")
         or not LIBS.is_file()
         or importlib.util.find_spec("pcbnew") is None
         or kicadchild.python() is None,
