@@ -26,7 +26,7 @@ jobs:
         run: bash tools/ci/apt_cache.sh key install.sh "$GITHUB_OUTPUT"
       - name: Restore apt's package files kept by an earlier run
         id: apt-cache-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         timeout-minutes: 2
         continue-on-error: true
         with:
@@ -70,7 +70,7 @@ jobs:
       - name: Save apt's package files for later runs
         id: apt-cache-save
         if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.install.outcome == 'success' && steps.apt-cache-keep.outputs.save == 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         timeout-minutes: 2
         continue-on-error: true
         with:
@@ -138,7 +138,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Restore the downloads kept by an earlier run
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         timeout-minutes: 5
         continue-on-error: true
         with:
@@ -162,7 +162,7 @@ jobs:
           Add-Content -LiteralPath $env:GITHUB_PATH -Value (Join-Path $env:LOCALAPPDATA 'Via\bin')
       - name: Save the downloads for later runs
         if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (steps.install-macos.outcome == 'success' || steps.install-windows.outcome == 'success')
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         timeout-minutes: 5
         continue-on-error: true
         with:
