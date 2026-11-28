@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from conftest import engine, engine_absent, router_absent
+from conftest import engine, engine_absent, engine_program, router_absent
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -1517,7 +1517,9 @@ def test_router_keeps_off_another_nets_end_and_out_of_its_line():
 def netlist_groups(sch: Path, out: Path) -> set[tuple[tuple[str, str], ...]]:
     """The pin groups of every net of two or more pins in KiCad's netlist of a schematic."""
     net = out / "net.net"
-    subprocess.run(["kicad-cli", "sch", "export", "netlist", "-o", str(net), str(sch)], check=True)
+    subprocess.run(
+        [engine_program("kicad-cli"), "sch", "export", "netlist", "-o", str(net), str(sch)], check=True
+    )
     root = kicadgen.parse(net.read_text(encoding="utf-8"))
     groups = set()
     for n in kicadgen.children(kicadgen.child(root, "nets"), "net"):
@@ -1925,7 +1927,17 @@ def test_a_symbol_from_a_pin_table_plots_and_passes_erc_in_a_design(tmp_path):
     table.write_text("Number,Name,Type,Side\n1,~,passive,left\n2,~,passive,right\n", encoding="utf-8")
     assert kicadgen.main(["symbol-add", str(lib), "--from", str(table), "--reference", "F"]) == 0
     proc = subprocess.run(
-        ["kicad-cli", "sym", "export", "svg", str(lib), "--symbol", "Fuse2", "-o", str(tmp_path / "svg")],
+        [
+            engine_program("kicad-cli"),
+            "sym",
+            "export",
+            "svg",
+            str(lib),
+            "--symbol",
+            "Fuse2",
+            "-o",
+            str(tmp_path / "svg"),
+        ],
         capture_output=True,
         text=True,
         check=False,

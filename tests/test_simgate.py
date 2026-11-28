@@ -21,7 +21,7 @@ import types
 from pathlib import Path
 
 import pytest
-from conftest import engine, engine_absent
+from conftest import engine, engine_absent, engine_program, hostos
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
@@ -29,6 +29,8 @@ BOARDS = ROOT / "tests" / "boards"
 
 needs_ngspice = engine(pytest.mark.skipif(engine_absent("ngspice"), reason="ngspice is not installed"))
 needs_kicad = engine(pytest.mark.skipif(engine_absent("kicad-cli"), reason="kicad-cli is not installed"))
+# The ngspice a test starts itself: the one the gate runs (conftest.engine_program), never the bare name.
+NGSPICE = engine_program("ngspice")
 
 DIVIDER = """* a divider: 5 V through 10k into 10k
 V1 in 0 DC 5
@@ -467,14 +469,40 @@ def test_the_users_own_spiceinit_does_not_reach_a_deck(tmp_path):
     assert code == 0 and records[0]["details"]["decks"]["d"]["measures"] == {"vout": 2.5}
     # the trap the gate closes: a bare run in the same place reads the file
     bare = subprocess.run(
-        ["ngspice", "-b", "d.cir"],
+        [NGSPICE, "-b", "d.cir"],
         cwd=proj / "sim",
         capture_output=True,
         text=True,
         check=False,
         env={**os.environ, "HOME": str(home)},
     )
-    assert "home_init = 1" in bare.stdout
+    assert "home_init = 1" in bare.stdout, (bare.returncode, bare.stdout[-2000:], bare.stderr[-2000:])
+
+
+@needs_ngspice
+@pytest.mark.parametrize("variable", ["USERPROFILE", "SPICE_USERINIT_DIR"])
+def test_an_init_file_in_the_users_other_folders_does_not_reach_a_deck(tmp_path, variable):
+    """ngspice reads a user's .spiceinit from SPICE_USERINIT_DIR, HOME and USERPROFILE, on every system
+    (ngspice 42's and 47's src/main.c), and Windows sets USERPROFILE for every program: the gate gives
+    none of them, where it gave its own HOME alone. A bare run with the variable reads the file (M330)."""
+    proj = project(tmp_path, {"d": DIVIDER}, {"d": {"vout": {"min": 2.4, "max": 2.6}}})
+    user = tmp_path / "user"
+    user.mkdir()
+    (user / ".spiceinit").write_text('echo "user_init = 1"\n', encoding="utf-8")
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    env = {"HOME": str(empty), variable: str(user)}
+    code, records = run("sim", proj, "--out", tmp_path / "o", env=env)
+    assert code == 0 and records[0]["details"]["decks"]["d"]["measures"] == {"vout": 2.5}, records
+    bare = subprocess.run(
+        [NGSPICE, "-b", "d.cir"],
+        cwd=proj / "sim",
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, **env},
+    )
+    assert "user_init = 1" in bare.stdout, (bare.returncode, bare.stdout[-2000:], bare.stderr[-2000:])
 
 
 def test_a_gate_whose_engine_is_absent_is_never_part_of_a_green_run(tmp_path):
@@ -556,7 +584,7 @@ def test_a_bundle_runs_from_anywhere_and_gives_the_gates_numbers(tmp_path):
     home = tmp_path / "home"
     home.mkdir()
     proc = subprocess.run(
-        ["ngspice", "-b", str(moved / "run.sp")],
+        [NGSPICE, "-b", str(moved / "run.sp")],
         cwd=home,
         capture_output=True,
         text=True,
@@ -571,7 +599,7 @@ def test_a_bundle_runs_from_anywhere_and_gives_the_gates_numbers(tmp_path):
 def test_the_deck_alone_is_the_trap_the_bundle_closes(tmp_path):
     proj = vendor_project(tmp_path, ngspice="res-model")
     proc = subprocess.run(
-        ["ngspice", "-b", "rdiv.cir"], cwd=proj / "sim", capture_output=True, text=True, check=False
+        [NGSPICE, "-b", "rdiv.cir"], cwd=proj / "sim", capture_output=True, text=True, check=False
     )
     vout = float(re.search(r"^vout = (\S+)", proc.stdout, re.M).group(1))
     assert proc.returncode == 0 and vout == pytest.approx(100 / 101, abs=1e-4)  # exit 0 and another circuit
@@ -752,8 +780,14 @@ def test_a_path_with_a_space_runs_at_a_corner_and_in_a_bundle(tmp_path):
     assert '.include "models/rsub.lib"' in (bundle / "q" / "q.cir").read_text(encoding="utf-8")
     assert '.include "models/rsub2.lib"' in (bundle / "space" / "space.cir").read_text(encoding="utf-8")
     assert str(tmp_path) not in (bundle / "q" / "q.cir").read_text(encoding="utf-8")
-    # the command it prints is one a shell takes as written
-    assert f"bundle q: ngspice -b '{bundle / 'q' / 'run.sp'}'" in text
+    # the command it prints is one this system's shell takes as written: the ngspice the gate ran, and
+    # the path quoted as the shell quotes it (sh's '...' on Linux and macOS; cmd's "..." on Windows,
+    # where run 46105129254 printed the second)
+    words = hostos()
+    run_sp = words.shell_word(str(bundle / "q" / "run.sp"))
+    assert f"bundle q: {words.shell_word(NGSPICE)} -b {run_sp}" in text, text
+    if sys.platform.startswith("linux"):
+        assert f"bundle q: ngspice -b '{bundle / 'q' / 'run.sp'}'" in text  # Linux's line, as before
 
 
 @needs_ngspice

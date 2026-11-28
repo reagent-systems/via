@@ -147,13 +147,21 @@ def test_an_engine_mark_finds_the_engine_where_via_looks_though_path_lacks_it(
 
 
 # A mark or a lookup of an engine by PATH alone, in the text of a test file.
-PATH_ONLY = ('shutil.which("kicad-cli")', 'shutil.which("ngspice")')
+# A start is the bare name and the first argument it takes (a candidate list names no flag or subcommand).
+PATH_ONLY = (
+    'shutil.which("kicad-cli")',
+    'shutil.which("ngspice")',
+    *(f'["kicad-cli", "{word}"' for word in ("sch", "pcb", "sym", "fp", "jobset", "version", "--")),
+    '["ngspice", "-',
+)
 
 
 def test_no_file_that_runs_on_macos_or_windows_looks_for_an_engine_on_path_alone():
     """A file of the desktop rows asks conftest.engine_absent (or hostos.found_program) for kicad-cli and
-    ngspice, never shutil.which of the name: on macOS and Windows the installers put neither on PATH.
-    This file names the words to look for, and is left out."""
+    ngspice, never shutil.which of the name, and starts the program conftest.engine_program names, never
+    the bare name: on macOS and Windows the installers put neither on PATH, and Windows' bare `ngspice`
+    in Spice64\\bin wrote nothing to stdout (run 46105129254). This file names the words to look for,
+    and is left out."""
     found = []
     for row in rows():
         if row["runs"] != "desktop" or row["file"] == "tests/test_desktop.py":

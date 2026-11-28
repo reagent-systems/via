@@ -91,6 +91,19 @@ def engine_absent(name: str) -> bool:
     return module.found_program(getattr(module, ENGINE_CANDIDATES[name])()) is None
 
 
+def engine_program(name: str) -> str:
+    """The `name` (kicad-cli or ngspice) tools/workcenter runs, as its find_program takes it: 1 candidate
+    as written (Linux's `ngspice`), else the whole path of the first one there, else the first. A test
+    that starts the engine itself starts this, never the bare name: on Windows the `ngspice` a PATH finds
+    in Spice64\\bin is the program with a window of its own, which wrote nothing to stdout and exited 0
+    (run 46105129254: `CompletedProcess(args=['ngspice', '-b', 'd.cir'], returncode=0, stdout='')`)."""
+    module = hostos()
+    candidates = getattr(module, ENGINE_CANDIDATES[name])()
+    if len(candidates) == 1:
+        return candidates[0]
+    return module.found_program(candidates) or candidates[0]
+
+
 def posix_only(reason: str):
     """The mark of 1 test that cannot run on Windows, in a file that runs everywhere."""
     return pytest.mark.skipif(sys.platform == "win32", reason=f"POSIX-only: {reason}")

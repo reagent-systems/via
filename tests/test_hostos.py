@@ -323,13 +323,17 @@ def test_vias_own_ngspice_is_where_install_ps1_unpacks_it_and_workcenter_cmd_nam
 
 
 def test_found_program_is_the_first_candidate_there_by_its_whole_path(hostos, tmp_path):
-    """As tools/workcenter's find_program: a name on the given PATH, a whole path as itself; None for none."""
+    """As tools/workcenter's find_program: a name on the given PATH, a whole path as itself; None for none.
+    Paths compare as the system does: Windows' shutil.which ends a name in PATHEXT's `.CMD`, the file is
+    `ngspice.cmd`, and both name 1 file (run 46105129254)."""
     bin_ = tmp_path / "bin"
     named = stand_in(bin_ / "ngspice", "import sys; sys.exit(0)\n")
     whole = stand_in(tmp_path / "own" / "ngspice_con", "import sys; sys.exit(0)\n")
     missing = str(tmp_path / "no" / "ngspice")
-    assert hostos.found_program([missing, "ngspice", str(whole)], path=str(bin_)) == str(named)
-    assert hostos.found_program([missing, str(whole), "ngspice"], path=str(bin_)) == str(whole)
+    found = hostos.found_program([missing, "ngspice", str(whole)], path=str(bin_))
+    assert os.path.normcase(found) == os.path.normcase(str(named))
+    found = hostos.found_program([missing, str(whole), "ngspice"], path=str(bin_))
+    assert os.path.normcase(found) == os.path.normcase(str(whole))
     assert hostos.found_program([missing, "ngspice"], path=str(tmp_path)) is None
     assert hostos.found_program([], path=str(bin_)) is None
 

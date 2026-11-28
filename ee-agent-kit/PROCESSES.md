@@ -736,11 +736,26 @@ that may be absent.
     where Via finds it, `conftest.engine_absent(name)` (tools/hostos.py's
     candidates, as the CLI takes them), never `shutil.which` of the name:
     the installers of macOS and Windows put neither on `PATH`. A test
-    that runs the engine itself takes the path from
-    `hostos.found_program`. `tests/test_desktop.py` fails on a `desktop`
-    file that looks the name up on `PATH` alone. Before a run off Linux
+    that runs the engine itself starts `conftest.engine_program(name)`,
+    the program the gates run, never the bare name: Windows' bare
+    `ngspice` is the windowed one and prints nothing (M332).
+    `tests/test_desktop.py` fails on a `desktop` file that looks the
+    name up on `PATH` alone or starts it bare. Before a run off Linux
     is called proven, its `not judged:` lines are read for an engine the
     same run's gates used (M328).
+21. Before a change makes tests run on a system they skipped on, each
+    of them is read for Linux's ways, as step 17 lists them, and for a
+    bare engine start, a path compared by its case (`os.path.normcase`
+    on both sides) and a second engine it needs that the system's
+    installer does not install (its own mark, as `rsvg-convert` and
+    `ffmpeg` have) (M332).
+22. A gate that keeps a user's files out of an engine's run takes the
+    list of places the engine reads them from the engine's source or
+    manual, on every system (ngspice: the deck's folder,
+    `SPICE_USERINIT_DIR`, the working directory, `HOME`, `USERPROFILE`),
+    and its test plants the file in each place in turn. An optional
+    engine's program that does not start leaves its own part not
+    judged, never the gate's whole verdict (M330, M331).
 
 Done when: the summary shows no unexpected skips, the engine test is
 green on the runner, and a run with an engine taken away is not GREEN.

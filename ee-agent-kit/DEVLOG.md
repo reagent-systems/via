@@ -50,11 +50,23 @@ ngspice, though its own gates had just used both. The tests looked for
 them on `PATH`, and neither installer puts them there; Via finds them
 where the installer put them. The tests now ask Via's own lookup, the
 test step adds the engines' folders to its `PATH`, and on Windows Via
-finds its own ngspice without the help of `workcenter.cmd`. The next run
-is the first to judge those tests off Linux.
+finds its own ngspice without the help of `workcenter.cmd`.
 
-Evidence: run 46093588252 (head 935b3a6); MISTAKES M328; PROCESSES P12
-step 20; branch `claude/windows-proven`.
+The fifth run judged them, and was red on both desktop legs: 8 tests of
+968 failed on Windows and 1 on macOS. Two of the causes were in Via. On
+Windows a user's own ngspice start-up file could still reach the decks
+the simulation gate runs, because ngspice also looks in the Windows
+profile folder; and a misnamed KiKit Python turned the whole export
+check into "engine missing: None". Both are fixed, with tests that fail
+on Linux before the fix. The rest were tests that assumed Linux: the
+bare `ngspice` on Windows is the windowed program, cmd quotes a path
+with double quotes, Windows paths differ only by case, and the layer
+render needs `rsvg-convert`, which the desktop installers do not
+install. The next run says whether the rest pass there.
+
+Evidence: runs 46093588252 (head 935b3a6) and 46105129254 (head
+e87689c); MISTAKES M328, M330 to M332; PROCESSES P12 steps 20 to 22;
+branch `claude/windows-proven`.
 
 ## 2026-11-27 — Via is ported to Windows and macOS; nothing has run there yet
 

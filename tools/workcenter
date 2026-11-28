@@ -229,11 +229,14 @@ def timed(fn):
         try:
             result = fn(*args, **kwargs)
         except FileNotFoundError as exc:
+            # Windows' error from starting a program names no file (run 46105129254: `engine missing:
+            # None`); its own words then say what was not found.
+            missing = exc.filename if exc.filename is not None else str(exc)
             result = Result(
                 fn.__name__.removeprefix("gate_"),
                 "skip",
-                f"engine missing: {exc.filename}",
-                {"engine_missing": str(exc.filename)},
+                f"engine missing: {missing}",
+                {"engine_missing": str(missing)},
             )
         except subprocess.TimeoutExpired as exc:
             result = Result(fn.__name__.removeprefix("gate_"), "error", f"timed out after {exc.timeout}s")
@@ -623,12 +626,28 @@ def read_expect(path: Path, lower_case: bool = True) -> tuple[dict[str, dict], l
     return bounds, problems
 
 
+# Where ngspice looks for a user's .spiceinit (or spice.rc) after the deck's folder and the working
+# directory, on every system: SPICE_USERINIT_DIR, then HOME, then USERPROFILE, the first one holding a
+# file wins (ngspice 42's and 47's src/main.c). Windows sets USERPROFILE for every program.
+NGSPICE_USER_DIRS = ("SPICE_USERINIT_DIR", "HOME", "USERPROFILE")
+
+
+def ngspice_env(home: Path) -> dict[str, str]:
+    """This process's environment for an ngspice run, with `home` in place of every folder of the
+    user's that ngspice reads an init file from: HOME and USERPROFILE are `home`, SPICE_USERINIT_DIR is
+    unset. With HOME alone replaced, a %USERPROFILE%\\.spiceinit of the user's reached every deck the
+    gate ran on Windows, as SPICE_USERINIT_DIR's file did everywhere (M330)."""
+    env = {k: v for k, v in os.environ.items() if k.upper() not in NGSPICE_USER_DIRS}
+    env["HOME"] = env["USERPROFILE"] = str(home)
+    return env
+
+
 def ngspice_run(deck: Path, log: Path, home: Path) -> dict:
     """One deck run in batch mode from its own folder: its exit code, its error lines, the lines that
     put an operating point in doubt, every measure it printed, and its whole output. `home` stands in
-    for the user's home folder: ngspice reads the working directory's .spiceinit, then the home
-    folder's, so a ~/.spiceinit of the user's would change a deck that has none of its own."""
-    proc = run([NGSPICE, "-b", "-o", log, deck.name], cwd=deck.parent, env={**os.environ, "HOME": str(home)})
+    for the user's folders (ngspice_env): ngspice reads the deck folder's .spiceinit, then the user's,
+    so a ~/.spiceinit of the user's would change a deck that has none of its own."""
+    proc = run([NGSPICE, "-b", "-o", log, deck.name], cwd=deck.parent, env=ngspice_env(home))
     text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
     text += "\n" + (proc.stdout or "") + (proc.stderr or "")
     lines = text.splitlines()
@@ -1624,7 +1643,7 @@ def check_bundle(folder: Path, deck: str, measures: dict[str, float]) -> list[st
         shutil.copytree(folder, moved)
         home = Path(tmp) / "home"
         home.mkdir()
-        proc = run([NGSPICE, "-b", moved / BUNDLE_RUN], cwd=home, env={**os.environ, "HOME": str(home)})
+        proc = run([NGSPICE, "-b", moved / BUNDLE_RUN], cwd=home, env=ngspice_env(home))
     text = (proc.stdout or "") + "\n" + (proc.stderr or "")
     got = {m.group(1): float(m.group(2)) for m in map(MEASURE_RE.match, text.splitlines()) if m}
     errors = [ln for ln in text.splitlines() if NGSPICE_ERROR_RE.match(ln)]
@@ -1697,7 +1716,10 @@ def cmd_sim(args) -> int:
         if deck.get("rerun"):
             print(f"rerun {name}: {deck['rerun']}")
         if deck.get("bundle"):
-            print(f"bundle {name}: ngspice -b {hostos.shell_word(str(Path(deck['bundle']) / BUNDLE_RUN))}")
+            # The ngspice the gate ran: Linux's `ngspice` as written; on Windows a whole path, as install.ps1
+            # puts none on PATH and the Spice64 `ngspice` there writes to a window, not to the shell.
+            run_sp = hostos.shell_word(str(Path(deck["bundle"]) / BUNDLE_RUN))
+            print(f"bundle {name}: {hostos.shell_word(NGSPICE)} -b {run_sp}")
     for line in thermal().lines(result.details):
         print(line)
     return code
@@ -2374,7 +2396,17 @@ def export_panel(project: Project, fab: Path, facts: dict) -> tuple[dict, list[s
     py = KIKIT_PYTHON or venv_python()
     # Isolated (-I): `-c` puts the working directory first on the import path, and there a board
     # repository's own `kikit/` would be imported. panel.py runs isolated too, so both find 1 KiKit.
-    probe = run([py, "-I", "-c", "import kikit.panelize_ui"], cwd=fab)
+    try:
+        probe = run([py, "-I", "-c", "import kikit.panelize_ui"], cwd=fab)
+    except OSError as exc:
+        # A Python that cannot start leaves the panel not judged, never the board's own files: as a
+        # FileNotFoundError it reached timed(), and EXPORT said `engine missing: None` on Windows,
+        # whose error names no file (run 46105129254, KIKIT_PYTHON=/usr/bin/python3; M331).
+        return (
+            {"python": py},
+            [],
+            f"KiKit's Python {py} does not start ({exc.strerror or exc}); set KIKIT_PYTHON",
+        )
     if probe.returncode != 0:
         last = (probe.stderr.strip().splitlines() or ["no output"])[-1]
         return {"python": py}, [], f"KiKit does not import under {py} ({last}); set KIKIT_PYTHON"
@@ -3521,7 +3553,7 @@ def ngspice_load_errors(lib: Path, subckt: str, pins: list[str], row: SourceRow,
         init.write_text(f"set ngbehavior={compat}\n", encoding="utf-8")
     elif init.exists():
         init.unlink()
-    proc = run([NGSPICE, "-b", "load.cir"], cwd=work, timeout=120)
+    proc = run([NGSPICE, "-b", "load.cir"], cwd=work, timeout=120, env=ngspice_env(work))
     text = (proc.stdout or "") + "\n" + (proc.stderr or "")
     errors = [ln.strip() for ln in text.splitlines() if NGSPICE_ERROR_RE.match(ln)]
     # ngspice exits 1 in batch mode whenever no analysis runs, so the verdict is its error lines and

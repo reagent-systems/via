@@ -311,6 +311,10 @@ def test_render_refuses_an_unknown_view(tmp_path):
 
 
 @needs_kicad
+# render finds rsvg-convert on PATH (tools/workcenter's gate_render), which install.sh installs and
+# install.ps1 and install-macos.sh do not: run 46105129254 said `rsvg-convert missing` for every layer on
+# windows-latest and macos-latest, and the gate SKIPPED (INSTALL.md: neither installer installs it).
+@pytest.mark.skipif(shutil.which("rsvg-convert") is None, reason="rsvg-convert is not installed")
 def test_render_draws_each_layer_that_has_something_on_it(tmp_path):
     code, records = run("render", BOARDS / "pass-rc-divider", "--out", tmp_path, "--views", "layers")
     assert code == 0, records

@@ -141,12 +141,32 @@ def test_a_part_not_fitted_is_in_no_placement_file_and_not_drawn_on_the_assembly
 @needs_kicad
 def test_a_panel_asked_for_without_kikit_is_not_judged(tmp_path):
     """A Python without KiKit stands in for Via's: the panel cannot be made, so EXPORT is
-    SKIPPED with exit 2 and says why, and the board's own files are still written and read back."""
-    code, result = export(
-        project(tmp_path, panel=True), tmp_path / "out", {"KIKIT_PYTHON": "/usr/bin/python3"}
+    SKIPPED with exit 2 and says why, and the board's own files are still written and read back. The
+    stand-in fails the import as a Python without KiKit does; /usr/bin/python3, the Python this test
+    named before, is no file on Windows (run 46105129254)."""
+    no_kikit = stand_in(
+        tmp_path / "py" / "python3",
+        "import sys\nsys.stderr.write(\"ModuleNotFoundError: No module named 'kikit'\\n\")\nsys.exit(1)\n",
     )
+    code, result = export(project(tmp_path, panel=True), tmp_path / "out", {"KIKIT_PYTHON": str(no_kikit)})
     assert code == 2 and result["status"] == "skip", result
-    assert "panel not judged: KiKit" in result["summary"], result["summary"]
+    assert "panel not judged: KiKit does not import" in result["summary"], result["summary"]
+    assert "No module named 'kikit'" in result["summary"], result["summary"]
+    assert (tmp_path / "out" / "fab" / "placement.csv").is_file()
+
+
+@needs_kicad
+def test_a_panel_whose_python_is_no_file_is_not_judged_and_the_board_still_is(tmp_path):
+    """KIKIT_PYTHON naming no file leaves the panel not judged, never the whole EXPORT: before, starting
+    it raised out of the gate, and EXPORT said `engine missing: None` on Windows with no file written
+    (run 46105129254), `engine missing: <the path>` on Linux."""
+    missing = tmp_path / "no" / "python3"
+    code, result = export(project(tmp_path, panel=True), tmp_path / "out", {"KIKIT_PYTHON": str(missing)})
+    assert code == 2 and result["status"] == "skip", result
+    assert f"panel not judged: KiKit's Python {missing} does not start" in result["summary"], result[
+        "summary"
+    ]
+    assert "engine missing" not in result["summary"], result["summary"]
     assert (tmp_path / "out" / "fab" / "placement.csv").is_file()
 
 
