@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 import pytest
-from conftest import no_home
+from conftest import linux_only, no_home, posix_only
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "verify"))
@@ -164,6 +164,7 @@ def test_a_failing_test_in_either_shard_makes_the_gate_red(tmp_path, shard):
     assert "TESTS RED" in proc.stdout
 
 
+@posix_only("the planted test kills its own pytest with SIGKILL")
 def test_a_shard_killed_half_way_makes_the_gate_red(tmp_path):
     """The second test of the file kills its own pytest: the shard ends with no summary line, and the
     test after it is never run."""
@@ -278,7 +279,9 @@ def test_the_gate_prints_each_shards_time_and_the_slowest_files(tmp_path):
     for name in ("1", "2"):
         assert f"shard {name}: exit 0," in proc.stdout
     assert "slowest files:" in proc.stdout
-    assert os.path.join("tests", "test_p.py") in proc.stdout
+    # The runner names a file as its table does, with `/` on every system (run 46067841222, Windows:
+    # `0.0 s  tests/test_p.py (shard 1)`).
+    assert "tests/test_p.py (shard " in proc.stdout
 
 
 def red_line(stdout: str) -> str:
@@ -410,11 +413,13 @@ def running(pid: int) -> bool:
     return stat.rsplit(")", 1)[1].split()[0] != "Z"
 
 
-@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP], ids=["TERM", "HUP"])
-def test_a_stop_by_signal_ends_every_shard(tmp_path, sig):
+@linux_only("it sends a signal to a process group and reads /proc")
+@pytest.mark.parametrize("name", ["SIGTERM", "SIGHUP"], ids=["TERM", "HUP"])
+def test_a_stop_by_signal_ends_every_shard(tmp_path, name):
     """2 files of 1 test that waits 60 s, in 2 shards. The signal goes to the runner's process group, as
     `lead/gate-and-push.sh` stops make: the runner exits 128 + the signal (143 for TERM, 129 for HUP) and
     no shard's pytest is left."""
+    sig = getattr(signal, name)
     root = folder(tmp_path, {"test_x.py": WAITS, "test_y.py": WAITS})
     pids = tmp_path / "pids"
     pids.mkdir()
@@ -503,6 +508,7 @@ def test_the_shards_of_a_gate_that_holds_the_engine_lock_never_wait_for_it(tmp_p
     assert "waiting" not in proc.stdout + proc.stderr
 
 
+@linux_only("it sends a signal to a process group and reads /proc")
 def test_a_stop_by_signal_to_the_holders_group_ends_every_shard(tmp_path):
     """`lead/gate-and-push.sh` starts make with setsid and stops it with TERM to that process group:
     `enginelock.py hold`, verify.sh and the runner get the signal, the shards (each in its own session)
@@ -546,6 +552,7 @@ def test_a_stop_by_signal_to_the_holders_group_ends_every_shard(tmp_path):
             proc.wait()
 
 
+@linux_only("it reads /proc for the shards left")
 def test_a_stop_signal_during_the_clean_up_does_not_cut_it_short(tmp_path):
     """Under `enginelock.py hold` the runner gets 2 TERMs: 1 sent to the group and 1 the hold passes on,
     milliseconds apart. The second must not end the clean-up that the first began. TERM goes to the
@@ -592,6 +599,7 @@ def test_a_stop_signal_during_the_clean_up_does_not_cut_it_short(tmp_path):
         proc.stdout.close()
 
 
+@posix_only("it reads each shard's death by SIGKILL to its process group")
 def test_the_clean_up_kills_and_waits_for_every_shard_whoever_reaps_orphans():
     """The 2 stop tests above see a shard left unwaited only while it stays in /proc. Where a reaper
     takes orphans at once (a CI runner's init, a child subreaper), a runner that skipped the wait could
@@ -694,7 +702,8 @@ def test_a_failing_assertions_message_its_line_and_its_output_are_in_the_gates_o
     assert re.search(failed, proc.stdout, re.M)
     block = reason(proc.stdout, f"why: tests/test_s.py::test_planted, failed at call (shard {shard}):")
     assert "E       AssertionError: the planted message" in block, proc.stdout
-    assert "tests/test_s.py:12: AssertionError" in block, proc.stdout
+    # pytest's own report names the file by the system's path (Windows: `tests\test_s.py:12`).
+    assert f"{os.path.join('tests', 'test_s.py')}:12: AssertionError" in block, proc.stdout
     assert ">       assert x == 2, 'the planted message'" in block, proc.stdout
     assert "the divider gave 3.1 V" in block, proc.stdout
 
@@ -747,6 +756,7 @@ def test_an_error_at_collection_in_1_process_alone_is_in_the_gates_output(tmp_pa
     assert any("RuntimeError: not here" in line for line in block), proc.stdout
 
 
+@posix_only("the planted test kills its own pytest by SIGKILL; test_desktop.py ends 1 by os._exit")
 def test_a_shard_killed_mid_run_names_the_test_it_was_running_and_the_end_of_its_output(tmp_path):
     """The test kills its own pytest with SIGKILL: no report, no end of session. The gate names the test
     the shard started last and did not end, and the last lines of the shard's output."""
@@ -768,6 +778,7 @@ def test_a_shard_killed_mid_run_names_the_test_it_was_running_and_the_end_of_its
     assert header in proc.stdout.splitlines(), proc.stdout
 
 
+@posix_only("os.kill on Windows ends the process with the signal's number as its exit; no crash is written")
 def test_a_shard_that_crashes_shows_the_crash_from_the_end_of_its_output(tmp_path):
     """A segmentation fault in a test: pytest's faulthandler writes the Python stack to the shard's
     output as the process dies, and the gate prints that end of the output."""
@@ -840,7 +851,7 @@ def test_a_long_report_is_cut_to_its_first_and_last_lines_and_a_long_line_to_its
     block = reason(proc.stdout, f"why: tests/test_s.py::test_deep, failed at call (shard {shard}):")
     assert len(block) == testshards.HEAD + 1 + testshards.TAIL, proc.stdout
     assert re.fullmatch(r"\[\.\.\. \d+ lines cut here\]", block[testshards.HEAD]), block
-    assert "tests/test_s.py:3: ValueError" in block, block
+    assert f"{os.path.join('tests', 'test_s.py')}:3: ValueError" in block, block
     (long,) = [line for line in block if "xxxxxxxxxx" in line]
     assert re.fullmatch(rf".{{{testshards.WIDTH}}} \[\.\.\. \d+ characters cut\]", long), long
 

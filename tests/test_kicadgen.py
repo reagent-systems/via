@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from conftest import engine, router_absent
+from conftest import engine, engine_absent, engine_program, router_absent
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -33,9 +33,7 @@ JAR = Path("/opt/workcenters/ee/freerouting/freerouting.jar")
 STAMP = "%Y-%m-%d %H:%M:%S.%f"
 
 needs_libs = pytest.mark.skipif(not LIBS.is_file(), reason="KiCad symbol libraries are not installed")
-needs_kicad = engine(
-    pytest.mark.skipif(shutil.which("kicad-cli") is None, reason="kicad-cli is not installed")
-)
+needs_kicad = engine(pytest.mark.skipif(engine_absent("kicad-cli"), reason="kicad-cli is not installed"))
 needs_router = engine(
     pytest.mark.skipif(
         not JAR.is_file() or bool(router_absent()), reason=router_absent() or "FreeRouting is not installed"
@@ -282,12 +280,25 @@ def test_route_round_trip_makes_drc_green(tmp_path):
 # ------------------------------------------------------- pours and hand routes
 
 
+def needs_kicad_python() -> None:
+    """Skip, by name, where no KiCad Python is found to run the stitching child (tools/kicadchild.py).
+    Via's own venv need not import pcbnew: on macOS and Windows it cannot."""
+    if kicadgen._kicadchild().python() is None:
+        pytest.skip("KiCad's Python (with its pcbnew module) is not found")
+
+
 @needs_kicad
 def test_pcbnew_imports_where_kicad_is_installed():
-    """Pour filling and island stitching read the board with KiCad's Python module. install.sh makes the
-    venv with --system-site-packages so this interpreter sees it; without that the pour tests skip in
-    silence (MISTAKES.md M17), which this test turns into a red run."""
-    import pcbnew  # noqa: F401
+    """Island stitching reads the board with KiCad's Python module, in a child under the Python
+    tools/kicadchild.py names: KiCad's own on macOS and Windows, the venv on Linux (install.sh makes it
+    with --system-site-packages). Without it the stitching tests skip in silence (MISTAKES.md M17),
+    which this test turns into a red run on every system."""
+    py = kicadgen._kicadchild().python()
+    assert py is not None, "kicad-cli is installed, but KiCad's Python is not found"
+    proc = subprocess.run(
+        [py, "-s", "-c", "import pcbnew"], capture_output=True, text=True, timeout=60, check=False
+    )
+    assert proc.returncode == 0, proc.stderr
 
 
 def poured_divider() -> kicadgen.Design:
@@ -393,7 +404,7 @@ def test_stitch_and_reserve_put_a_via_beside_a_surface_ground_pad():
 @needs_libs
 @needs_kicad
 def test_write_fills_the_pour_and_stitches_a_walled_off_pad(tmp_path):
-    pytest.importorskip("pcbnew")
+    needs_kicad_python()
     d = poured_divider()
     # Hand routes for every net; the OUT net rings R2's ground pad on the top face, cutting it off
     # from the pour there. The bottom pour is whole, so one via should bring it back.
@@ -509,7 +520,8 @@ def test_hook_installer_merges_once_into_user_settings(tmp_path):
 
     # The doctor reports each from the user settings ($HOME), and a settings file without them as absent.
     def doctor_sees(name: str) -> bool:
-        env = {**os.environ, "HOME": str(tmp_path)}
+        # Windows' Python reads the home folder from USERPROFILE, not HOME (run 46067841222).
+        env = {**os.environ, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
         cmd = [sys.executable, str(ROOT / "tools" / "workcenter"), "--json", "doctor"]
         proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)
         return json.loads(proc.stdout)["checks"][name]["ok"]
@@ -536,7 +548,7 @@ def test_hook_installer_merges_once_into_user_settings(tmp_path):
 def test_island_stitching_keeps_its_vias_out_of_keepouts(tmp_path):
     """The walled-off pad above with a keepout over its whole island: the only spots for a stitching
     via are forbidden, so the island is left to the DRC instead of a via under a grounded shell (M30)."""
-    pytest.importorskip("pcbnew")
+    needs_kicad_python()
     d = poured_divider()
     d.track("VIN", [(103.0, 102.5), (107.675, 102.5)], "F.Cu")
     d.track("OUT", [(103.0, 105.04), (106.5, 105.04), (107.675, 106.5)], "F.Cu")
@@ -565,7 +577,7 @@ def test_island_stitching_keeps_its_vias_out_of_keepouts(tmp_path):
 @needs_kicad
 @needs_router
 def test_design_command_routes_a_poured_board_green(tmp_path):
-    pytest.importorskip("pcbnew")
+    needs_kicad_python()
     design = tmp_path / "design.py"
     design.write_text(
         "import sys, uuid\n"
@@ -1089,7 +1101,7 @@ def test_four_layer_board_writes_inner_layers_and_hides_the_plane_from_the_route
 @needs_router
 def test_four_layer_board_routes_green_around_its_plane(tmp_path):
     """FreeRouting on the three routing layers; KiCad fills the plane round the router's vias."""
-    pytest.importorskip("pcbnew")
+    needs_kicad_python()
     d = four_layer_divider()
     summary = kicadgen.route(d, tmp_path / "build" / "route", passes=10, timeout=600)
     assert summary["segments"] > 0, summary
@@ -1104,7 +1116,7 @@ def test_four_layer_board_routes_green_around_its_plane(tmp_path):
 def test_island_stitching_drops_a_via_to_an_inner_plane_and_passes_the_gates(tmp_path):
     """The walled-off top pad with only the inner plane under it: the via lands on In1.Cu, and the
     four-layer board passes every gate with gerbers for both inner layers."""
-    pytest.importorskip("pcbnew")
+    needs_kicad_python()
     d = four_layer_divider()
     d.zone("GND", layers=("F.Cu",), connect="solid")
     walled_off_ground_pad(d)
@@ -1123,7 +1135,7 @@ def test_island_stitching_drops_a_via_to_an_inner_plane_and_passes_the_gates(tmp
 def test_island_stitching_keeps_clear_of_tracks_on_the_layers_a_via_passes(tmp_path):
     """The same island with an In2.Cu track of another net under all of it: a via there would short
     to the track, so none is placed and the island is reported (P17)."""
-    pytest.importorskip("pcbnew")
+    needs_kicad_python()
     d = four_layer_divider()
     d.zone("GND", layers=("F.Cu",), connect="solid")
     walled_off_ground_pad(d)
@@ -1505,7 +1517,9 @@ def test_router_keeps_off_another_nets_end_and_out_of_its_line():
 def netlist_groups(sch: Path, out: Path) -> set[tuple[tuple[str, str], ...]]:
     """The pin groups of every net of two or more pins in KiCad's netlist of a schematic."""
     net = out / "net.net"
-    subprocess.run(["kicad-cli", "sch", "export", "netlist", "-o", str(net), str(sch)], check=True)
+    subprocess.run(
+        [engine_program("kicad-cli"), "sch", "export", "netlist", "-o", str(net), str(sch)], check=True
+    )
     root = kicadgen.parse(net.read_text(encoding="utf-8"))
     groups = set()
     for n in kicadgen.children(kicadgen.child(root, "nets"), "net"):
@@ -1746,6 +1760,34 @@ SHARED_LIB_PY = DIVIDER_PY.replace(
 )
 
 
+def test_a_table_written_where_no_relative_path_reached_the_library_reads_as_the_projects(
+    tmp_path, monkeypatch
+):
+    """`design --check` writes into a scratch folder under %TEMP%, on drive C: of GitHub's Windows
+    runner, while the project and its library sat on D: (run 46067841222: the check exited 1). From C:
+    no relative path reaches D:, so the scratch table names the library by its absolute path; the
+    project's table, written in the project, names it from ${KIPRJMOD}. The check reads the scratch
+    table as the project's: the absolute path is named from the project as well."""
+    lib = tmp_path / "footprints" / "Mine.pretty"
+    scratch, project = tmp_path / "scratch", tmp_path / "board"
+    real_relpath = os.path.relpath
+
+    def other_drive(path, start=os.curdir):
+        if Path(start) == scratch.resolve():
+            raise ValueError(f"path is on mount 'D:', start on mount 'C:': {path}, {start}")
+        return real_relpath(path, start)
+
+    monkeypatch.setattr(kicadgen.os.path, "relpath", other_drive)
+    written = kicadgen.lib_uri(lib, scratch)
+    assert written == lib.resolve().as_posix()  # no relative path from the scratch folder
+    text = f'(fp_lib_table\n  (lib (name "Mine")(type "KiCad")(uri "{written}")(options "")(descr ""))\n)\n'
+    said = kicadgen.lib_table_at(text, scratch, project)
+    assert '(uri "${KIPRJMOD}/../footprints/Mine.pretty")' in said, said
+    # A table entry that is no path of a library stays as written.
+    kept = '(lib (name "K")(type "KiCad")(uri "${KICAD10_FOOTPRINT_DIR}/K.pretty")(options "")(descr ""))'
+    assert kicadgen.lib_table_at(kept, scratch, project) == kept
+
+
 @needs_libs
 def test_a_library_table_names_a_project_library_from_the_project_not_from_the_machine(tmp_path):
     """51 of the 61 library tables under examples/ held a path that began /home/user/via: a library
@@ -1885,7 +1927,17 @@ def test_a_symbol_from_a_pin_table_plots_and_passes_erc_in_a_design(tmp_path):
     table.write_text("Number,Name,Type,Side\n1,~,passive,left\n2,~,passive,right\n", encoding="utf-8")
     assert kicadgen.main(["symbol-add", str(lib), "--from", str(table), "--reference", "F"]) == 0
     proc = subprocess.run(
-        ["kicad-cli", "sym", "export", "svg", str(lib), "--symbol", "Fuse2", "-o", str(tmp_path / "svg")],
+        [
+            engine_program("kicad-cli"),
+            "sym",
+            "export",
+            "svg",
+            str(lib),
+            "--symbol",
+            "Fuse2",
+            "-o",
+            str(tmp_path / "svg"),
+        ],
         capture_output=True,
         text=True,
         check=False,

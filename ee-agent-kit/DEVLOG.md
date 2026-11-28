@@ -39,6 +39,64 @@ Evidence: <commit / tag / gate run / screenshot>
 
 ---
 
+## 2026-11-28 — Windows is proven, and its tests now look for KiCad where Via does
+
+The fourth run of the desktop legs was green everywhere, Windows native
+included: it installed, the smoke passed all 8 steps, and 788 of 963
+tests passed with none failed. So the README and `INSTALL.md` now call
+native Windows proven on GitHub's runners. But the same run skipped 99
+tests on Windows and 44 on macOS that need KiCad's command line or
+ngspice, though its own gates had just used both. The tests looked for
+them on `PATH`, and neither installer puts them there; Via finds them
+where the installer put them. The tests now ask Via's own lookup, the
+test step adds the engines' folders to its `PATH`, and on Windows Via
+finds its own ngspice without the help of `workcenter.cmd`.
+
+The fifth run judged them, and was red on both desktop legs: 8 tests of
+968 failed on Windows and 1 on macOS. Two of the causes were in Via. On
+Windows a user's own ngspice start-up file could still reach the decks
+the simulation gate runs, because ngspice also looks in the Windows
+profile folder; and a misnamed KiKit Python turned the whole export
+check into "engine missing: None". Both are fixed, with tests that fail
+on Linux before the fix. The rest were tests that assumed Linux: the
+bare `ngspice` on Windows is the windowed program, cmd quotes a path
+with double quotes, Windows paths differ only by case, and the layer
+render needs `rsvg-convert`, which the desktop installers do not
+install. The next run says whether the rest pass there.
+
+Evidence: runs 46093588252 (head 935b3a6) and 46105129254 (head
+e87689c); MISTAKES M328, M330 to M332; PROCESSES P12 steps 20 to 22;
+branch `claude/windows-proven`.
+
+## 2026-11-27 — Via is ported to Windows and macOS; nothing has run there yet
+
+The owner asked for Windows and macOS support, and for instructions that
+say you can hand the install to your coding agent, as 1 pull request.
+We built it in 11 pieces on a shared first piece, `tools/hostos.py`,
+which holds every difference between the 3 systems; on Linux each of its
+answers is what the code said before. The engine lock now works without
+fcntl and without /proc. KiCad's pcbnew runs in KiCad's own Python, as a
+child. There is an installer for each system, a job on GitHub's macOS
+and Windows runners, and `INSTALL.md`, which a coding agent follows step
+by step. Each piece was reviewed by someone who did not write it, and
+fixed. The merge found what no single branch could: 2 shapes of 1 pins
+file, 2 things named `hostos` in 1 file, a test scan that the other
+pieces' new tests failed, and a doc test that looked for a name nobody
+used. Every test here ran on Linux, with stand-ins for the other 2
+systems. Nothing has run on a Mac or on Windows: the first GitHub run of
+the branch proves or refutes it.
+
+Evidence: branch `wip/winmac`; STATUS rows "Windows and macOS: ...";
+MISTAKES M317 to M327. The first GitHub run of the legs (46067841222)
+installed on both systems and was red in its tests; M325 names each
+cause, fixed on the branch before the next run. The second
+(46084159219) was green on macOS and on the WSL leg, which are now
+proven on GitHub's runners; Windows native failed 12 tests, each a
+test's own assumption (M326), fixed before the next run. The third
+(46089464718) was green on macOS and on the WSL leg again; Windows
+native failed 1 test, where `next` named one design file 2 ways
+(M327), fixed before the next run.
+
 ## 2026-11-19 — The test run names every test it did not judge for its machine
 
 M307's test was skipped by its mark on GitHub, and the run said nothing: the shard runner named only the 3 tests that skip inside themselves, not the 66 a mark skipped on `full`. CI.md's hand-kept list of the 69 was the fix, and a list by hand goes stale with the next skipif. The runner now prints 1 `not judged:` line per reason with its count and first 3 ids, and writes every id into `not-judged.txt` in its logs folder; the fast lane prints the same through `-p testshards`. A test the lane deselects is not collected, so its mark is never evaluated and it is not named. `tests/test_ci_notjudged.py` collects the suite with `verify/github_full.py`, which makes the process look like `full`'s runner, and holds CI.md's counts by file and group: 66 skipped by a mark, the numbers CI.md had (the builder's collection). The collection imports pcbnew once, a module's probe; the engine guard failed the test on it until the child kept its own engine log.

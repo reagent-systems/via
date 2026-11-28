@@ -502,6 +502,7 @@ def test_cmath_is_the_only_math_a_measure_needs():
         "itertools",
         "pathlib",
         "kicadgen",
+        "hostos",
         "time",
     }
     assert cmath.pi == math.pi

@@ -22,13 +22,16 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import signal
 import subprocess
+import sys
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-WC_ROOT = Path(os.environ.get("WORKCENTER_ROOT", "/opt/workcenters/ee"))
+import hostos
+
+# The root install.sh uses on Linux; macOS and Windows have their own (hostos.default_root).
+WC_ROOT = Path(os.environ.get("WORKCENTER_ROOT", hostos.default_root()))
 # FreeRouting 2.5.0's count of what it left open and of its clearance violations, read with `javap -c -p`
 # from the jar install.sh pins: FRLogger.formatScore(float, int, int) writes "<score> (<n> unrouted and
 # <m> violation[s])"; the headless job logs it after "final score: ", the window's worker after "with the
@@ -45,8 +48,18 @@ JAVA_MIN = 21
 # FreeRouting 1.9.0 draws a window even when it routes alone (it runs under xvfb-run), so its JVM needs
 # AWT's X11 library. Ubuntu's openjdk-21-jre-headless has none (its file list names lib/libawt.so and
 # lib/libawt_headless.so); openjdk-21-jre adds lib/libawt_xawt.so. In CI run 44515796762 install.sh
-# recorded the headless JVM, and every route there ended in "FreeRouting exited 1".
+# recorded the headless JVM, and every route there ended in "FreeRouting exited 1". Linux's library;
+# each system's is hostos.awt_lib (macOS lib/libawt_lwawt.dylib, Windows bin\awt.dll).
 AWT_X11 = Path("lib") / "libawt_xawt.so"
+NO_AWT_LINUX = (
+    "a headless Java runtime cannot draw FreeRouting 1.9.0's window (openjdk-21-jre adds the library)"
+)
+# On macOS and Windows every JDK build has AWT; a runtime cut down without it (jlink) has none.
+NO_AWT = f"a Java runtime without AWT cannot draw FreeRouting 1.9.0's window (a JDK {JAVA_MIN} has it)"
+# Off Linux a java may only start another: Scoop's and asdf's shims, Oracle's javapath without JAVA_HOME,
+# Apple's /usr/bin/java with no JDK installed. The folder it leads to holds no `release` file, which a
+# JDK's or a Java runtime's top folder holds (release_major reads it). JAVA names a java on every system.
+NO_JDK = f"set JAVA to the java of a JDK {JAVA_MIN}"
 
 
 def java_major(exe: str) -> int | None:
@@ -85,18 +98,21 @@ def release_major(jvm: Path) -> int | None:
 
 def java_refusal(exe: str) -> str:
     """Why FreeRouting 1.9.0 cannot run on `exe`, or "" when nothing here stops it: the java is there,
-    its JVM (the folder above its bin/, links resolved) has lib/libawt_xawt.so, and it is Java JAVA_MIN
-    or newer. Doctor's java row holds it to the same: the router and doctor never disagree."""
+    its JVM has this system's AWT library, and it is Java JAVA_MIN or newer. The JVM is the folder above
+    the java's bin/, links resolved; on macOS Apple's /usr/bin/java leads to JAVA_HOME or to what
+    /usr/libexec/java_home names (hostos.java_home). The library is lib/libawt_xawt.so on Linux,
+    lib/libawt_lwawt.dylib on macOS and bin\\awt.dll on Windows (hostos.awt_lib). Doctor's java row
+    holds it to the same: the router and doctor never disagree."""
     found = shutil.which(exe)
     if found is None:
         return "no java on PATH" if exe == "java" else f"no java at {exe}"
-    home = Path(found).resolve().parent.parent
-    lib = home / AWT_X11.parent
-    if not (lib / AWT_X11.name).is_file():
-        return (
-            f"{lib} has no {AWT_X11.name}: a headless Java runtime cannot draw FreeRouting 1.9.0's window "
-            "(openjdk-21-jre adds the library)"
-        )
+    home = hostos.java_home(found)
+    awt = hostos.awt_lib(home)
+    if not awt.is_file():
+        if not sys.platform.startswith("linux") and not (home / "release").is_file():
+            return f"{Path(found).resolve()} leads to {home}, which is no JDK: {NO_JDK}"
+        why = NO_AWT_LINUX if sys.platform.startswith("linux") else NO_AWT
+        return f"{awt.parent} has no {awt.name}: {why}"
     # The JVM's release file when it has one; else its java is asked (`-version`).
     major = release_major(home)
     if major is None:
@@ -130,7 +146,7 @@ def java_choice(refuse: bool = True) -> tuple[str, str, str]:
 
     if named:
         return named, "set by JAVA", refusal(named)
-    record = Path(os.environ.get("WORKCENTER_ROOT", "/opt/workcenters/ee")) / "java.path"
+    record = Path(os.environ.get("WORKCENTER_ROOT", hostos.default_root())) / "java.path"
     try:
         lines = record.read_text(encoding="utf-8").strip().splitlines()
     except FileNotFoundError:
@@ -257,20 +273,22 @@ class Router:
         # alone carries the rules.
         dsn.with_suffix(".rules").unlink(missing_ok=True)
         cmd = self.command(dsn, ses, passes, threads, cwd)
+        # A group of its own: a new session on Linux and macOS, CREATE_NEW_PROCESS_GROUP on Windows.
         proc = subprocess.Popen(
             cmd,
             cwd=cwd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            start_new_session=True,
+            **hostos.own_group(),
         )
         try:
             out, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             # xvfb-run starts Java as its child: stopping xvfb-run alone left Java running and holding
-            # the output, and the route waited for it.
-            os.killpg(proc.pid, signal.SIGKILL)
+            # the output, and the route waited for it. The whole tree goes: SIGKILL to the process group
+            # on Linux and macOS, `taskkill /T /F` on Windows (hostos.kill_tree).
+            hostos.kill_tree(proc)
             out, err = proc.communicate()
             log.write_text((out or "") + "\n" + (err or ""), encoding="utf-8")
             raise RouterTimeout(

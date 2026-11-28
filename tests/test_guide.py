@@ -16,7 +16,6 @@ import inspect
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -25,16 +24,35 @@ import types
 from pathlib import Path
 
 import pytest
-from conftest import engine
+from conftest import engine, engine_absent
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
 BOARDS = ROOT / "tests" / "boards"
 sys.path.insert(0, str(ROOT / "tools"))
 import guide  # noqa: E402
+import hostos  # noqa: E402
 import kicadgen  # noqa: E402
 
-needs_ngspice = engine(pytest.mark.skipif(shutil.which("ngspice") is None, reason="ngspice is not installed"))
+# What only a POSIX shell runs: a chain, a pipe, a redirection, a substitution, `~`, and the programs
+# Windows lacks. A command `next` prints runs alike in a POSIX shell, Git Bash and PowerShell.
+POSIX_ONLY = re.compile(
+    r"&&|\|\||(?<![<\w])\|(?![\w>])|;|\$\(|(^|\s)\d?>{1,2}\s?\S|2>&1|(^|\s)~/"
+    r"|(^|[\s(])(sudo|mkdir -p|cp|mv|rm|ln|cd|export|chmod|bash|sh|python3)\s"
+)
+# A command a text names in backticks: it starts with a program's name.
+COMMAND_SPAN = re.compile(r"`((?:workcenter|sudo|mkdir|cp|cd|python3?|bash|sh|git|rm|ln|export)\b[^`]*)`")
+
+
+def posix_only(command: str) -> list[str]:
+    return [m.group(0) for m in POSIX_ONLY.finditer(command)]
+
+
+def commands(text: str | None) -> list[str]:
+    return COMMAND_SPAN.findall(text or "")
+
+
+needs_ngspice = engine(pytest.mark.skipif(engine_absent("ngspice"), reason="ngspice is not installed"))
 
 DECK = "* a deck\nV1 in 0 DC 5\nR1 in 0 1k\n.control\nop\n.endc\n.end\n"
 # `next` asks only whether an engine's name is on PATH. A test that writes its report by hand names
@@ -66,8 +84,9 @@ def ask(project: Path, *flags: str, env: dict | None = None) -> tuple[int, dict]
 
 
 def run_line(step: dict, *flags: str) -> subprocess.CompletedProcess:
-    """Run a step's RUN line as its reader does, with this checkout's `workcenter`."""
-    words = shlex.split(step["run"])
+    """Run a step's RUN line as its reader does, with this checkout's `workcenter`: split by the system's
+    shell rules (run 46084159219, Windows: shlex.split read `D:\\a\\_temp` as `D:a_temp`)."""
+    words = hostos.split_line(step["run"])
     assert words[0] == "workcenter", step["run"]
     return subprocess.run(
         [sys.executable, str(CLI), *flags, *words[1:]],
@@ -93,7 +112,9 @@ def sim_project(tmp_path: Path) -> Path:
 
 
 def files(folder: Path) -> list[str]:
-    return sorted(str(p.relative_to(folder)) for p in folder.rglob("*"))
+    """The folder's files and folders, each by its path under it with `/` on every system, as
+    tests/test_new.py's files() names them (run 46067841222: `library\\sources.csv` on Windows)."""
+    return sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*"))
 
 
 def report(proj: Path, records: list[dict], name: str = "gates.json") -> None:
@@ -441,6 +462,16 @@ def test_no_sentence_of_a_hint_or_of_a_step_is_over_20_words(tmp_path, monkeypat
     with monkeypatch.context() as patch:
         patch.setattr(cli, "NGSPICE", "no-such-ngspice")
         answer(project("absent"))
+    # KiCad's Python, which stitches a poured board's islands (tools/kicadchild.py)
+    poured = project("poured")
+    (poured / "design.py").write_text("# a design\n", encoding="utf-8")
+    (poured / "proj.kicad_pro").write_text("{}\n", encoding="utf-8")
+    (poured / "proj.kicad_pcb").write_text(
+        '(kicad_pcb\n  (zone (net 1) (net_name "GND"))\n)\n', encoding="utf-8"
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(kicadgen._kicadchild(), "python", lambda: None)
+        answer(poured)
     # the design file: refused, then different from the project
     designed = project("designed")
     (designed / "design.py").write_text("# a design\n", encoding="utf-8")
@@ -518,6 +549,12 @@ def test_no_sentence_of_a_hint_or_of_a_step_is_over_20_words(tmp_path, monkeypat
     texts += [text for step in steps for text in (step.next, step.why, step.done_when)]
     long = [(len(s.split()), s) for text in texts for s in sentences(text) if len(s.split()) > 20]
     assert not long, long
+    # Every command `next` prints runs alike in a POSIX shell, Git Bash and PowerShell, save the
+    # installer's line, which is each system's own (tools/hostos.py, installer_command).
+    installer = hostos.installer_command(cli.SRC_DIR)
+    shell = [(s.run, posix_only(s.run)) for s in steps if s.run and s.run != installer]
+    shell += [(c, posix_only(c)) for s in steps for t in (s.next, s.why, s.done_when) for c in commands(t)]
+    assert len(shell) > 30 and [pair for pair in shell if pair[1]] == []
     tree = ast.parse(Path(guide.__file__).read_text(encoding="utf-8"))
     sites = {
         node.lineno
@@ -525,6 +562,64 @@ def test_no_sentence_of_a_hint_or_of_a_step_is_over_20_words(tmp_path, monkeypat
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Step"
     }
     assert sites == reached, f"no project here is answered by the Step of line {sorted(sites - reached)}"
+
+
+def test_no_hint_names_a_command_only_a_posix_shell_runs():
+    """Windows has no `sudo`, `mkdir -p` or `cp`, and Windows PowerShell 5.1 has no `&&`."""
+    said = [(c, posix_only(c)) for _, do, _ in guide.HINTS for c in commands(do)]
+    assert len(said) >= 3 and [pair for pair in said if pair[1]] == []
+
+
+def test_the_shell_check_finds_what_only_a_posix_shell_runs():
+    for line in (
+        "mkdir -p a/sim && cp x a/sim/x",
+        "sudo /opt/via/install.sh",
+        "workcenter gates . > build/out.txt",
+        "workcenter now . 2>&1",
+        "cd board; workcenter gates .",
+        "export KICAD_CLI=/x",
+        "workcenter gates $(pwd)",
+        "workcenter gates ~/board",
+        "rm -rf build",
+    ):
+        assert posix_only(line), line
+    for line in (
+        "workcenter gates 'a b' --strict",
+        "workcenter new /tmp/x --deck i2c_rise --as i2c_rise_2",
+        "altermod <model> <name>=<value>",
+        "R1 a b 10k tc1=100u",
+    ):
+        assert not posix_only(line), line
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+def test_the_install_step_off_linux_names_that_systems_installer(tmp_path, monkeypatch, platform):
+    """Off Linux the installer is another script, run without sudo (tools/hostos.py)."""
+    cli = load_cli()
+    monkeypatch.setattr(cli, "NGSPICE", "no-such-ngspice")
+    monkeypatch.setattr(cli, "KICAD_CLI", sys.executable)
+    proj = sim_project(tmp_path / "p")
+
+    # shutil.which reads Windows' own API when sys.platform is win32, which Linux lacks: it answers here.
+    def which(name, *rest, **named):
+        return None if name.startswith("no-") else name
+
+    monkeypatch.setattr(shutil, "which", which)
+    monkeypatch.setattr(sys, "platform", platform)
+    step = guide.next_step(cli, str(proj))
+    assert step.next.startswith("Install the toolchain") and step.run == hostos.installer_command(cli.SRC_DIR)
+    assert "sudo" not in step.run and not step.run.endswith("install.sh")
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+def test_the_hint_for_a_missing_kicad_cli_names_this_systems_installer(monkeypatch, platform):
+    """`next` names the installer only once no earlier step comes first, so the hint names it itself.
+    Review finding F9."""
+    monkeypatch.setattr(sys, "platform", platform)
+    line = "thermal: which parts of the board carry a thermal figure is not judged: kicad-cli is not on PATH"
+    do, _ = guide.hint("sim", line)
+    assert f"`{hostos.installer_command(ROOT)}`" in do
+    assert "{" not in do
 
 
 # ------------------------------------------------------------- the path
@@ -568,12 +663,13 @@ def test_a_folder_with_two_project_files_is_told_to_name_one(tmp_path):
     assert code == 1 and step["next"] == (
         "Name one of the folder's 2 project files: a.kicad_pro, b.kicad_pro. The RUN line names the first."
     )
-    assert step["run"] == f"workcenter next {tmp_path}/a.kicad_pro"
+    pro = tmp_path / "a.kicad_pro"  # the system's separator (run 46067841222, Windows: `\a.kicad_pro`)
+    assert step["run"] == f"workcenter next {pro}"
     assert step["why"] == f"{tmp_path}: 2 .kicad_pro files; name one"
-    assert step["done_when"] == f"`workcenter next {tmp_path}/a.kicad_pro` names another step"
+    assert step["done_when"] == f"`workcenter next {pro}` names another step"
     code, step = follow(step)
     assert (code, step["next"]) == (1, "Run the gates.")
-    assert step["run"] == f"workcenter gates {tmp_path}/a.kicad_pro"
+    assert step["run"] == f"workcenter gates {pro}"
     # that line runs: with no schematic, no board and no deck it has nothing for an engine
     ran = run_line(step)
     assert ran.returncode == 2 and ran.stdout.splitlines()[-1].startswith("SKIPPED"), ran.stdout + ran.stderr
@@ -584,7 +680,7 @@ def test_a_folder_with_two_project_files_is_told_to_name_one(tmp_path):
     # a design file does not change the first answer: generated again, the folder holds 2 project files
     (tmp_path / "design.py").write_text("# a design\n", encoding="utf-8")
     code, step = ask(tmp_path)
-    assert (code, step["run"]) == (1, f"workcenter next {tmp_path}/a.kicad_pro")
+    assert (code, step["run"]) == (1, f"workcenter next {pro}")
 
 
 def test_a_folder_that_is_not_there_is_created_first(tmp_path):
@@ -592,10 +688,12 @@ def test_a_folder_that_is_not_there_is_created_first(tmp_path):
     new = tmp_path / "boards" / "psu"
     code, step = ask(new)
     assert code == 1 and step["next"] == "Create the project's folder: it does not exist yet."
-    assert step["run"] == f"mkdir -p {new}" and step["why"] == f"{new}: not found"
+    assert step["run"] == f"workcenter new {new} --empty" and step["why"] == f"{new}: not found"
     assert step["done_when"] == f"`workcenter next {new}` names another step"
     assert not new.parent.exists()  # the command writes nothing
-    new.mkdir(parents=True)  # what the RUN line does
+    made = run_line(step)  # `mkdir -p` was the line: Windows has no -p, and cmd.exe's mkdir no `/`
+    assert made.returncode == 0, made.stdout + made.stderr
+    assert new.is_dir() and list(new.iterdir()) == []
     code, step = ask(new)
     assert code == 1 and step["next"].startswith("Start a board project")
 
@@ -626,7 +724,7 @@ def test_a_folder_with_nothing_in_it_is_told_the_ways_to_start(tmp_path):
     (tmp_path / "design.py").write_text("# a design\n", encoding="utf-8")
     code, step = ask(tmp_path)
     assert code == 1 and step["next"] == "Generate the KiCad project from its design file."
-    assert step["run"] == f"workcenter design {tmp_path}/design.py --route"
+    assert step["run"] == f"workcenter design {tmp_path / 'design.py'} --route"
 
 
 def test_a_project_with_nothing_for_a_gate_to_run_is_not_told_to_install_anything(tmp_path):
@@ -637,12 +735,55 @@ def test_a_project_with_nothing_for_a_gate_to_run_is_not_told_to_install_anythin
     assert step["why"] == "every gate was skipped: sim: no sim/*.cir in project"
 
 
+@pytest.mark.parametrize(
+    ("platform", "quote"), [("linux", "'"), ("darwin", "'"), ("win32", '"')], ids=["linux", "darwin", "win32"]
+)
+def test_the_lines_of_next_quote_a_path_for_the_systems_shell(tmp_path, monkeypatch, platform, quote):
+    """Run 46067841222, Windows: next printed `workcenter new 'D:\\a\\...\\sensor-node'`; cmd.exe keeps
+    sh's single quotes as part of the name. A path that needs quotes gets the system's own (double on
+    Windows, as cmd.exe and PowerShell read them), and a path that needs none stays as written.
+
+    Run 46084159219, Windows: a Windows path holds `\\`, which sh reads as an escape, so for sh's rules
+    (linux, darwin) it is quoted (`'D:\\a\\...\\board'`): only cmd.exe's rules leave it as written."""
+    cli = load_cli()
+    spaced = tmp_path / "my board"
+    spaced.mkdir()
+    plain = tmp_path / "board"
+    plain.mkdir()
+    monkeypatch.setattr(sys, "platform", platform)
+    assert guide.next_step(cli, str(spaced), run_check=False).run == f"workcenter new {quote}{spaced}{quote}"
+    as_written = str(plain) if platform == "win32" or "\\" not in str(plain) else f"'{plain}'"
+    assert guide.next_step(cli, str(plain), run_check=False).run == f"workcenter new {as_written}"
+
+
+@pytest.mark.parametrize(
+    ("platform", "quote"), [("linux", "'"), ("darwin", "'"), ("win32", '"')], ids=["linux", "darwin", "win32"]
+)
+def test_the_design_file_is_one_quoted_word_in_each_line_of_next(tmp_path, monkeypatch, platform, quote):
+    """Run 46089464718, Windows: the step that generates the project named `{board}/design.py`, quoted
+    folder and `/design.py` after it, while the route step named the whole path by the system's
+    separator, `{board}\\design.py` (tests/test_new.py:143). Each line quotes the whole path as 1 word,
+    as the route step does: a quoted folder with a word after it is no path the user typed."""
+    cli = load_cli()
+    spaced = tmp_path / "my board"
+    spaced.mkdir()
+    (spaced / "design.py").write_text("# a design\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "platform", platform)
+    step = guide.next_step(cli, str(spaced), run_check=False)
+    assert step.next == "Generate the KiCad project from its design file."
+    assert step.run == f"workcenter design {quote}{spaced / 'design.py'}{quote} --route"
+
+
 def test_a_project_whose_engine_is_absent_is_told_to_install_it(tmp_path):
     proj = sim_project(tmp_path)
     code, step = ask(proj, env={"NGSPICE": str(tmp_path / "no-such-ngspice")})
     assert code == 1 and step["next"].startswith("Install the toolchain")
     assert step["why"] == f"{tmp_path / 'no-such-ngspice'} is not on PATH"
-    assert step["run"] == f"sudo {ROOT / 'install.sh'}"
+    # The host's installer (run 46067841222: install-macos.sh on macOS, install.ps1 on Windows);
+    # tests/test_hostos.py holds each system's line, and Linux's is today's.
+    assert step["run"] == hostos.installer_command(ROOT)
+    if sys.platform == "linux":
+        assert step["run"] == f"sudo {ROOT / 'install.sh'}"
 
 
 def test_the_gates_run_first_and_again_when_an_input_is_newer(tmp_path):
@@ -660,7 +801,8 @@ def test_the_gates_run_first_and_again_when_an_input_is_newer(tmp_path):
     os.utime(proj / "sim" / "d.cir", (later, later))
     code, step = ask(proj)
     assert code == 1 and step["next"] == "Run the gates again: an input changed after the last run."
-    assert step["why"] == "build/gates.json is older than sim/d.cir"
+    # the deck's path under the project, by the system's separator (run 46084159219, Windows: `sim\d.cir`)
+    assert step["why"] == f"build/gates.json is older than {Path('sim', 'd.cir')}"
 
 
 def test_a_red_gate_is_answered_with_its_first_failure_and_the_fix(tmp_path):

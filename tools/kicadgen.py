@@ -43,8 +43,14 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-SYMBOL_DIR = Path(os.environ.get("KICAD_SYMBOL_DIR", "/usr/share/kicad/symbols"))
-FOOTPRINT_DIR = Path(os.environ.get("KICAD_FOOTPRINT_DIR", "/usr/share/kicad/footprints"))
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hostos  # noqa: E402  (tools/hostos.py: the platform differences, standard library only)
+
+# KICAD_SYMBOL_DIR and KICAD_FOOTPRINT_DIR first, then (on macOS and Windows) KiCad's own KICAD10_
+# variables, then the install's folders: /usr/share/kicad on Linux.
+SYMBOL_DIR = hostos.kicad_dirs()["symbols"]
+FOOTPRINT_DIR = hostos.kicad_dirs()["footprints"]
 # Fabrication houses' published limits as KiCad design rules, one .kicad_dru each (rules/README.md).
 FAB_DIR = Path(__file__).resolve().parent.parent / "rules"
 
@@ -195,13 +201,19 @@ def lib_uri(lib: Path, project: Path) -> str:
 def lib_table_at(text: str, written_in: Path, project: Path) -> str:
     """A library table that was written into `written_in`, as the same design writes it into `project`:
     each library named from the folder the table lies in. `design --check` regenerates into a scratch
-    folder, and holds the project's own tables to this."""
+    folder, and holds the project's own tables to this. A library named by its absolute path is one
+    lib_uri found no relative path to from `written_in` (a scratch folder on drive C:, the library on D:,
+    as on GitHub's Windows runner in run 46067841222): it is named from the project too."""
 
     def moved(found: re.Match) -> str:
         uri = found.group(1)
-        if not uri.startswith(KIPRJMOD):
+        if uri.startswith(KIPRJMOD):
+            lib = Path(written_in) / uri[len(KIPRJMOD) :]
+        elif Path(uri).is_absolute():
+            lib = Path(uri)
+        else:
             return found.group(0)
-        return f'(uri "{lib_uri(Path(written_in) / uri[len(KIPRJMOD) :], project)}")'
+        return f'(uri "{lib_uri(lib, project)}")'
 
     return URI_RE.sub(moved, text)
 
@@ -4371,7 +4383,7 @@ class Design:
             (out_dir / rel).parent.mkdir(parents=True, exist_ok=True)
             files[out_dir / rel] = text
         for p, text in files.items():
-            p.write_text(text, encoding="utf-8")
+            hostos.write_text(p, text)  # LF on Windows too: `design --check` compares bytes
         self.stitches = []
         self.filled = {}
         if self.zones:
@@ -4380,71 +4392,56 @@ class Design:
             if self.segments:  # a routed board: tracks cut the pours, stitch the pieces back together
                 added, self.islands = stitch_zones(self, pcb)
                 if added:
-                    pcb.write_text(self.board(), encoding="utf-8")
+                    hostos.write_text(pcb, self.board())
                     self.filled = fill_zones(pcb)
         return list(files)
 
 
-def pour_pieces(pcb: Path, net: str) -> dict:
-    """How the filled pours of `net` hang together, read with KiCad's own geometry (pcbnew).
+def _kicadchild():
+    """tools/kicadchild.py: the step that reads KiCad's pcbnew, run as a child under KiCad's Python."""
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import kicadchild
 
-    Returns {"pieces": [(layer, polys, index, items)], "components": [set of piece ids]}: one piece per
-    filled polygon, `items` the pads and vias of the net it touches, and components joined by the
-    through-hole pads and vias shared between layers. Every piece that holds an item should end up in
-    one component; the rest are the islands the DRC reports as unconnected zone-to-zone.
-    """
-    import pcbnew  # KiCad's own Python module; only present where KiCad is installed
+    return kicadchild
 
-    board = pcbnew.LoadBoard(str(pcb))
-    code = board.GetNetcodeFromNetname(net)
-    pieces: list[tuple[str, object, int, list]] = []
-    for zone in board.Zones():
-        if zone.GetNetCode() != code:
-            continue
-        for layer in zone.GetLayerSet().CuStack():
-            polys = zone.GetFilledPolysList(layer)
-            for i in range(polys.OutlineCount()):
-                pieces.append((pcbnew.LayerName(layer), polys, i, []))
-    items = []  # (position, layers, drill)
-    copper = {pcbnew.LayerName(ly) for ly in board.GetEnabledLayers().CuStack()}  # a via spans them all
-    for fp in board.GetFootprints():
-        for pad in fp.Pads():
-            if pad.GetNetCode() == code:
-                layers = {pcbnew.LayerName(ly) for ly in pad.GetLayerSet().CuStack()}
-                items.append((pad.GetPosition(), layers, f"{fp.GetReference()}.{pad.GetNumber()}"))
-    for track in board.GetTracks():
-        if track.GetClass() == "PCB_VIA" and track.GetNetCode() == code:
-            items.append(
-                (
-                    track.GetPosition(),
-                    copper,
-                    f"via@{track.GetPosition().x / 1e6:.2f},{track.GetPosition().y / 1e6:.2f}",
-                )
-            )
-    parent = list(range(len(pieces)))
 
-    def find(i: int) -> int:
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
+def _stitch_request(design: Design, pcb: Path) -> dict:
+    """What the stitch search needs of the design, as JSON (tools/kicadchild.py stitch): once per poured
+    net, its via and that via's reach on each copper layer; the copper layers; the keepouts; every
+    track; every pad's box. The design does not change during a round but for the vias it gains, and the
+    search reads those from the written board."""
+    copper = design.copper_names()
+    holes = design.hole_clearances()
+    nets = []
+    # Once per poured net: the search reads every zone of the net, so a net with two zones (a plane
+    # and a face pour) looped per zone would stitch each island twice in one round (M37).
+    for net in dict.fromkeys(design.pcb_net_name(z["net"]) for z in design.zones):
+        spec = design.class_of(net)
+        size, drill = spec["via"], spec["via_drill"]
+        reach = {ly: design.via_reach(size / 2, drill, ly, design.clearance, holes) for ly in copper}
+        nets.append({"net": net, "size": size, "drill": drill, "reach": reach})
+    return {
+        "pcb": str(pcb),
+        "copper": copper,
+        "nets": nets,
+        **_blocker_data(design, design.pad_boxes()),
+    }
 
-    for pos, layers, name in items:
-        touched = [
-            k for k, (layer, polys, i, _) in enumerate(pieces) if layer in layers and polys.Contains(pos, i)
-        ]
-        for k in touched:
-            pieces[k][3].append(name)
-        for k in touched[1:]:
-            parent[find(k)] = find(touched[0])
-    groups: dict[int, set[int]] = {}
-    for k in range(len(pieces)):
-        groups.setdefault(find(k), set()).add(k)
 
-    def area(group: set[int]) -> float:
-        return sum(pieces[k][1].Outline(pieces[k][2]).Area() for k in group)
-
-    return {"pieces": pieces, "components": sorted(groups.values(), key=area, reverse=True)}
+def _blocker_data(design: Design, boxes: list[PadBox]) -> dict:
+    """The keepouts, tracks and pads a stitching via keeps clear of, as JSON."""
+    return {
+        "keepouts": [
+            {"name": k["name"], "polygon": [list(p) for p in k["polygon"]], "copper": k.get("copper", True)}
+            for k in design.keepouts
+        ],
+        "segments": [[n, list(a), list(b), w, ly] for n, a, b, w, ly in design.segments],
+        "boxes": [
+            {"net": b.net, "layer": b.layer, "x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2} for b in boxes
+        ],
+    }
 
 
 def stitch_zones(design: Design, pcb: Path, rounds: int = 6) -> int:
@@ -4455,83 +4452,40 @@ def stitch_zones(design: Design, pcb: Path, rounds: int = 6) -> int:
     the islands that hold pads, and drops a via through each one into the main pour on the other
     side; the board is re-filled and read again until every pad is on the main pour or no via fits.
     Returns (vias added, islands left), an island being the sorted pad names it holds.
+
+    The reading is KiCad's own geometry (pcbnew), which on macOS and Windows only KiCad's own Python
+    imports: each round runs in tools/kicadchild.py as a child under that Python. Without it the board
+    stays unstitched, in 1 line, and the DRC judges the islands.
     """
-    try:
-        import pcbnew
-    except ImportError:
-        print(
-            "stitch: pcbnew (KiCad's Python module) is not importable; islands are left to the DRC",
-            file=sys.stderr,
-        )
-        return 0, []
+    child = _kicadchild()
     added = 0
     left: list[list[str]] = []
     for _ in range(rounds):
-        progress = False
-        left = []
-        # Once per poured net: pour_pieces reads every zone of the net, so a net with two zones (a plane
-        # and a face pour) looped per zone would stitch each island twice in one round (M37).
-        for net in dict.fromkeys(design.pcb_net_name(z["net"]) for z in design.zones):
-            spec = design.class_of(net)
-            size, drill = spec["via"], spec["via_drill"]
-            graph = pour_pieces(pcb, net)
-            pieces, components = graph["pieces"], graph["components"]
-            if not components:
-                continue
-            holes = _holes(pcbnew, pcb)
-            boxes = design.pad_boxes()
-            copper = design.copper_names()
-            for n, comp in enumerate(components[1:], start=1):
-                if not any(pieces[k][3] for k in comp):
-                    continue  # a bare island: KiCad drops it
-                spot = None
-                # Land the via in the biggest other component first; any merge is progress.
-                for m_comp in components[:n] + components[n + 1 :]:
-                    for k in comp:
-                        layer, polys, i, names = pieces[k]
-                        for other in (ly for ly in copper if ly != layer):
-                            targets = [pieces[m] for m in m_comp if pieces[m][0] == other]
-                            # The via passes every other layer too: there it sits in the net's own
-                            # pour or keeps clear of the other nets' copper (P17).
-                            rest = [ly for ly in copper if ly not in (layer, other)]
-                            spot = _via_spot(
-                                pcbnew,
-                                polys,
-                                i,
-                                targets,
-                                size / 2,
-                                drill / 2,
-                                holes,
-                                blocked=_via_blocker(
-                                    pcbnew, design, pieces, boxes, net, size / 2, rest, drill
-                                ),
-                            )
-                            if spot:
-                                break
-                        if spot:
-                            break
-                    if spot:
-                        break
-                island = sorted({n for k in comp for n in pieces[k][3]})
-                if spot is None:
-                    left.append(island)
-                    continue
-                design.vias.append((net, spot, size, drill))
-                design.stitches.append(
-                    {
-                        "net": net,
-                        "at": spot,
-                        "layer": layer,
-                        "to": other,
-                        "pads": [n for n in island if not n.startswith("via@")],
-                    }
-                )
-                holes.append((pcbnew.VECTOR2I_MM(*spot), drill / 2))
-                added += 1
-                progress = True
-        if not progress:
+        request = _stitch_request(design, pcb)
+        try:
+            said = child.run("stitch", request)
+        except child.Missing as exc:
+            print(f"stitch: {exc}; islands are left to the DRC", file=sys.stderr)
+            return added, left
+        left = [list(island) for island in said["left"]]
+        sizes = {job["net"]: (job["size"], job["drill"]) for job in request["nets"]}
+        for found in said["stitches"]:
+            net, spot = found["net"], (found["at"][0], found["at"][1])
+            size, drill = sizes[net]
+            design.vias.append((net, spot, size, drill))
+            design.stitches.append(
+                {
+                    "net": net,
+                    "at": spot,
+                    "layer": found["layer"],
+                    "to": found["to"],
+                    "pads": [n for n in found["island"] if not n.startswith("via@")],
+                }
+            )
+            added += 1
+        if not said["stitches"]:
             break
-        pcb.write_text(design.board(), encoding="utf-8")
+        hostos.write_text(pcb, design.board())
         fill_zones(pcb)
     return added, left
 
@@ -4549,98 +4503,11 @@ def _via_blocker(
     """The `blocked` test for a stitching via of `net`, radius `r` and hole `drill`: True where a
     keepout refuses it, or where on one of the `rest` layers (those it passes without joining) it is
     neither inside the net's own fill nor clear of the other nets' tracks and pads, by the copper
-    clearance or the layer's hole clearance, whichever is further (M79)."""
-    c = design.clearance
+    clearance or the layer's hole clearance, whichever is further (M79). The test itself is the
+    child's (tools/kicadchild.py via_blocker), on the design's data as the child gets it."""
     holes = design.hole_clearances()
-
-    def clear_on(layer: str, x: float, y: float) -> bool:
-        if any(_inside_fill(pcbnew, polys, i, x, y, r + 0.05) for ly, polys, i, _ in pieces if ly == layer):
-            return True
-        reach = design.via_reach(r, drill, layer, c, holes)
-        for n, a, b, w, ly in design.segments:
-            if ly == layer and n != net and _seg_dist((x, y), a, b) < reach + w / 2:
-                return False
-        for pad in boxes:
-            if pad.layer == layer and pad.net != net:
-                dx = max(pad.x1 - x, 0.0, x - pad.x2)
-                dy = max(pad.y1 - y, 0.0, y - pad.y2)
-                if math.hypot(dx, dy) < reach:
-                    return False
-        return True
-
-    def blocked(x: float, y: float) -> bool:
-        return design.in_keepout(x, y, r) or not all(clear_on(ly, x, y) for ly in rest)
-
-    return blocked
-
-
-def _inside_fill(pcbnew, polys, index: int, x: float, y: float, margin: float) -> bool:
-    """Is a disc of radius `margin` at (x, y) inside filled polygon `index` of `polys`? Tested at its
-    centre and at 16 points round its rim."""
-    if not polys.Contains(pcbnew.VECTOR2I_MM(x, y), index):
-        return False
-    return all(
-        polys.Contains(
-            pcbnew.VECTOR2I_MM(
-                x + margin * math.cos(k * math.pi / 8), y + margin * math.sin(k * math.pi / 8)
-            ),
-            index,
-        )
-        for k in range(16)
-    )
-
-
-def _holes(pcbnew, pcb: Path) -> list:
-    """(position, radius) of every drilled hole on the board: pads, mounting holes, vias."""
-    board = pcbnew.LoadBoard(str(pcb))
-    holes = []
-    for fp in board.GetFootprints():
-        for pad in fp.Pads():
-            if pad.GetDrillSizeX() > 0:
-                holes.append((pad.GetPosition(), max(pad.GetDrillSizeX(), pad.GetDrillSizeY()) / 2e6))
-    for track in board.GetTracks():
-        if track.GetClass() == "PCB_VIA":
-            holes.append((track.GetPosition(), track.GetDrillValue() / 2e6))
-    return holes
-
-
-def _via_spot(
-    pcbnew, polys, index: int, targets: list, radius: float, hole: float, holes: list, blocked=None
-):
-    """A point where a via of `radius` sits inside filled polygon `index` of `polys` and inside one of
-    the target polygons on the other layer, clear of every other hole and of every point `blocked`
-    refuses (a keepout: the pour may fill one, a via may not sit in it). Scans a 0.1 mm grid from the
-    polygon's centre outwards; None when nothing fits."""
-    if not targets:
-        return None
-    bb = polys.Outline(index).BBox()
-    cx, cy = (bb.GetLeft() + bb.GetRight()) / 2e6, (bb.GetTop() + bb.GetBottom()) / 2e6
-    step = 0.1
-    nx = int((bb.GetRight() - bb.GetLeft()) / 1e6 / step) + 1
-    ny = int((bb.GetBottom() - bb.GetTop()) / 1e6 / step) + 1
-    candidates = [
-        (bb.GetLeft() / 1e6 + ix * step, bb.GetTop() / 1e6 + iy * step)
-        for ix in range(nx)
-        for iy in range(ny)
-    ]
-    candidates.sort(key=lambda c: (c[0] - cx) ** 2 + (c[1] - cy) ** 2)
-    margin = radius + 0.05
-
-    def inside(poly, i, x, y) -> bool:
-        return _inside_fill(pcbnew, poly, i, x, y, margin)
-
-    for x, y in candidates:
-        if not inside(polys, index, x, y):
-            continue
-        if not any(inside(tp, ti, x, y) for _, tp, ti, _ in targets):
-            continue
-        if blocked is not None and blocked(x, y):
-            continue
-        p = pcbnew.VECTOR2I_MM(x, y)
-        if any(math.hypot((p.x - hp.x) / 1e6, (p.y - hp.y) / 1e6) < hole + hr + 0.25 for hp, hr in holes):
-            continue
-        return (round(x, 3), round(y, 3))
-    return None
+    reach = {ly: design.via_reach(r, drill, ly, design.clearance, holes) for ly in design.copper_names()}
+    return _kicadchild().via_blocker(pcbnew, _blocker_data(design, boxes), pieces, net, r, rest, reach)
 
 
 def fill_zones(pcb: Path, kicad_cli: str = "kicad-cli") -> dict:
@@ -4661,7 +4528,8 @@ def drc_report(pcb: Path, kicad_cli: str = "kicad-cli", fill: bool = False) -> d
         proc = subprocess.run(
             [exe, "pcb", "drc", *refill, "--format", "json", "--output", str(out), str(pcb)],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         report = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
@@ -4843,7 +4711,7 @@ def route(
         for i, (stage, nets) in enumerate(design.route_stages(), start=1):
             done |= set(nets)
             files = [build_dir / f"{design.name}.{i}-{stage}{ext}" for ext in (".dsn", ".ses", ".log")]
-            files[0].write_text(design.dsn(nets=done), encoding="utf-8")
+            hostos.write_text(files[0], design.dsn(nets=done))
             text = freerouting(*files)
             s, v = design.merge_ses(files[1].read_text(encoding="utf-8"))
             stages.append(
@@ -4859,7 +4727,7 @@ def route(
         dsn, ses, log = files
         segments, vias = sum(s["segments"] for s in stages), sum(s["vias"] for s in stages)
     else:
-        dsn.write_text(design.dsn(seed), encoding="utf-8")
+        hostos.write_text(dsn, design.dsn(seed))
         text = freerouting(dsn, ses, log)
         segments, vias = design.merge_ses(ses.read_text(encoding="utf-8"))
     # FreeRouting 1.9.0 logs no count, and it ends with exit code 0 on a board where it joined nothing
@@ -5055,7 +4923,7 @@ def symbol_add(lib: Path, name: str, pins: list[dict], **props: str) -> Path:
     new = head + "\t" + dumps(symbol_node(name, pins, **props), 1) + "\n)\n"
     part = lib.with_name(lib.name + ".part")
     lib.parent.mkdir(parents=True, exist_ok=True)
-    part.write_text(new, encoding="utf-8", newline="")
+    hostos.write_text(part, new)
     try:
         _find_symbol(parse(new), name)
     except (KeyError, ValueError) as exc:

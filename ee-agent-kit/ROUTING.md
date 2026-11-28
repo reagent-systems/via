@@ -10,6 +10,7 @@ already defines.
 | You are here because… | Go to | Notes |
 |---|---|---|
 | First time this kit is in this repo (placeholders like `{{THIS}}` still exist anywhere in the kit) | `SETUP.md` | One-time tailoring. Do this before anything else. |
+| Asked to install or set up Via on a computer (Linux, macOS, Windows, Docker), or `workcenter` is not found | `../INSTALL.md` | 1 route per platform, a check per step. Ask before sudo, an administrator, a restart or a large download; stop when its "Done when" holds, or when a step fails twice. |
 | "Push out a feature" / "do the weekly update" / a scheduled weekly trigger fired | `WEEKLY.md` | The core cycle. Requires ROADMAP.md to have a ready queue. |
 | Deciding WHAT to build, or the queue is empty/stale | `ROADMAP.md` | The single source of work. Nothing gets built that isn't traceable to it. |
 | Writing or changing ANY code, at any time | `AGENTS.md` | The binding contract: commands, invariants, landmines, style. Always in effect. |

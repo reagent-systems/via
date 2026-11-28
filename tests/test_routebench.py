@@ -8,6 +8,7 @@ The engine tests route a 4-part board with FreeRouting and skip when it or KiCad
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -61,6 +62,30 @@ BOARD = """(kicad_pcb (version 20241229) (generator "kicadgen")
     (pad "" np_thru_hole circle (at 6 0) (size 1 1) (drill 1) (layers "*.Cu")))
 )
 """
+
+
+SLEEPS = [sys.executable, "-c", "import time; print('started', flush=True); time.sleep(60)"]
+
+
+def test_a_bench_run_past_its_limit_is_stopped_and_counts_as_stopped():
+    """`bench` runs each route in a group of its own; at the limit the whole group is killed and the
+    run's code is None."""
+    code, out, took = routebench.timed_run(SLEEPS, dict(os.environ), 2)
+    assert code is None and took < 30 and b"started" in out, (code, out, took)
+
+
+def test_a_bench_run_past_its_limit_on_windows_is_stopped_by_taskkill(tmp_path, monkeypatch):
+    """The same on a stand-in for Windows (tests/winstandin.py): no os.killpg, no start_new_session; the
+    run starts in a process group of its own and `taskkill /T /F` ends it. Before this, the stop called
+    os.killpg."""
+    from winstandin import windows
+
+    seen = windows(monkeypatch, tmp_path / "win")
+    code, out, took = routebench.timed_run(SLEEPS, dict(os.environ), 2)
+    assert code is None and took < 30, (code, out, took)
+    assert seen.popens[0].get("creationflags") == 0x200, seen.popens
+    [killed] = seen.taskkills()
+    assert killed[:3] == ["/T", "/F", "/PID"], killed
 
 
 def test_board_connections_are_each_nets_pads_less_one(tmp_path):

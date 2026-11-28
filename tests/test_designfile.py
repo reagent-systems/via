@@ -21,7 +21,7 @@ import uuid
 from pathlib import Path
 
 import pytest
-from conftest import engine, router_absent
+from conftest import engine, engine_absent, router_absent, stand_in
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -34,9 +34,7 @@ LIBS = kicadgen.SYMBOL_DIR / "Device.kicad_sym"
 JAR = Path("/opt/workcenters/ee/freerouting/freerouting.jar")
 
 needs_libs = pytest.mark.skipif(not LIBS.is_file(), reason="KiCad symbol libraries are not installed")
-needs_kicad = engine(
-    pytest.mark.skipif(shutil.which("kicad-cli") is None, reason="kicad-cli is not installed")
-)
+needs_kicad = engine(pytest.mark.skipif(engine_absent("kicad-cli"), reason="kicad-cli is not installed"))
 needs_router = engine(
     pytest.mark.skipif(
         not JAR.is_file() or bool(router_absent()), reason=router_absent() or "FreeRouting is not installed"
@@ -410,11 +408,14 @@ def test_a_route_that_joins_nothing_is_exit_1_and_a_board_with_nothing_to_route_
 
 
 # A java whose JVM has no lib/libawt_xawt.so, as Ubuntu's openjdk-21-jre-headless alone: FreeRouting 1.9.0
-# draws a window under xvfb-run, and the JVM stops. The words are the stand-in's, after a real one.
-HEADLESS_JAVA = """#!/bin/sh
-if [ "$1" = "-version" ]; then echo 'openjdk version "21.0.13" 2025-10-21' >&2; exit 0; fi
-echo 'Exception in thread "main" java.lang.UnsatisfiedLinkError: no awt_xawt' >&2
-exit 1
+# draws a window under xvfb-run, and the JVM stops. The words are the stand-in's, after a real one. A
+# Python program (conftest.stand_in), so no shell runs it.
+HEADLESS_JAVA = """import sys
+if sys.argv[1:2] == ["-version"]:
+    print('openjdk version "21.0.13" 2025-10-21', file=sys.stderr)
+    sys.exit(0)
+print('Exception in thread "main" java.lang.UnsatisfiedLinkError: no awt_xawt', file=sys.stderr)
+sys.exit(1)
 """
 
 
@@ -424,10 +425,10 @@ def test_a_route_whose_only_java_cannot_draw_says_which_java_and_why(tmp_path):
     in `FreeRouting exited 1` with nothing of why; a test then read a summary without `segments`. Here
     the record names such a JVM and PATH has no java: `design --route --json` exits 2 with a summary whose
     route names the java, the record and the missing library, and runs no router."""
-    java = tmp_path / "jvm" / "java-21-openjdk-amd64" / "bin" / "java"
-    java.parent.mkdir(parents=True)
-    java.write_text(HEADLESS_JAVA, encoding="utf-8")
-    java.chmod(0o755)
+    java = stand_in(tmp_path / "jvm" / "java-21-openjdk-amd64" / "bin" / "java", HEADLESS_JAVA)
+    # A Java runtime's top folder holds `release`: off Linux the check then names the missing library,
+    # not "no JDK" (tools/routers.py java_refusal). Linux's words do not read it.
+    (java.parent.parent / "release").write_text('JAVA_VERSION="21.0.13"\n', encoding="utf-8")
     root = tmp_path / "root"
     root.mkdir()
     (root / "java.path").write_text(f"{java}\n", encoding="utf-8")
@@ -451,7 +452,9 @@ def test_a_route_whose_only_java_cannot_draw_says_which_java_and_why(tmp_path):
     assert r.returncode == 2, r.stdout + r.stderr
     said = summary["route"]["skip"]
     assert f"{java} (recorded by install.sh in {root / 'java.path'}) cannot run FreeRouting 1.9.0" in said
-    assert "libawt_xawt.so" in said, said
+    # This system's AWT library (tools/hostos.py awt_lib).
+    awt = {"darwin": "libawt_lwawt.dylib", "win32": "awt.dll"}.get(sys.platform, "libawt_xawt.so")
+    assert awt in said, said
 
 
 # ------------------------------------------------------------------ the pull

@@ -1,6 +1,9 @@
 # Via — canonical commands. ee-agent-kit/AGENTS.md names these.
-VENV_PY := /opt/workcenters/ee/venv/bin/python
-PY := $(shell test -x $(VENV_PY) && echo $(VENV_PY) || echo python3)
+# tools/hostos.py names the venv's Python of the default root: /opt/workcenters/ee/venv/bin/python on Linux.
+VENV_PY := $(shell python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import hostos; print(hostos.venv_python(hostos.default_root()))' '$(CURDIR)/tools' 2>/dev/null || echo /opt/workcenters/ee/venv/bin/python)
+# make has no quoting: a path with a space (macOS's "Application Support") is put in quotes for the shell.
+VENV_PY_WORD := $(if $(word 2,$(VENV_PY)),'$(VENV_PY)',$(VENV_PY))
+PY := $(if $(shell test -x $(VENV_PY_WORD) && echo yes),$(VENV_PY_WORD),python3)
 
 SCOPE_BASE ?= origin/main
 
@@ -15,8 +18,10 @@ install:            ## install or update every engine (root)
 doctor:             ## report engine status; the "build" of this repo is a working toolchain
 	python3 tools/workcenter doctor
 
+# install.ps1 is PowerShell, which shellcheck does not read: tests/test_install_windows.py holds its shape
+# here, and PowerShell's own parser reads it where pwsh is installed (the Windows leg; ee-agent-kit/CI.md).
 lint:               ## shellcheck + ruff, read-only
-	shellcheck install.sh verify/verify.sh environment/setup.sh site/build.sh ee-agent-kit/lead/gate-and-push.sh tools/ci/apt_archive.sh tools/ci/apt_cache.sh
+	shellcheck install.sh install-macos.sh verify/verify.sh environment/setup.sh site/build.sh ee-agent-kit/lead/gate-and-push.sh tools/ci/apt_archive.sh tools/ci/apt_cache.sh
 	$(PY) -m ruff check tools tests verify ee-agent-kit/lead
 	$(PY) -m ruff format --check tools tests verify ee-agent-kit/lead
 
