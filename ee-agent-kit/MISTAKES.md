@@ -1960,3 +1960,9 @@ Cost: 1 GitHub run (the legs took 6 min 32 s to 21 min 19 s), and a round of fix
 Root cause: Every test of the round ran on Linux, from /tmp, under a Python whose path holds no space, with stand-ins for the other 2 systems; a stand-in models the rules the code was written for, not the ones the test itself relies on (its separators, quotes, temporary folder and file system).
 Process: P12
 
+## M326 — 2026-11-27 — The second run on Windows failed 12 tests that read or wrote a line by sh's rules
+What happened: Run 46084159219 of pull request 140 (head 1480c04) was green on macos-latest (868 passed, 0 failed of 950) and on the WSL leg (947 passed, 0 failed). Windows native failed 12 of 950 in step 8, 84 in run 46067841222. 4 tests split a RUN line of `next` with shlex.split, sh's rules, which read `D:\a\_temp\...` as `D:a_temp...`, and `new` made a folder of that name; 3 built a line for sh from a path Windows writes with `\` (1 of them failed again in test_desktop's run without the POSIX names); 4 wrote with `/` a path the tools print from the project with the system's separator (`..\library\facts\passives.json`, `sim\d.cir`). M325's fixes made the tools' lines right for cmd.exe; the tests that read those lines back still read them as sh does.
+Cost: 1 GitHub run (the Windows leg 6 min 3 s), and fixes in 5 test files and 1 helper in tools/hostos.py.
+Root cause: M325's step 17 named how a test writes a command for a shell, not how it reads one back, nor which rules a test of another system's line uses on the host that runs it.
+Process: P12
+

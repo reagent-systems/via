@@ -32,9 +32,9 @@ Find the platform with 1 command:
 | Platform | Route | State |
 |---|---|---|
 | Ubuntu 24.04 (x86_64 or arm64) | L | Proven on GitHub's runners (ubuntu-24.04). |
-| macOS 12 or later, Apple Silicon (`Darwin arm64`) | M | Not yet proven: the next CI run will say. The first (run 46067841222) installed with M and passed every step of the smoke but its tests. On macOS 12 to 14, Homebrew is not supported: it builds Python and ngspice from source, which is slow and may fail. |
+| macOS 12 or later, Apple Silicon (`Darwin arm64`) | M | Proven on GitHub's runners (macos-latest, arm64) by run 46084159219 (2026-11-27): M installed and the smoke passed all 8 steps, 868 of its 950 tests passed and none failed. On macOS 12 to 14, Homebrew is not supported: it builds Python and ngspice from source, which is slow and may fail. |
 | macOS 12 or later, Intel (`Darwin x86_64`) | M with a Homebrew already installed, else D | Best effort: no CI job runs on an Intel Mac. Homebrew's installer refuses an Intel Mac. On macOS 12 to 14, Homebrew is not supported: it builds Python and ngspice from source, which is slow and may fail. |
-| Windows 10 or 11, x64 | N, or W when the person asks for Linux | Not yet proven: the next CI run will say. The first (run 46067841222) installed with N, and with W, and passed every step of the smoke but its tests. |
+| Windows 10 or 11, x64 | N, or W when the person asks for Linux | Not yet proven: the next CI run will say, for N. In run 46084159219 (2026-11-27) N installed and passed every step of the smoke but its tests (12 of 950 failed, on causes fixed since), and W passed all 8 steps on windows-latest, 947 of 950 tests, none failed. |
 | Any computer with Docker | D | Not proven, and no GitHub runner can prove it on macOS or Windows (Docker Desktop). The image build runs the gates in it on Linux, amd64 and arm64. |
 | Another Linux | D | Not offered natively: install.sh refuses every release but Ubuntu 24.04. |
 | Windows on Arm | W or D | Not offered natively: ngspice's Windows build is x64 only. |
@@ -299,8 +299,8 @@ When a check fails:
 - the doctor's first line, and every row that is not `ok`
 - the last line of each gate run, with its exit code
 
-A route not yet proven on GitHub's runners (M, N, W, or D on macOS or Windows) has no green run
-yet (the first, run 46067841222, was red in its tests). Tell the person that a report of this run in an issue at
+A route not yet proven on GitHub's runners (N, or D on macOS or Windows) has no green run
+yet (N's second, run 46084159219, was red in 12 of its tests). Tell the person that a report of this run in an issue at
 https://github.com/reagent-systems/via/issues helps the next person.
 
 ## Next

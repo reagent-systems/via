@@ -58,9 +58,12 @@ systems. Nothing has run on a Mac or on Windows: the first GitHub run of
 the branch proves or refutes it.
 
 Evidence: branch `wip/winmac`; STATUS rows "Windows and macOS: ...";
-MISTAKES M317 to M325. The first GitHub run of the legs (46067841222)
+MISTAKES M317 to M326. The first GitHub run of the legs (46067841222)
 installed on both systems and was red in its tests; M325 names each
-cause, fixed on the branch before the next run.
+cause, fixed on the branch before the next run. The second
+(46084159219) was green on macOS and on the WSL leg, which are now
+proven on GitHub's runners; Windows native failed 12 tests, each a
+test's own assumption (M326), fixed before the next run.
 
 ## 2026-11-19 — The test run names every test it did not judge for its machine
 

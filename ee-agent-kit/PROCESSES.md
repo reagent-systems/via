@@ -720,6 +720,12 @@ that may be absent.
     wording read as that engine gives it. Before it lands it runs once
     under a venv linked at a path with a space and with `--basetemp`
     outside the temporary folder, as the desktop legs run it (M325).
+18. A test that runs a line a tool printed for a person splits it with
+    `hostos.split_line`, the system's own rules, never `shlex.split`
+    alone; a test of another system's line (a platform set by the test)
+    builds the path it expects for that system (`PurePosixPath` for
+    Linux and macOS), and a path a tool prints relative to a folder is
+    expected with the host's separator (`Path(...)`) (M326).
 
 Done when: the summary shows no unexpected skips, the engine test is
 green on the runner, and a run with an engine taken away is not GREEN.
