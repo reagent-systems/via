@@ -134,13 +134,15 @@ def test_an_empty_folder_is_told_new_then_the_design_then_the_route(tmp_path):
     )
     code, step = ask(board, env)
     assert (code, step["next"]) == (1, "Generate the KiCad project from its design file.")
-    assert step["run"] == f"workcenter design {board}/design.py --route"
+    # The design file by the system's separator in both steps (run 46089464718, Windows: this step
+    # wrote `{board}/design.py` and the route step `{board}\design.py`).
+    assert step["run"] == f"workcenter design {board / 'design.py'} --route"
     # the user generates without --route: the route comes before the gates
     made = workcenter("design", str(board / "design.py"), env=env)
     assert made.returncode == 0, made.stdout + made.stderr
     code, step = ask(board, env)
     assert (code, step["next"]) == (1, "Route the board before the gates: nets on it have no copper yet.")
-    assert step["run"] == f"workcenter design {board}/design.py --route"
+    assert step["run"] == f"workcenter design {board / 'design.py'} --route"
     # 9 pads on 3 nets with no copper are 9 - 3 = 6 connections, KiCad DRC's count (test_route_open.py)
     assert step["why"] == "9 pads on 3 nets have no track, via or pour, 6 unconnected: /OUT, GND, VCC"
     assert "prints `route: 0 unconnected`" in step["done_when"]

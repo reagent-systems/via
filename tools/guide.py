@@ -827,7 +827,9 @@ def next_step(cli, target: str, run_check=True) -> Step:
         if (path / "design.py").is_file():
             return Step(
                 "Generate the KiCad project from its design file.",
-                f"{wc} design {quoted}/design.py --route",
+                # The whole path is 1 quoted word, by the system's separator, as the route step names it
+                # (run 46089464718, Windows: `{board}/design.py` here, `{board}\design.py` there).
+                f"{wc} design {hostos.shell_word(str(Path(target) / 'design.py'))} --route",
                 "the folder holds a design file and no KiCad project",
                 f'{DESIGN}, "Steps"',
                 ROUTED,

@@ -724,7 +724,7 @@ def test_a_folder_with_nothing_in_it_is_told_the_ways_to_start(tmp_path):
     (tmp_path / "design.py").write_text("# a design\n", encoding="utf-8")
     code, step = ask(tmp_path)
     assert code == 1 and step["next"] == "Generate the KiCad project from its design file."
-    assert step["run"] == f"workcenter design {tmp_path}/design.py --route"
+    assert step["run"] == f"workcenter design {tmp_path / 'design.py'} --route"
 
 
 def test_a_project_with_nothing_for_a_gate_to_run_is_not_told_to_install_anything(tmp_path):
@@ -754,6 +754,24 @@ def test_the_lines_of_next_quote_a_path_for_the_systems_shell(tmp_path, monkeypa
     assert guide.next_step(cli, str(spaced), run_check=False).run == f"workcenter new {quote}{spaced}{quote}"
     as_written = str(plain) if platform == "win32" or "\\" not in str(plain) else f"'{plain}'"
     assert guide.next_step(cli, str(plain), run_check=False).run == f"workcenter new {as_written}"
+
+
+@pytest.mark.parametrize(
+    ("platform", "quote"), [("linux", "'"), ("darwin", "'"), ("win32", '"')], ids=["linux", "darwin", "win32"]
+)
+def test_the_design_file_is_one_quoted_word_in_each_line_of_next(tmp_path, monkeypatch, platform, quote):
+    """Run 46089464718, Windows: the step that generates the project named `{board}/design.py`, quoted
+    folder and `/design.py` after it, while the route step named the whole path by the system's
+    separator, `{board}\\design.py` (tests/test_new.py:143). Each line quotes the whole path as 1 word,
+    as the route step does: a quoted folder with a word after it is no path the user typed."""
+    cli = load_cli()
+    spaced = tmp_path / "my board"
+    spaced.mkdir()
+    (spaced / "design.py").write_text("# a design\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "platform", platform)
+    step = guide.next_step(cli, str(spaced), run_check=False)
+    assert step.next == "Generate the KiCad project from its design file."
+    assert step.run == f"workcenter design {quote}{spaced / 'design.py'}{quote} --route"
 
 
 def test_a_project_whose_engine_is_absent_is_told_to_install_it(tmp_path):
