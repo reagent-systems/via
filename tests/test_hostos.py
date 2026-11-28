@@ -20,7 +20,7 @@ import signal
 import subprocess
 import sys
 import time
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 from conftest import posix_only, stand_in
@@ -926,8 +926,11 @@ def test_installer_command_on_linux_is_todays_line_of_next(hostos, monkeypatch):
 
 def test_installer_command_on_macos_needs_no_sudo_and_quotes_a_space(hostos, monkeypatch):
     on(monkeypatch, "darwin")
-    src = Path("/Users/ada/Library/Application Support/via/src")
+    # A path of macOS, written with `/` on any host: a Path made on Windows printed `\\Users\\ada\\...`
+    # in the line the test expected (run 46084159219), where installer_command rightly wrote `/`.
+    src = PurePosixPath("/Users/ada/Library/Application Support/via/src")
     assert hostos.installer_command(src) == f"'{src}/install-macos.sh'"
+    assert hostos.installer_command(Path(src)) == f"'{src}/install-macos.sh'"
     assert hostos.installer_command(Path("/opt/via")) == "/opt/via/install-macos.sh"
 
 

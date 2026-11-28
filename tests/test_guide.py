@@ -741,7 +741,10 @@ def test_a_project_with_nothing_for_a_gate_to_run_is_not_told_to_install_anythin
 def test_the_lines_of_next_quote_a_path_for_the_systems_shell(tmp_path, monkeypatch, platform, quote):
     """Run 46067841222, Windows: next printed `workcenter new 'D:\\a\\...\\sensor-node'`; cmd.exe keeps
     sh's single quotes as part of the name. A path that needs quotes gets the system's own (double on
-    Windows, as cmd.exe and PowerShell read them), and a path that needs none stays as written."""
+    Windows, as cmd.exe and PowerShell read them), and a path that needs none stays as written.
+
+    Run 46084159219, Windows: a Windows path holds `\\`, which sh reads as an escape, so for sh's rules
+    (linux, darwin) it is quoted (`'D:\\a\\...\\board'`): only cmd.exe's rules leave it as written."""
     cli = load_cli()
     spaced = tmp_path / "my board"
     spaced.mkdir()
@@ -749,7 +752,8 @@ def test_the_lines_of_next_quote_a_path_for_the_systems_shell(tmp_path, monkeypa
     plain.mkdir()
     monkeypatch.setattr(sys, "platform", platform)
     assert guide.next_step(cli, str(spaced), run_check=False).run == f"workcenter new {quote}{spaced}{quote}"
-    assert guide.next_step(cli, str(plain), run_check=False).run == f"workcenter new {plain}"
+    as_written = str(plain) if platform == "win32" or "\\" not in str(plain) else f"'{plain}'"
+    assert guide.next_step(cli, str(plain), run_check=False).run == f"workcenter new {as_written}"
 
 
 def test_a_project_whose_engine_is_absent_is_told_to_install_it(tmp_path):
