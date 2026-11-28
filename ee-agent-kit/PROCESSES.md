@@ -726,6 +726,12 @@ that may be absent.
     builds the path it expects for that system (`PurePosixPath` for
     Linux and macOS), and a path a tool prints relative to a folder is
     expected with the host's separator (`Path(...)`) (M326).
+19. A line a tool prints for a person names a path as 1 word:
+    `hostos.shell_word` of the whole path joined with Path, never a
+    quoted folder with `/name` after it, so every line that names a
+    file names it the same way. A test of such a line names a folder
+    with a space: on Linux it shows the split that Windows shows with
+    `\` (M327).
 
 Done when: the summary shows no unexpected skips, the engine test is
 green on the runner, and a run with an engine taken away is not GREEN.

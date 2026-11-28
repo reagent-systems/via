@@ -1966,3 +1966,9 @@ Cost: 1 GitHub run (the Windows leg 6 min 3 s), and fixes in 5 test files and 1 
 Root cause: M325's step 17 named how a test writes a command for a shell, not how it reads one back, nor which rules a test of another system's line uses on the host that runs it.
 Process: P12
 
+## M327 — 2026-11-28 — next named one design file 2 ways, and only Windows showed it
+What happened: Run 46089464718 of pull request 140 (head dd58999) was green on macos-latest (878 passed, 0 failed of 960) and on the WSL leg (957 passed, 0 failed). Windows native failed 1 of 960 in step 8, where run 46084159219 failed 12: tests\test_new.py:143, `- ensor-node/design.py --route`, `+ ensor-node\design.py --route`. The step of `next` that generates the project wrote the quoted folder and `/design.py` after it (tools/guide.py); the route step wrote `hostos.shell_word` of the whole path, by the system's separator. On Linux both gave `/`, so no test there told them apart, though a folder with a space did: `'/x/my board'/design.py` against `'/x/my board/design.py'`.
+Cost: 1 GitHub run (the Windows leg 5 min 55 s), and a fix of 1 line in tools/guide.py with 1 new test, run by 3 systems' rules.
+Root cause: 2 lines of 1 tool built a path for the same file by 2 hands, and the tests of those lines used folders with no space, where sh's and cmd.exe's rules agree with both.
+Process: P12
+
