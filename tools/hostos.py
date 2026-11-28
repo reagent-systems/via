@@ -9,7 +9,7 @@ lock_dir, user_id, lock_file, unlock_file, flock_files, stop_signals and shell_l
 tools/routebench.py and tools/mcpserver.py call it too; write_text is called by tools/kicadgen.py,
 tools/newboard.py and the run decks of tools/workcenter, installer_command by tools/guide.py, and
 shell_word by tools/guide.py, tools/newboard.py and the lines tools/workcenter prints, whose main()
-calls console_streams. The
+calls console_streams; split_line is called by the tests that run a RUN line of `next`. The
 test runner (verify/testshards.py: kill_tree, stop_signals) and the engine guard of the tests
 (tools/ci/guard/engine_watch.py: program_name) call it as well.
 
@@ -373,6 +373,59 @@ def shell_line(words: Iterable[str]) -> str:
     showed what sh's quoting gives on Windows: `workcenter next 'D:\\a\\...\\board'`, whose quotes
     cmd.exe keeps as part of the name."""
     return " ".join(shell_word(word) for word in words)
+
+
+def split_line(line: str) -> list[str]:
+    """The words of a command line as the system's shell reads them: the words shell_line was given.
+
+    Linux and macOS: shlex.split. Windows: the C runtime's rules, as CommandLineToArgvW reads a line and
+    subprocess.list2cmdline writes one: words end at a space or a tab outside double quotes; a `\\` is
+    itself unless a `"` follows; before a `"`, 2n backslashes are n and the quote opens or closes, 2n+1
+    are n and a `"`; 2 quotes inside quotes are 1. sh's rules take `\\` for an escape there: the tests'
+    `workcenter new D:\\a\\_temp\\...` came back as `D:a_temp...` (run 46084159219, Windows). A quote
+    never closed raises ValueError, as shlex.split does. Not confirmed in a run on Windows."""
+    if not _windows():
+        return shlex.split(line)
+    words: list[str] = []
+    word: list[str] = []
+    started = quoted = False
+    i = 0
+    while i < len(line):
+        c = line[i]
+        if c == "\\":
+            j = i
+            while j < len(line) and line[j] == "\\":
+                j += 1
+            count = j - i
+            if j < len(line) and line[j] == '"':
+                word.append("\\" * (count // 2) + ('"' if count % 2 else ""))
+                i = j + 1 if count % 2 else j
+            else:
+                word.append("\\" * count)
+                i = j
+            started = True
+        elif c == '"':
+            if quoted and line[i + 1 : i + 2] == '"':
+                word.append('"')
+                i += 2
+            else:
+                quoted = not quoted
+                i += 1
+            started = True
+        elif c in " \t" and not quoted:
+            if started:
+                words.append("".join(word))
+                word, started = [], False
+            i += 1
+        else:
+            word.append(c)
+            started = True
+            i += 1
+    if quoted:
+        raise ValueError("No closing quotation")
+    if started:
+        words.append("".join(word))
+    return words
 
 
 def signal_ends_reads() -> bool:

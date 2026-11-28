@@ -16,7 +16,6 @@ import inspect
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -85,8 +84,9 @@ def ask(project: Path, *flags: str, env: dict | None = None) -> tuple[int, dict]
 
 
 def run_line(step: dict, *flags: str) -> subprocess.CompletedProcess:
-    """Run a step's RUN line as its reader does, with this checkout's `workcenter`."""
-    words = shlex.split(step["run"])
+    """Run a step's RUN line as its reader does, with this checkout's `workcenter`: split by the system's
+    shell rules (run 46084159219, Windows: shlex.split read `D:\\a\\_temp` as `D:a_temp`)."""
+    words = hostos.split_line(step["run"])
     assert words[0] == "workcenter", step["run"]
     return subprocess.run(
         [sys.executable, str(CLI), *flags, *words[1:]],
@@ -112,7 +112,9 @@ def sim_project(tmp_path: Path) -> Path:
 
 
 def files(folder: Path) -> list[str]:
-    return sorted(str(p.relative_to(folder)) for p in folder.rglob("*"))
+    """The folder's files and folders, each by its path under it with `/` on every system, as
+    tests/test_new.py's files() names them (run 46067841222: `library\\sources.csv` on Windows)."""
+    return sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*"))
 
 
 def report(proj: Path, records: list[dict], name: str = "gates.json") -> None:

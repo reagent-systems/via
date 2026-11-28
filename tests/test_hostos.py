@@ -854,6 +854,66 @@ def test_shell_line_quotes_each_word_as_shell_word_does(hostos, monkeypatch, pla
         assert hostos.shell_line(words) == shlex.join(words)
 
 
+# ------------------------------------------------------------------ split_line
+
+# Words a RUN line of `next` holds on Windows: a drive path, a folder with a space, a folder with a `\`
+# at its end inside quotes, a word with a `"`, an empty word.
+WINDOWS_WORDS = [
+    "workcenter",
+    "new",
+    "D:\\a\\_temp\\desktop-smoke\\tests\\shard-1\\tmp\\sensor-node",
+    "C:\\Users\\Ada Lovelace\\boards\\psu",
+    "C:\\a b\\",
+    'say "hi"',
+    "",
+    "--empty",
+]
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_split_line_on_posix_is_shlex_split(hostos, monkeypatch, platform):
+    on(monkeypatch, platform)
+    line = "workcenter sim '/home/a b/board' --out /tmp/o"
+    assert hostos.split_line(line) == shlex.split(line)
+    assert hostos.split_line(line) == ["workcenter", "sim", "/home/a b/board", "--out", "/tmp/o"]
+
+
+def test_split_line_on_windows_reads_back_the_words_of_shell_line(hostos, monkeypatch):
+    """Run 46084159219, Windows: the tests split a RUN line with shlex.split, sh's rules, where `\\` is an
+    escape: `workcenter new D:\\a\\_temp\\...\\sensor-node` came back as `D:a_temp...sensor-node`, and
+    `new` made that folder. Windows' rules (the C runtime's, as CommandLineToArgvW reads a line) keep a
+    `\\` that no `"` follows."""
+    on(monkeypatch, "win32")
+    line = hostos.shell_line(WINDOWS_WORDS)
+    assert line == subprocess.list2cmdline(WINDOWS_WORDS)
+    assert hostos.split_line(line) == WINDOWS_WORDS
+    proj = "D:\\a\\_temp\\proj"
+    assert hostos.split_line(f"workcenter next {proj}") == ["workcenter", "next", proj]
+    assert shlex.split(f"workcenter next {proj}")[2] == "D:a_tempproj"  # what the tests did
+
+
+@pytest.mark.parametrize(
+    ("line", "words"),
+    [
+        ('"a""b"', ['a"b']),  # 2 quotes inside quotes are 1
+        ('a\\\\"b c"', ["a\\b c"]),  # 2 backslashes before a quote are 1, and the quote opens
+        ('a\\\\\\"b', ['a\\"b']),  # 3 backslashes before a quote are 1 and the quote itself
+        ("  a\t b  ", ["a", "b"]),  # spaces and tabs between words
+    ],
+)
+def test_split_line_on_windows_follows_the_c_runtimes_rules(hostos, monkeypatch, line, words):
+    on(monkeypatch, "win32")
+    assert hostos.split_line(line) == words
+
+
+@pytest.mark.parametrize("platform", PLATFORMS)
+def test_split_line_refuses_a_quote_that_is_never_closed(hostos, monkeypatch, platform):
+    """As shlex.split does: a line cut short is no command."""
+    on(monkeypatch, platform)
+    with pytest.raises(ValueError, match="No closing quotation"):
+        hostos.split_line('workcenter new "C:\\a b')
+
+
 # ------------------------------------------------------------------ installer_command
 
 

@@ -12,7 +12,6 @@ import importlib.machinery
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 import time
@@ -27,6 +26,7 @@ CLI = ROOT / "tools" / "workcenter"
 TEMPLATE = ROOT / "templates" / "project" / "design.py"
 sys.path.insert(0, str(ROOT / "tools"))
 import guide  # noqa: E402
+import hostos  # noqa: E402
 import kicadgen  # noqa: E402
 
 # Every engine a command of Via starts by name (tools/workcenter's doctor, the chip gates'
@@ -96,8 +96,9 @@ def ask(project: Path, env: dict) -> tuple[int, dict]:
 
 
 def run_line(step: dict, env: dict) -> subprocess.CompletedProcess:
-    """Run a step's RUN line as its reader does, with this checkout's `workcenter`."""
-    words = shlex.split(step["run"])
+    """Run a step's RUN line as its reader does, with this checkout's `workcenter`: split by the system's
+    shell rules (run 46084159219, Windows: shlex.split read `D:\\a\\_temp` as `D:a_temp`)."""
+    words = hostos.split_line(step["run"])
     assert words[0] == "workcenter", step["run"]
     return workcenter(*words[1:], env=env)
 
