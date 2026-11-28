@@ -503,8 +503,25 @@ def test_doctor_on_windows_without_kicad_says_where_it_looked(tmp_path):
     machine = tmp_path / "pf" / "KiCad" / "10.0" / "bin" / "kicad-cli.exe"
     user = tmp_path / "local" / "Programs" / "KiCad" / "10.0" / "bin" / "kicad-cli.exe"
     assert rows["kicad-cli"]["lines"] == [f"looked on PATH for kicad-cli, then at {machine}, then at {user}"]
-    assert rows["ngspice"]["lines"][0].startswith("looked on PATH for ngspice_con, then on PATH for ngspice")
+    own = tmp_path / "local" / "Via" / "ngspice" / "Spice64" / "bin" / "ngspice_con.exe"
+    assert rows["ngspice"]["lines"][0].startswith(
+        f"looked at {own}, then on PATH for ngspice_con, then on PATH for ngspice"
+    )
     assert rows["kicad-python"]["ok"] is False and rows["pcbnew"]["ok"] is False
+
+
+@posix
+def test_doctor_on_windows_finds_the_ngspice_install_ps1_unpacked_under_the_root(tmp_path):
+    """install.ps1 unpacks ngspice into <root>\\ngspice and puts nothing on PATH; workcenter.cmd names it
+    by NGSPICE, and a run without the .cmd (the desktop leg's tests) finds it as the first candidate
+    (M328). It comes before a console program on PATH, as workcenter.cmd's variable does."""
+    env = windows_machine(tmp_path)
+    own = ngspice(tmp_path / "local" / "Via" / "ngspice" / "Spice64" / "bin" / "ngspice_con.exe")
+    rows = doctor_json(tmp_path, "win32", env)["checks"]
+    assert rows["ngspice"] == {"required": True, "ok": True, "version": "47", "path": str(own)}
+    (tmp_path / "bin" / "ngspice_con.exe").unlink()
+    rows = doctor_json(tmp_path, "win32", env)["checks"]
+    assert rows["ngspice"] == {"required": True, "ok": True, "version": "47", "path": str(own)}
 
 
 # ------------------------------------------------------------------ the other tools' paths

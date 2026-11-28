@@ -1978,3 +1978,9 @@ Cost: 143 tests not judged off Linux in a green run; no product fault is known, 
 Root cause: An engine test's mark asked where a Linux shell finds the engine, not where Via does; P12 asked a mark to name the engine, not to ask the CLI's own lookup.
 Process: P12
 
+## M329 — 2026-11-28 — M328's fix changed Windows' ngspice candidates, and a test that held the old list was found only by the fast lane
+What happened: M328's fix put Via's own ngspice first in `hostos.ngspice_candidates()` on Windows. The fix updated tests/test_hostos.py, which holds the list, and ran the files it touched; `make verify-site` then failed 1 of its tests, `tests/test_doctor_platforms.py::test_doctor_on_windows_without_kicad_says_where_it_looked`, which held doctor's line `looked on PATH for ngspice_con, then ...` (`1 failed, 4210 passed, 385 skipped, 450 deselected`). P12 step 13 asks for a grep of `tests/` for the old behaviour's words before such a landing; it was not run. The test now expects Via's own file first, and a new one holds that doctor finds it under the root.
+Cost: 1 run of the fast lane (679 s) and a fix commit; nothing was pushed.
+Root cause: The fixer took the 1 test file that names the function for every test of its value; doctor prints the same list in its own words.
+Process: P12
+
