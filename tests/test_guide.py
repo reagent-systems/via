@@ -783,7 +783,8 @@ def test_the_gates_run_first_and_again_when_an_input_is_newer(tmp_path):
     os.utime(proj / "sim" / "d.cir", (later, later))
     code, step = ask(proj)
     assert code == 1 and step["next"] == "Run the gates again: an input changed after the last run."
-    assert step["why"] == "build/gates.json is older than sim/d.cir"
+    # the deck's path under the project, by the system's separator (run 46084159219, Windows: `sim\d.cir`)
+    assert step["why"] == f"build/gates.json is older than {Path('sim', 'd.cir')}"
 
 
 def test_a_red_gate_is_answered_with_its_first_failure_and_the_fix(tmp_path):

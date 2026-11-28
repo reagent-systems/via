@@ -241,6 +241,11 @@ def test_a_stale_record_is_not_held(tmp_path, capsys):
     assert code == 0 and lines[-2].startswith("RATINGS held:")
 
 
+# The facts folder from the project's, as the record names it: os.path.relpath, with the system's
+# separator (run 46084159219, Windows: `..\library\facts\passives.json`).
+FACTS = Path("..", "library", "facts")
+
+
 def with_facts(tmp_path: Path) -> tuple[Path, Path]:
     """The fixture with 1 facts file in a library above it, where `ratings` finds it."""
     proj = node(tmp_path)
@@ -259,8 +264,7 @@ def test_a_facts_file_deleted_after_the_run_makes_the_record_stale(tmp_path, cap
     code, lines = gates(proj, capsys, strict=True)
     assert code == 1 and lines[-1].startswith("RED (ratings not held)")
     assert lines[-2] == (
-        f"RATINGS not held: ../library/facts/passives.json is gone since the last run "
-        f"(workcenter ratings {proj})"
+        f"RATINGS not held: {FACTS / 'passives.json'} is gone since the last run (workcenter ratings {proj})"
     )
 
 
@@ -271,8 +275,7 @@ def test_a_facts_file_added_after_the_run_makes_the_record_stale(tmp_path, capsy
     code, lines = gates(proj, capsys, strict=True)
     assert code == 1
     assert lines[-2] == (
-        f"RATINGS not held: ../library/facts/ti-tlv755p.json is new since the last run "
-        f"(workcenter ratings {proj})"
+        f"RATINGS not held: {FACTS / 'ti-tlv755p.json'} is new since the last run (workcenter ratings {proj})"
     )
 
 
@@ -291,7 +294,8 @@ def test_a_parts_file_outside_the_project_is_watched(tmp_path, capsys):
     code, lines = gates(proj, capsys, strict=True)
     assert code == 1
     assert lines[-2] == (
-        f"RATINGS not held: ../parts/catalog.csv changed after the last run (workcenter ratings {proj})"
+        f"RATINGS not held: {Path('..', 'parts', 'catalog.csv')} changed after the last run "
+        f"(workcenter ratings {proj})"
     )
 
 
@@ -529,12 +533,15 @@ def test_the_real_record_names_the_files_its_run_read(tmp_path):
     assert held.stdout.splitlines()[-1].startswith("RATINGS HELD: node"), held.stdout
     said = json.loads((proj / "build" / "ratings" / "report.json").read_text(encoding="utf-8"))
     inputs = said["details"]["inputs"]
-    assert inputs["parts"] == ["../parts/catalog.csv"]
+    # Each path from the project's folder by os.path.relpath, with the system's separator (run
+    # 46084159219, Windows: the gates named `..\parts\catalog.csv`; this test was not judged there).
+    parts = str(Path("..", "parts", "catalog.csv"))
+    assert inputs["parts"] == [parts]
     assert {
         "node.kicad_sch",
         "ratings.json",
-        "../parts/catalog.csv",
-        "../library/facts/passives.json",
+        parts,
+        str(FACTS / "passives.json"),
     } <= set(inputs["files"])
     kept = catalog.read_bytes()
     rows = kept.decode("utf-8").splitlines(keepends=True)
@@ -542,7 +549,7 @@ def test_the_real_record_names_the_files_its_run_read(tmp_path):
     stale = run("gates", proj, "--strict")
     assert stale.returncode == 1, stale.stdout
     assert stale.stdout.splitlines()[-2] == (
-        f"RATINGS not held: ../parts/catalog.csv changed after the last run (workcenter ratings {proj})"
+        f"RATINGS not held: {parts} changed after the last run (workcenter ratings {proj})"
     )
     catalog.write_bytes(kept)
     # A plain run: U1's missing load-step deck (User round 1, G) is 1 warning, which --strict fails on.
@@ -560,6 +567,5 @@ def test_the_real_record_names_the_files_its_run_read(tmp_path):
     gone = run("gates", proj, "--strict")
     assert gone.returncode == 1, gone.stdout
     assert gone.stdout.splitlines()[-2] == (
-        f"RATINGS not held: ../library/facts/passives.json is gone since the last run "
-        f"(workcenter ratings {proj})"
+        f"RATINGS not held: {FACTS / 'passives.json'} is gone since the last run (workcenter ratings {proj})"
     )
