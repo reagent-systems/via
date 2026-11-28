@@ -49,7 +49,7 @@ mkdir -p "$out/fonts" "$out/showcase/datasheets" "$out/vendor" "$out/examples" "
 # vercel.json and each README.md stay in the repository. api/ holds the forms' functions: Vercel
 # builds them from the project's folder, not from OUT.
 for file in site.css site.js effects.js example.js made.js agents.svg favicon.svg favicon-32.png apple-touch-icon.png \
-  og.png logo.svg fonts/inter-latin-wght-normal.woff2 fonts/LICENSE \
+  og.png made-og.png logo.svg fonts/inter-latin-wght-normal.woff2 fonts/LICENSE \
   showcase/herald-top.png showcase/herald-layers.png showcase/herald-schematic.png showcase/herald.glb \
   showcase/agentcast.png \
   vendor/motion-14.6.0.js vendor/MOTION-LICENSE.md vendor/model-viewer-4.4.0.min.js vendor/MODEL-VIEWER-LICENSE \
@@ -69,12 +69,13 @@ mj=$(cksum <"$here/made.js" | cut -d ' ' -f 1)
 # X and Discord keep a shared link's picture by its address, for days: the Open Graph image is named
 # with its checksum too, so a new picture is fetched anew.
 og=$(cksum <"$here/og.png" | cut -d ' ' -f 1)
+mog=$(cksum <"$here/made-og.png" | cut -d ' ' -f 1)
 # An example's page names them from its folder, as ../site.css.
 up='\(\(\.\./\)*\)'
 version="s|href=\"${up}site.css\"|href=\"\1site.css?v=$css\"|; s|src=\"${up}site.js\"|src=\"\1site.js?v=$js\"|"
 version="$version; s|src=\"${up}effects.js\"|src=\"\1effects.js?v=$fx\"|; s|src=\"${up}example.js\"|src=\"\1example.js?v=$ex\"|"
 version="$version; s|src=\"${up}made.js\"|src=\"\1made.js?v=$mj\"|"
-version="$version; s|/og.png\"|/og.png?v=$og\"|g"
+version="$version; s|/og.png\"|/og.png?v=$og\"|g; s|/made-og.png\"|/made-og.png?v=$mog\"|g"
 
 # Each example's page and the files it shows, as site/examples.py writes them.
 for folder in "$here"/examples/*/; do

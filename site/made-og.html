@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Made with Via: the Open Graph image</title>
+    <meta name="robots" content="noindex">
+    <link rel="stylesheet" href="site.css">
+    <!-- The page made-og.png is a capture of, at 1280 x 640, for made.via.computer's pages. README.md
+         has the command. The tagline is the owner's (2026-11-28): "Share PCB Designs!". -->
+    <style>
+      html,
+      body {
+        width: 1280px;
+        height: 640px;
+        overflow: hidden;
+      }
+      body {
+        position: relative;
+        min-height: 0;
+        background: var(--secondary);
+      }
+      .left {
+        position: absolute;
+        left: 72px;
+        top: 0;
+        bottom: 0;
+        width: 460px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .left svg {
+        width: 280px;
+        height: auto;
+      }
+      .left p {
+        margin-top: 40px;
+        font-size: 64px;
+        font-weight: 650;
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+      }
+      .grid {
+        position: absolute;
+        left: 576px;
+        right: 56px;
+        top: 56px;
+        bottom: 56px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 1fr;
+        gap: 24px;
+      }
+      .grid div {
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        border-radius: 16px;
+        background:
+          radial-gradient(ellipse 70% 60% at 50% 60%, color-mix(in oklch, var(--primary) 9%, transparent), transparent 70%),
+          var(--card);
+        box-shadow:
+          0 0 0 1px var(--edge),
+          0 10px 24px -16px oklch(0 0 0 / 35%);
+      }
+      .grid img {
+        width: 86%;
+        height: 86%;
+        object-fit: contain;
+        filter: drop-shadow(0 12px 12px oklch(0 0 0 / 20%));
+      }
+    </style>
+  </head>
+  <body>
+    <div class="left">
+      <svg viewBox="283 202 394 136" fill="currentColor" stroke="currentColor" stroke-width="12" stroke-linejoin="round" role="img" aria-label="Via"><path d="m378.4252 269.28348-44.566925-60.472458h-44.566925l89.13385 120.9449z"/><path d="M389.88452 208.81102h39.46457v33.10237h-39.46457z"/><path d="M464.09186 210.2441h39.46457v120.94487h-39.46457z"/><path d="m581.5748 269.28348 44.566895 60.472443h44.566956l-89.13385-120.9449z"/><path d="M570.1155 329.75592h-39.46454v-33.102386h39.46454z"/><path fill="none" d="M409.6168 241.91339v57.606293h-31.181091M503.55643 270.71652h46.834625v25.952759M570.1155 313.2047h18.233643v-13.669281h15.498657M429.3491 225.3622h17.37146v45.354324h17.368683"/></svg>
+      <p>Share PCB Designs!</p>
+    </div>
+    <div class="grid">
+      <div><img src="examples/hush/card.png" alt=""></div>
+      <div><img src="examples/lark/card.png" alt=""></div>
+      <div><img src="examples/signet/card.png" alt=""></div>
+      <div><img src="examples/basalt/card.png" alt=""></div>
+    </div>
+  </body>
+</html>

@@ -268,6 +268,15 @@ chromium --headless --hide-scrollbars --force-device-scale-factor=1 --window-siz
 It holds the wordmark, the page's headline and Herald's board drawing.
 Draw it again when `og.html`, the wordmark, the headline or the drawing changes.
 
+made.via.computer's pages share `made-og.png`, drawn the same way from
+`made-og.html`: the wordmark, the owner's tagline "Share PCB Designs!" and
+4 of the boards' cards.
+
+```sh
+chromium --headless --hide-scrollbars --force-device-scale-factor=1 --window-size=1280,640 \
+  --virtual-time-budget=4000 --screenshot=site/made-og.png "file://$PWD/site/made-og.html"
+```
+
 `favicon.svg` holds the paths of `logo.svg`. Copy them again when the
 wordmark changes. librsvg draws the 2 PNG icons from `favicon.svg`:
 
