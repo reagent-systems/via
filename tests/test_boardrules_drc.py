@@ -29,6 +29,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import engine_absent
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
@@ -43,7 +44,7 @@ PLATING = (
 
 pytestmark = [
     pytest.mark.engine,
-    pytest.mark.skipif(shutil.which("kicad-cli") is None, reason="kicad-cli is not installed"),
+    pytest.mark.skipif(engine_absent("kicad-cli"), reason="kicad-cli is not installed"),
 ]
 
 

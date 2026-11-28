@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+import conftest
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +27,9 @@ SMOKE = ROOT / "tools" / "ci" / "desktop_smoke.py"
 FLOWS = ROOT / ".github" / "workflows"
 sys.path.insert(0, str(SMOKE.parent))
 import desktop_smoke  # noqa: E402
+
+# The tools/hostos.py the smoke imported: a test sets its lookups there.
+hostos = desktop_smoke.hostos
 
 ORDER = ["doctor", "gates-green", "gates-drc", "gates-sim", "design-check", "next", "autoroute", "tests"]
 
@@ -78,7 +83,8 @@ TESTS_GREEN = [
 TESTSHARDS = r"""
 import json, os, sys
 with open(os.environ["STANDIN_LOG"], "a", encoding="utf-8") as log:
-    log.write(json.dumps({"argv": ["testshards", *sys.argv[1:]], "cwd": os.getcwd()}) + "\n")
+    seen = {"argv": ["testshards", *sys.argv[1:]], "cwd": os.getcwd(), "path": os.environ["PATH"]}
+    log.write(json.dumps(seen) + "\n")
 green = ["outcomes: 3 passed, 0 failed, 0 skipped, 0 xfailed, 0 xpassed", "TESTS GREEN: 3 tests in 1 shards"]
 answer = json.loads(os.environ.get("STANDIN", "{}")).get("tests", [0, green, 0])
 for line in answer[1]:
@@ -288,6 +294,80 @@ def test_each_step_has_its_bound_and_the_tests_theirs(monkeypatch):
     monkeypatch.setattr(desktop_smoke, "STEP_SECONDS", 7)
     assert plan["doctor"].bound == 7 and plan["tests"].bound == 1800
     assert desktop_smoke.Step("x", "x", ["x"], (0,), seconds=12).bound == 12
+
+
+def off_path_engines(tmp_path, monkeypatch) -> tuple[str, dict[str, Path]]:
+    """kicad-cli and ngspice where only hostos's candidates name them, as install.ps1 and the macOS
+    route leave them (run 46093588252): each in a folder of its own that PATH lacks, by its whole path.
+    PATH is 1 empty folder; the 2 lookups are hostos's, each with the name first, as on macOS."""
+    found = {}
+    for name in ("kicad-cli", "ngspice"):
+        found[name] = conftest.stand_in(
+            tmp_path / "installs" / name / "bin" / name, "import sys; sys.exit(0)\n"
+        )
+    monkeypatch.setattr(hostos, "kicad_cli_candidates", lambda: ["kicad-cli", str(found["kicad-cli"])])
+    monkeypatch.setattr(hostos, "ngspice_candidates", lambda: ["ngspice", str(found["ngspice"])])
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    return str(empty), found
+
+
+def test_the_tests_step_finds_both_engines_where_only_hostos_names_them(tmp_path, monkeypatch):
+    """Run 46093588252's gates ran kicad-cli and ngspice through the installed command, and its tests
+    step skipped 57 tests for ngspice and 42 for kicad-cli on Windows, 44 for kicad-cli on macOS: their
+    marks looked on PATH alone. The tests step's PATH ends with the folder of each engine Via finds off
+    PATH, so a lookup by name finds the program the gates run; the other steps keep the runner's own
+    environment, as a person's shell has it (M328)."""
+    empty, found = off_path_engines(tmp_path, monkeypatch)
+    assert shutil.which("kicad-cli") is None and shutil.which("ngspice") is None  # what the marks saw
+    plan = {s.name: s for s in desktop_smoke.steps(Path("r"), "wc", "py", Path("w"))}
+    env = plan["tests"].env
+    assert env is not None
+    assert env["PATH"].split(os.pathsep) == [
+        empty,
+        str(found["kicad-cli"].parent),
+        str(found["ngspice"].parent),
+    ]
+    for name, program in found.items():
+        assert shutil.which(name, path=env["PATH"]) == str(program), name
+    assert plan["tests"].notes == [
+        f"kicad-cli: {found['kicad-cli']}, its folder at the end of PATH",
+        f"ngspice: {found['ngspice']}, its folder at the end of PATH",
+    ]
+    assert all(s.env is None and s.notes == [] for s in plan.values() if s.name != "tests")
+
+
+def test_an_engine_on_path_leaves_path_as_it_was_and_one_via_does_not_find_is_named(tmp_path, monkeypatch):
+    """Linux and the WSL leg: both engines on PATH by name, and PATH is the runner's. An engine Via finds
+    nowhere adds nothing, and the step says where Via looked."""
+    bin_ = tmp_path / "bin"
+    conftest.stand_in(bin_ / "kicad-cli", "import sys; sys.exit(0)\n")
+    monkeypatch.setattr(hostos, "kicad_cli_candidates", lambda: ["kicad-cli"])
+    monkeypatch.setattr(hostos, "ngspice_candidates", lambda: ["ngspice", str(tmp_path / "no" / "ngspice")])
+    monkeypatch.setenv("PATH", str(bin_))
+    env, notes = desktop_smoke.tests_env(dict(os.environ))
+    assert env["PATH"] == str(bin_)
+    assert notes == [
+        "kicad-cli: on PATH",
+        f"ngspice: Via finds none where it looks (ngspice, {tmp_path / 'no' / 'ngspice'}); its tests skip",
+    ]
+    # A folder PATH already holds is not added again.
+    conftest.stand_in(bin_ / "ngspice_con", "import sys; sys.exit(0)\n")
+    monkeypatch.setattr(hostos, "ngspice_candidates", lambda: ["ngspice_con"])
+    env, notes = desktop_smoke.tests_env(dict(os.environ))
+    assert env["PATH"] == str(bin_), notes
+
+
+def test_the_tests_step_runs_with_that_path_and_says_what_it_added(stage, tmp_path, capsys, monkeypatch):
+    """The step's process gets the environment: the stand-in testshards logs its PATH."""
+    empty, found = off_path_engines(tmp_path, monkeypatch)
+    code, lines = smoke(stage, capsys, "--only", "tests")
+    assert code == 0, lines
+    folders = [str(found["kicad-cli"].parent), str(found["ngspice"].parent)]
+    assert calls(stage)[-1]["path"].split(os.pathsep) == [empty, *folders]
+    assert f"  + kicad-cli: {found['kicad-cli']}, its folder at the end of PATH" in lines
+    assert verdicts(lines) == ["desktop-smoke: [1/1] tests: ok (exit 0)"]
 
 
 def test_a_failed_test_run_fails_the_last_step(stage, capsys, monkeypatch):

@@ -18,16 +18,14 @@ import types
 from pathlib import Path
 
 import pytest
-from conftest import engine
+from conftest import engine, engine_absent
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
 BOARDS = ROOT / "tests" / "boards"
 
-needs_kicad = engine(
-    pytest.mark.skipif(shutil.which("kicad-cli") is None, reason="kicad-cli is not installed")
-)
-needs_ngspice = engine(pytest.mark.skipif(shutil.which("ngspice") is None, reason="ngspice is not installed"))
+needs_kicad = engine(pytest.mark.skipif(engine_absent("kicad-cli"), reason="kicad-cli is not installed"))
+needs_ngspice = engine(pytest.mark.skipif(engine_absent("ngspice"), reason="ngspice is not installed"))
 # The day every command here writes: 1794960060 s is 2026-11-18 00:01:00 UTC (tests/test_clock.py).
 PINNED = {"SOURCE_DATE_EPOCH": "1794960060"}
 

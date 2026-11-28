@@ -126,6 +126,43 @@ def test_the_marks_of_1_test_skip_it_where_it_cannot_run(monkeypatch, platform, 
     assert (two.mark.args, two.mark.kwargs) == ((linux,), {"reason": "Linux-only: it reads /proc"})
 
 
+@pytest.mark.parametrize(("name", "variable"), [("kicad-cli", "KICAD_CLI"), ("ngspice", "NGSPICE")])
+def test_an_engine_mark_finds_the_engine_where_via_looks_though_path_lacks_it(
+    tmp_path, monkeypatch, name, variable
+):
+    """The installers leave kicad-cli and ngspice off PATH; Via finds them where it looks (hostos's
+    candidates: the file workcenter.cmd names, KiCad's bundle, the per-user install, Via's own ngspice).
+    A mark asks the same lookup, so it skips only where the gates would not run either. Run 46093588252's
+    marks looked on PATH alone: 57 tests skipped for ngspice and 42 for kicad-cli on Windows, 44 for
+    kicad-cli on macOS, in the run whose gates used both (M328)."""
+    program = conftest.stand_in(tmp_path / "install" / "bin" / name, "import sys; sys.exit(0)\n")
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    monkeypatch.setenv(variable, str(program))
+    assert shutil.which(name) is None  # what the mark at main 7ac4ed6 asked
+    assert conftest.engine_absent(name) is False
+    monkeypatch.setenv(variable, str(tmp_path / "no" / name))
+    assert conftest.engine_absent(name) is True
+
+
+# A mark or a lookup of an engine by PATH alone, in the text of a test file.
+PATH_ONLY = ('shutil.which("kicad-cli")', 'shutil.which("ngspice")')
+
+
+def test_no_file_that_runs_on_macos_or_windows_looks_for_an_engine_on_path_alone():
+    """A file of the desktop rows asks conftest.engine_absent (or hostos.found_program) for kicad-cli and
+    ngspice, never shutil.which of the name: on macOS and Windows the installers put neither on PATH.
+    This file names the words to look for, and is left out."""
+    found = []
+    for row in rows():
+        if row["runs"] != "desktop" or row["file"] == "tests/test_desktop.py":
+            continue
+        text = (ROOT / row["file"]).read_text(encoding="utf-8")
+        found += [f"{row['file']}: {words}" for words in PATH_ONLY if words in text]
+    assert found == [], found
+
+
 def test_the_real_table_skips_on_windows_what_its_rows_say():
     table = conftest.host_rows(TABLE)
     for r in rows():

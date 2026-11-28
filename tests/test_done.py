@@ -27,7 +27,7 @@ import types
 from pathlib import Path
 
 import pytest
-from conftest import engine
+from conftest import engine, engine_absent
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
@@ -35,9 +35,7 @@ BOARDS = ROOT / "tests" / "boards"
 sys.path.insert(0, str(ROOT / "tools"))
 import guide  # noqa: E402
 
-needs_kicad = engine(
-    pytest.mark.skipif(shutil.which("kicad-cli") is None, reason="kicad-cli is not installed")
-)
+needs_kicad = engine(pytest.mark.skipif(engine_absent("kicad-cli"), reason="kicad-cli is not installed"))
 GATES = ("erc", "drc", "sim", "export")
 NOT_ASKED = "RATINGS not asked for: no ratings.json beside the schematic"
 

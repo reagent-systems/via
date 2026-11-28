@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
-from conftest import engine, stand_in
+from conftest import engine, engine_absent, stand_in
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
@@ -28,9 +28,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import fabfiles  # noqa: E402
 import hostos  # noqa: E402
 
-needs_kicad = engine(
-    pytest.mark.skipif(shutil.which("kicad-cli") is None, reason="kicad-cli is not installed")
-)
+needs_kicad = engine(pytest.mark.skipif(engine_absent("kicad-cli"), reason="kicad-cli is not installed"))
 PARTS = {"C1": "top", "J1": "top", "R1": "top", "R2": "top"}
 
 
@@ -99,7 +97,7 @@ def test_export_writes_a_placement_file_ipc2581_and_an_assembly_drawing_that_agr
 def test_a_placement_file_that_disagrees_with_the_board_fails_export_on_1_line(tmp_path):
     """kicad-cli stands behind a script that drops R2's row from the placement file it wrote: the gate
     reads the file back and names R2, the 1 part the file lost."""
-    real = shutil.which("kicad-cli")
+    real = hostos.found_program(hostos.kicad_cli_candidates())  # where Via finds it, as the mark
     wrapper = stand_in(
         tmp_path / "kicad-cli",
         "import subprocess, sys\n"

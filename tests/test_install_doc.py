@@ -39,8 +39,10 @@ NOT_YET = "Not yet proven: the next CI run will say"
 NO_RUNNER = "Not proven, and no GitHub runner can prove it"
 # The run that proved a route off Linux (pull request 140, head 1480c04): macOS and the WSL leg green.
 GREEN_RUN = "run 46084159219"
-# The newest run of the legs (head dd58999): macOS and the WSL leg green again, Windows native red in 1 test.
+# The next run of the legs (head dd58999): macOS and the WSL leg green again, Windows native red in 1 test.
 LAST_RUN = "run 46089464718"
+# The run that proved Windows native (head 935b3a6, 2026-11-28): every leg green, 788 of 963 on Windows.
+WINDOWS_RUN = "run 46093588252"
 
 
 def text(path: Path) -> str:
@@ -229,13 +231,18 @@ def test_the_readme_table_has_a_row_for_each_platform_with_a_command_and_a_true_
         assert re.search(r"`[^`]+`", command), name
         assert state.strip().startswith((PROVEN, NOT_YET, NO_RUNNER, "Best effort")), name
     proven = [name for name, (_, state) in cells.items() if state.strip().startswith(PROVEN)]
-    # Run 46084159219 was green on macos-latest and on the WSL leg, red on Windows native.
-    assert proven == ["Linux, Ubuntu 24.04", "macOS, Apple Silicon", "Windows 10 or 11, WSL2"]
-    assert [name for name in proven[1:] if GREEN_RUN not in cells[name][1]] == []
-    # Each row off Linux says what the newest run of its leg showed.
-    native = cells["Windows 10 or 11, native (x64)"][1]
-    assert [name for name in proven[1:] if LAST_RUN not in cells[name][1]] == [] and LAST_RUN in native
-    assert native.strip().startswith(NOT_YET)
+    # Run 46084159219 was green on macos-latest and on the WSL leg; run 46093588252 on Windows native too.
+    native_name = "Windows 10 or 11, native (x64)"
+    assert proven == ["Linux, Ubuntu 24.04", "macOS, Apple Silicon", native_name, "Windows 10 or 11, WSL2"]
+    others = [name for name in proven[1:] if name != native_name]
+    assert [name for name in others if GREEN_RUN not in cells[name][1]] == []
+    assert [name for name in others if LAST_RUN not in cells[name][1]] == []
+    # The native row names the run that proved it, its figures, what it left unjudged, and the runs before.
+    native = cells[native_name][1]
+    assert native.strip().startswith(f"{PROVEN} (windows-latest) by {WINDOWS_RUN} (2026-11-28)")
+    assert "788 of its 963 tests passed and none failed" in native
+    assert "99 tests that need kicad-cli or ngspice not judged" in native
+    assert "46067841222, 46084159219, 46089464718" in native and "failed 84, 12 and 1 tests" in native
     # Each installer a row names is in the tree, or its row says it is not on main yet.
     files = {f for f in named_files(install) if not f.startswith("tests/")}
     assert [f for f in files if not (ROOT / f).exists() and f not in INSTALLERS] == []
@@ -285,16 +292,23 @@ def test_install_md_route_table_gives_each_platform_a_true_state():
     starts = (PROVEN, NOT_YET, NO_RUNNER, "Best effort", "Not offered")
     assert [row[0] for row in rows if not row[2].startswith(starts)] == []
     proven = [row[0] for row in rows if row[2].startswith(PROVEN)]
-    assert proven == ["Ubuntu 24.04 (x86_64 or arm64)", "macOS 12 or later, Apple Silicon (`Darwin arm64`)"]
+    assert proven == [
+        "Ubuntu 24.04 (x86_64 or arm64)",
+        "macOS 12 or later, Apple Silicon (`Darwin arm64`)",
+        "Windows 10 or 11, x64",
+    ]
     assert [row[0] for row in rows if PROVEN in row[2] and not row[2].startswith(PROVEN)] == []
     assert [
         row[0]
         for row in rows
         if row[2].startswith(PROVEN) and row[1] == "M" and not (GREEN_RUN in row[2] and LAST_RUN in row[2])
     ] == []
-    # 1 row holds N and W: N is not yet proven, and the row names the runs where W passed.
+    # 1 row holds N and W: N proven by run 46093588252, W by the 2 runs before, each with its figures.
     (windows,) = [row for row in rows if row[0] == "Windows 10 or 11, x64"]
-    assert windows[2].startswith(NOT_YET) and GREEN_RUN in windows[2] and LAST_RUN in windows[2]
+    assert windows[2].startswith(f"{PROVEN} (windows-latest), N and W. N by {WINDOWS_RUN} (2026-11-28)")
+    assert "788 of its 963 tests passed and none failed" in windows[2]
+    assert "99 tests that need kicad-cli or ngspice were not judged" in windows[2]
+    assert f"W by {GREEN_RUN}" in windows[2] and LAST_RUN in windows[2]
 
 
 def test_every_step_of_a_route_has_a_check():

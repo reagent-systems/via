@@ -24,7 +24,7 @@ import types
 from pathlib import Path
 
 import pytest
-from conftest import engine
+from conftest import engine, engine_absent
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
@@ -52,7 +52,7 @@ def commands(text: str | None) -> list[str]:
     return COMMAND_SPAN.findall(text or "")
 
 
-needs_ngspice = engine(pytest.mark.skipif(shutil.which("ngspice") is None, reason="ngspice is not installed"))
+needs_ngspice = engine(pytest.mark.skipif(engine_absent("ngspice"), reason="ngspice is not installed"))
 
 DECK = "* a deck\nV1 in 0 DC 5\nR1 in 0 1k\n.control\nop\n.endc\n.end\n"
 # `next` asks only whether an engine's name is on PATH. A test that writes its report by hand names

@@ -11,15 +11,17 @@ It runs the installed `workcenter` command, as a person runs it after the instal
     6 next          `workcenter next` on the copy of pass-first-design: exit 0 or 1, a `NEXT` line
     7 autoroute     `workcenter autoroute --apply` on a copy of tests/boards/route-me: exit 0, a `PASS` line
     8 tests         verify/testshards.py on the test files verify/desktop.csv names: exit 0, at least 1 passed
+                    (PATH ends in the folder of each engine Via finds off PATH: kicad-cli, ngspice)
 
 The 2 RED fixtures matter as much as the GREEN one: a gate that passes because its engine never ran
 must show as wrong. A gate whose engine is absent exits 2 (SKIPPED), never 1. Each fixture is copied
 into the work folder first, so the gates write nothing into the checkout.
 
-Each step prints its command, its output under `  | `, then 1 line: `desktop-smoke: [n/8] <name>: ok`
-or `FAIL (<why>)`, with its seconds. Every step runs, after a failed one too, so 1 run reports every
-step's state. The last line is `DESKTOP SMOKE GREEN: ...` (exit 0) or `DESKTOP SMOKE RED: ...` (exit 1);
-misuse is exit 2. Standard library only, and tools/hostos.py to end a step's process tree on time.
+Each step prints its command, what its environment adds under `  + `, its output under `  | `, then 1
+line: `desktop-smoke: [n/8] <name>: ok` or `FAIL (<why>)`, with its seconds. Every step runs, after a
+failed one too, so 1 run reports every step's state. The last line is `DESKTOP SMOKE GREEN: ...` (exit
+0) or `DESKTOP SMOKE RED: ...` (exit 1); misuse is exit 2. Standard library only, and tools/hostos.py
+to end a step's process tree on time and to find the engines where Via looks for them.
 
     desktop_smoke.py [--repo R] [--workcenter W] [--python P] [--work D] [--only STEP ...] [--list]
 """
@@ -56,6 +58,11 @@ TESTS_SECONDS = 1800
 DRAIN_SECONDS = 30
 # A count of passed tests, as testshards' `outcomes: 12 passed, ...` line and pytest's own summary give it.
 PASSED = re.compile(r"\b[1-9]\d* passed\b")
+# The engines whole test files skip without, by the name a test looks up, and where Via looks for each
+# (tools/hostos.py, as tools/workcenter takes them). Windows' and macOS' installers leave both off PATH:
+# run 46093588252's gates ran both, and its tests step skipped 57 tests on Windows for ngspice and 42 for
+# kicad-cli, 44 on macOS for kicad-cli, each by a mark that looked on PATH alone (M328).
+ENGINES = (("kicad-cli", "kicad_cli_candidates"), ("ngspice", "ngspice_candidates"))
 
 
 @dataclass
@@ -68,6 +75,10 @@ class Step:
     checks: list[tuple[str, Callable[[list[str]], bool]]] = field(default_factory=list)
     # The step's bound in s; 0 is STEP_SECONDS, read when the step runs.
     seconds: int = 0
+    # The step's environment; None is this process's own.
+    env: dict[str, str] | None = None
+    # Lines printed after the command, before its output: what the step's environment adds.
+    notes: list[str] = field(default_factory=list)
 
     @property
     def bound(self) -> int:
@@ -91,9 +102,36 @@ def some_passed() -> tuple[str, Callable[[list[str]], bool]]:
     return ("a line names at least 1 passed test", lambda lines: any(PASSED.search(line) for line in lines))
 
 
+def tests_env(environ: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """The tests step's environment and 1 line per engine of ENGINES. Each engine PATH finds by its name
+    is left as it is; for each other that Via finds where it looks, its folder goes at PATH's end, so a
+    test that looks the name up (shutil.which, a bare start) finds the program the gates run. At the end,
+    not the front: KiCad's bin on Windows holds a python.exe."""
+    env = dict(environ)
+    path = env.get("PATH", "")
+    folders = [f for f in path.split(os.pathsep) if f]
+    lines = []
+    for name, lookup in ENGINES:
+        if shutil.which(name, path=path):
+            lines.append(f"{name}: on PATH")
+            continue
+        candidates = getattr(hostos, lookup)()
+        program = hostos.found_program(candidates, path=path)
+        if program is None:
+            lines.append(f"{name}: Via finds none where it looks ({', '.join(candidates)}); its tests skip")
+            continue
+        folder = os.path.dirname(program)
+        if os.path.normcase(folder) not in {os.path.normcase(f) for f in folders}:
+            folders.append(folder)
+        lines.append(f"{name}: {program}, its folder at the end of PATH")
+    env["PATH"] = os.pathsep.join(folders)
+    return env, lines
+
+
 def steps(repo: Path, wc: str, python: str, work: Path) -> list[Step]:
     boards = work / "boards"
     first = str(boards / "pass-first-design")
+    env, notes = tests_env(dict(os.environ))
     return [
         Step("doctor", "workcenter doctor", [wc, "doctor"], (0,)),
         Step(
@@ -152,6 +190,8 @@ def steps(repo: Path, wc: str, python: str, work: Path) -> list[Step]:
             (0,),
             [some_passed()],
             seconds=TESTS_SECONDS,
+            env=env,
+            notes=notes,
         ),
     ]
 
@@ -172,6 +212,7 @@ def run_step(step: Step, cwd: Path) -> tuple[int | None, list[str], float]:
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
             start_new_session=os.name == "posix",
+            env=step.env,
         )
     except OSError as exc:
         return None, [f"could not start: {exc}"], time.monotonic() - started
@@ -281,6 +322,8 @@ def main(argv: list[str] | None = None) -> int:
     for n, step in enumerate(plan, 1):
         head = f"desktop-smoke: [{n}/{len(plan)}] {step.name}"
         print(f"{head}: $ {shown(step.argv)}", flush=True)
+        for note in step.notes:
+            print(f"  + {note}", flush=True)
         code, lines, seconds = run_step(step, repo)
         for line in lines:
             print(f"  | {line}")

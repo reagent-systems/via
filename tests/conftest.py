@@ -20,6 +20,7 @@ that needs fcntl or pwd. 1 test of a desktop file that cannot run somewhere carr
 import atexit
 import csv
 import hashlib
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -62,6 +63,32 @@ def host_skip(name: str, table: dict[str, tuple[str, str]], platform: str) -> st
     if runs == "posix" and platform == "win32" or runs == "linux" and not platform.startswith("linux"):
         return f"{WORDS[runs]}: {reason} (verify/desktop.csv)"
     return None
+
+
+_hostos = []
+# Where Via looks for each engine a mark asks for: tools/hostos.py's function of its candidates.
+ENGINE_CANDIDATES = {"kicad-cli": "kicad_cli_candidates", "ngspice": "ngspice_candidates"}
+
+
+def hostos():
+    """tools/hostos.py, loaded from its file under a name of its own when first asked for: nothing goes
+    on sys.path, and a copy of this conftest in a folder of its own, with no tools/, still loads."""
+    if not _hostos:
+        spec = importlib.util.spec_from_file_location("conftest_hostos", REPO / "tools" / "hostos.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _hostos.append(module)
+    return _hostos[0]
+
+
+def engine_absent(name: str) -> bool:
+    """Whether Via finds no `name` (kicad-cli or ngspice) where its CLI looks: on PATH, then where the
+    installer put it (KiCad's bundle on macOS, its per-user install and Via's own ngspice on Windows), or
+    the file KICAD_CLI or NGSPICE names. Marks on shutil.which(name) alone skipped 57 tests for ngspice and
+    42 for kicad-cli on Windows, and 44 for kicad-cli on macOS, whose engines the same run's gates used
+    (run 46093588252, M328)."""
+    module = hostos()
+    return module.found_program(getattr(module, ENGINE_CANDIDATES[name])()) is None
 
 
 def posix_only(reason: str):
