@@ -414,6 +414,61 @@ def test_a_router_past_the_time_limit_is_stopped_with_its_children_and_nothing_i
     assert not (tmp_path / "out" / "rows.kicad_pcb").exists()
 
 
+SLEEPER = "import time\ntime.sleep(60)\n"
+
+
+def sleeper_router(tmp_path: Path) -> routers.Router:
+    """A router whose java is a Python that sleeps 60 s, held to nothing but its jar."""
+    java = tmp_path / "java"
+    java.write_text(f"#!{sys.executable}\n{SLEEPER}", encoding="utf-8")
+    java.chmod(0o755)
+    jar = tmp_path / "sleeper.jar"
+    jar.write_text("", encoding="utf-8")
+    return routers.Router(
+        name="sleeper",
+        label="the sleeper",
+        jar_env="SLEEPER_JAR_UNSET",
+        jar_default=jar,
+        java_env="SLEEPER_JAVA_UNSET",
+        java_default=str(java),
+        java_min=None,
+        display=False,
+    )
+
+
+def run_sleeper(router: routers.Router, tmp_path: Path) -> tuple[float, str]:
+    t0 = time.monotonic()
+    with pytest.raises(routers.RouterTimeout) as stopped:
+        router.run(tmp_path / "b.dsn", tmp_path / "b.ses", tmp_path / "b.log", 1, 0, 2, tmp_path)
+    return time.monotonic() - t0, str(stopped.value)
+
+
+def test_a_router_past_the_time_limit_on_windows_raises_routertimeout(tmp_path, monkeypatch):
+    """Rule 11 on a stand-in for Windows (tests/winstandin.py): no os.killpg, no start_new_session. The
+    router starts in a process group of its own (CREATE_NEW_PROCESS_GROUP), and at the limit
+    `taskkill /T /F /PID <pid>` ends it. Before this, the stop called os.killpg: AttributeError there,
+    not RouterTimeout. That taskkill /T also ends Java under the router is not shown here."""
+    from winstandin import windows
+
+    router = sleeper_router(tmp_path)
+    seen = windows(monkeypatch, tmp_path / "win")
+    took, said = run_sleeper(router, tmp_path)
+    assert took < 30, took
+    assert said.startswith("the sleeper stopped at the time limit (2 s)"), said
+    started = [kw for kw in seen.popens if kw.get("creationflags")]
+    assert [kw["creationflags"] for kw in started] == [0x200], seen.popens
+    [killed] = seen.taskkills()
+    assert killed[:3] == ["/T", "/F", "/PID"] and killed[3].isdigit(), killed
+
+
+def test_a_router_past_the_time_limit_on_linux_is_stopped_with_its_group(tmp_path):
+    """Rule 11 in the test's own process: the router leads a session of its own, and its group is
+    killed at the limit."""
+    took, said = run_sleeper(sleeper_router(tmp_path), tmp_path)
+    assert took < 30, took
+    assert said.startswith("the sleeper stopped at the time limit (2 s)"), said
+
+
 @routes
 @pytest.mark.skipif(shutil.which("xvfb-run") is None, reason="xvfb-run is not installed")
 def test_freerouting_1_9_runs_under_xvfb_without_a_display(tmp_path):

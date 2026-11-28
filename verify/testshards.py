@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import io
 import json
 import math
@@ -351,6 +352,35 @@ def find_files(root: Path, tests: str) -> list[str]:
     return sorted(p.relative_to(root).as_posix() for p in found if "__pycache__" not in p.parts)
 
 
+# The rows of a list (`--only`) that are run: verify/desktop.csv's `runs` column says where a file runs,
+# and its `desktop` rows are the files that must pass on Linux, macOS and Windows.
+ONLY_RUNS = "desktop"
+
+
+def only_files(path: Path, files: list[str]) -> list[str]:
+    """The test files a list names: a CSV with a `file` column, and where it has a `runs` column, the
+    rows whose runs is `desktop`. ValueError, with the reason, for a name that is not one of `files`
+    (the test files under the tests folder) or a list that names none."""
+    with open(path, encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        if not reader.fieldnames or "file" not in reader.fieldnames:
+            raise ValueError(f"{path}:1: no column file")
+        runs = "runs" in reader.fieldnames
+        named = [
+            (n, (rec["file"] or "").strip())
+            for n, rec in enumerate(reader, start=2)
+            if not runs or (rec.get("runs") or "").strip() == ONLY_RUNS
+        ]
+    known = set(files)
+    for n, name in named:
+        if name not in known:
+            raise ValueError(f"{path}:{n}: {name!r} is not a test file under the tests folder")
+    out = sorted({name for _, name in named})
+    if not out:
+        raise ValueError(f"{path}: the list names no file to run")
+    return out
+
+
 # -- the run ----------------------------------------------------------------------------------------
 
 
@@ -488,14 +518,32 @@ class Stopped(SystemExit):
         self.signum = signum
 
 
-STOPS = (signal.SIGTERM, signal.SIGHUP)
+_HOSTOS = []
+
+
+def hostos():
+    """tools/hostos.py, the platform differences, loaded from its file: the pytest side of this module
+    is loaded into every shard, and the tools folder is not put on their sys.path."""
+    if not _HOSTOS:
+        path = HERE.parent / "tools" / "hostos.py"
+        spec = importlib.util.spec_from_file_location("testshards_hostos", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _HOSTOS.append(module)
+    return _HOSTOS[0]
+
+
+def stops() -> tuple[int, ...]:
+    """The signals that stop the runner: SIGTERM and SIGHUP; SIGTERM and SIGBREAK on Windows, which has
+    no SIGHUP (hostos.stop_signals)."""
+    return hostos().stop_signals()
 
 
 def _stop(signum, frame) -> None:
     """The first stop. Every later one is ignored: under `enginelock.py hold` the runner gets the signal
     twice, from its group and from the hold, and a second Stopped raised inside the clean-up would end it
     before it had ended and waited for every shard."""
-    for s in STOPS:
+    for s in stops():
         signal.signal(s, signal.SIG_IGN)
     raise Stopped(signum)
 
@@ -632,11 +680,12 @@ def watch(running: list[Started], told: Told) -> None:
 
 
 def end_all(procs: list[subprocess.Popen]) -> None:
-    """Kill the process group of each pytest still running (its engines are in it) and wait for it."""
+    """Kill each pytest still running with every process it started (its engines), and wait for it:
+    its process group on Linux and macOS, its tree by taskkill on Windows (hostos.kill_tree)."""
     for proc in procs:
         if proc.poll() is None:
             try:
-                os.killpg(proc.pid, signal.SIGKILL)
+                hostos().kill_tree(proc)
             except ProcessLookupError:
                 pass
         proc.wait()
@@ -653,6 +702,12 @@ def run(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     table = read_table(Path(args.table))
     files = find_files(root, args.tests)
+    if args.only:
+        try:
+            files = only_files(Path(args.only), files)
+        except (OSError, ValueError) as exc:
+            print(exc, file=sys.stderr)
+            return 2
     shards = plan(files, table, args.jobs)
     work = Path(args.work) if args.work else Path(tempfile.mkdtemp(prefix="ee-verify-"))
     old = sorted(p.relative_to(work).as_posix() for p in earlier_logs(work))
@@ -668,6 +723,8 @@ def run(args: argparse.Namespace) -> int:
     base = dict(os.environ)
 
     print(f"tests: {len(files)} files in {len([s for s in shards if not s.serial])} shards, by {args.table}")
+    if args.only:
+        print(f"  only: {len(files)} files, the {ONLY_RUNS} rows of {args.only}")
     for s in shards:
         print(f"  shard {s.name}: {len(s.files)} files, {s.seconds:.0f} s by the table")
         for name, why in s.reasons.items():
@@ -683,11 +740,12 @@ def run(args: argparse.Namespace) -> int:
     collect_env.pop("TESTSHARDS_SHARD", None)
     collect_out = work / "collect.log"
     collect_cmd = [args.python, "-m", "pytest", "--collect-only", "-q", "-p", "testshards"]
-    collect_cmd += ["-p", "no:cacheprovider", args.tests]
+    # With --only, 1 process collects the same files the shards run, not the whole folder.
+    collect_cmd += ["-p", "no:cacheprovider", *(files if args.only else [args.tests])]
     started: list[Started] = []
     told = Told()
     procs: list[subprocess.Popen] = []
-    handlers = {s: signal.signal(s, _stop) for s in STOPS}
+    handlers = {s: signal.signal(s, _stop) for s in stops()}
     try:
         with open(collect_out, "w", encoding="utf-8") as out:
             collect = subprocess.Popen(
@@ -924,6 +982,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--jobs", type=int, default=os.cpu_count() or 1, help="parallel shards (processors)")
     p.add_argument("--python", default=sys.executable, help="the Python that has pytest")
     p.add_argument("--work", help="folder for the shards' logs (default: a new temporary folder)")
+    p.add_argument(
+        "--only",
+        help="run only the files this list names: a CSV with a file column; with a runs column, its "
+        "desktop rows (verify/desktop.csv: the files that must pass on Linux, macOS and Windows)",
+    )
     t = sub.add_parser("table", help="print the table with the seconds of the runs whose logs are named")
     t.add_argument("--table", default="verify/shards.csv")
     t.add_argument("works", nargs="+", help="the --work folders of 1 or more runs")

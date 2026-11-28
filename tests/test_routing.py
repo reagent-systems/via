@@ -258,7 +258,8 @@ def hole_clearance_errors(project: Path) -> list[dict]:
 def test_router_vias_keep_the_inner_hole_clearance(tmp_path, monkeypatch):
     """The fixture routed twice: with the DSN as it was (the board's own 0.25 mm on every layer) the
     DRC finds a router via inside Sierra's 13 mil; with each layer's hole clearance it finds none."""
-    pytest.importorskip("pcbnew")
+    if kicadgen._kicadchild().python() is None:  # the stitching child (tools/kicadchild.py)
+        pytest.skip("KiCad's Python (with its pcbnew module) is not found")
     old = inner_drill_board()
     with monkeypatch.context() as m:
         m.setattr(kicadgen.Design, "hole_clearances", lambda self: dict.fromkeys(self.copper_names(), 0.25))
@@ -469,7 +470,8 @@ def walled_divider(extra: str = "") -> str:
 @needs_libs
 @needs_kicad
 def test_design_command_names_the_island_each_stitching_via_ties(tmp_path):
-    pytest.importorskip("pcbnew")
+    if kicadgen._kicadchild().python() is None:  # the stitching child (tools/kicadchild.py)
+        pytest.skip("KiCad's Python (with its pcbnew module) is not found")
     (tmp_path / "design.py").write_text(walled_divider(), encoding="utf-8")
     code, summary = run_cli("design", tmp_path / "design.py")
     assert code == 0, summary
@@ -488,7 +490,8 @@ def test_design_command_names_the_island_each_stitching_via_ties(tmp_path):
 @needs_kicad
 def test_a_red_design_run_says_so_on_its_last_line(tmp_path):
     """M85: the files are written, so the verdict is the exit code; the last line says it."""
-    pytest.importorskip("pcbnew")
+    if kicadgen._kicadchild().python() is None:  # the stitching child (tools/kicadchild.py)
+        pytest.skip("KiCad's Python (with its pcbnew module) is not found")
     (tmp_path / "design.py").write_text(
         walled_divider("    d.via('VIN', 109.325, 106.5)\n"), encoding="utf-8"
     )

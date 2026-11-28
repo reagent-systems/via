@@ -17,6 +17,7 @@ import types
 from pathlib import Path
 
 import pytest
+from conftest import posix_only, stand_in
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
@@ -206,19 +207,36 @@ def test_the_fix_is_the_command_install_sh_runs():
     text = (ROOT / "install.sh").read_text(encoding="utf-8")
     assert '"${venv}/bin/pip" install -q -r "${SRC_DIR}/requirements.txt"' in text
     venv = Path("/w/venv")
+    if sys.platform == "win32":
+        # A venv on Windows keeps pip in Scripts\pip.exe, and a Path prints `\` (run 46067841222).
+        said = f"{venv / 'Scripts' / 'pip.exe'} install -q -r {Path('/s')}/requirements.txt"
+        assert wc.requirements_fix(venv, Path("/s")) == said
+        return
     assert wc.requirements_fix(venv, Path("/s")) == "/w/venv/bin/pip install -q -r /s/requirements.txt"
 
 
 def fake_venv(tmp_path: Path, script: str) -> Path:
-    """A made-up venv whose bin/python is a shell script: the probe runs it, never a real venv's pip."""
+    """A made-up venv whose bin/python is a stand-in program (conftest.stand_in: Python, no shell): the
+    probe runs it, never a real venv's pip."""
     venv = tmp_path / "venv"
-    (venv / "bin").mkdir(parents=True, exist_ok=True)
-    py = venv / "bin" / "python"
-    py.write_text("#!/bin/sh\n" + script + "\n", encoding="utf-8")
-    py.chmod(0o755)
+    stand_in(venv / "bin" / "python", script)
     return venv
 
 
+def says(obj) -> str:
+    """The stand-in venv Python's source that prints `obj` as JSON, as the probe's answer."""
+    return f"print({json.dumps(obj)!r})\n"
+
+
+# A venv's Python on Windows is Scripts\python.exe: a stand-in cannot be one (it is a .cmd file there),
+# and doctor reads venv/bin/python until piece B. So doctor's venv probe is not proved on Windows; the
+# row of verify/desktop.csv says so.
+fake_venv_posix = posix_only(
+    "doctor's venv probe: doctor reads venv/bin/python until piece B, and a stand-in cannot be an .exe"
+)
+
+
+@fake_venv_posix
 def test_the_probe_path_reads_the_system_site_and_keeps_extras_to_the_venv(tmp_path):
     """The path every real machine takes: the venv's Python says its sys.path. A pin met in the system's
     site-packages is met, not missing; a package there is not an extra; one in the venv is."""
@@ -229,7 +247,7 @@ def test_the_probe_path_reads_the_system_site_and_keeps_extras_to_the_venv(tmp_p
     dist(system, "pillow", "Pillow", "12.3.0")
     dist(system, "requests", "requests", "2.34.2")
     said = {"path": ["", str(own), str(system)], "env": ENV}
-    venv = fake_venv(tmp_path, f"cat <<'EOF'\n{json.dumps(said)}\nEOF")
+    venv = fake_venv(tmp_path, says(said))
     src = tmp_path / "src"
     src.mkdir()
     (src / "requirements.txt").write_text("kikit==1.8.1\nPillow==12.3.0\n", encoding="utf-8")
@@ -238,6 +256,7 @@ def test_the_probe_path_reads_the_system_site_and_keeps_extras_to_the_venv(tmp_p
     assert row["missing"] == [] and row["extra"] == ["Zeta 0.1"]
 
 
+@fake_venv_posix
 def test_the_probe_runs_no_code_from_the_folder_doctor_runs_in(tmp_path, monkeypatch):
     """A `platform.py` in the folder doctor runs from would shadow the standard library in `-c`."""
     here = tmp_path / "here"
@@ -245,16 +264,18 @@ def test_the_probe_runs_no_code_from_the_folder_doctor_runs_in(tmp_path, monkeyp
     ran = tmp_path / "ran"
     (here / "platform.py").write_text(f"open({str(ran)!r}, 'w').close()\nraise SystemExit(3)\n")
     monkeypatch.chdir(here)
-    venv = fake_venv(tmp_path, f'exec {sys.executable} "$@"')
+    py = sys.executable
+    venv = fake_venv(tmp_path, f"import os, sys\nos.execv({py!r}, [{py!r}, *sys.argv[1:]])\n")
     paths, own, env = wc.venv_site(venv)
     assert not ran.exists()
     assert paths and own == [] and env["os_name"] == "posix"
 
 
+@fake_venv_posix
 def test_a_probe_that_does_not_answer_leaves_the_row_advisory(tmp_path):
     """The venv's Python failed (a timeout on a loaded machine, a shadowed module): nothing is read, so
     no pin is called missing and Via is not degraded by this row."""
-    venv = fake_venv(tmp_path, "echo broken; exit 3")
+    venv = fake_venv(tmp_path, "print('broken')\nraise SystemExit(3)\n")
     (venv / "lib" / "python3.12" / "site-packages").mkdir(parents=True)
     src = tmp_path / "src"
     src.mkdir()
@@ -332,8 +353,13 @@ def test_2_installs_of_1_package_in_1_folder_are_a_fault(tmp_path):
     assert row["missing"] == [] and row["other"] == [] and row["version"] == "1 of 1 pins met"
     assert row["ok"] is False and len(row["broken"]) == 1
     # 2 metadata folders of 1 version (Ubuntu's python3-cryptography ships a dist-info and an
-    # egg-info): the version does not hang on the order, so no fault.
-    row = check(tmp_path / "3", "a==1.0\n", ("a", "a", "1.0"), ("y", "y", "41.0.7"), ("Y", "y", "41.0.7"))
+    # egg-info): the version does not hang on the order, so no fault. The 2 folders differ by more
+    # than case: macOS's and Windows' file systems ignore case, and `Y-41.0.7.dist-info` beside
+    # `y-41.0.7.dist-info` was 1 folder there (run 46067841222: FileExistsError).
+    site = tmp_path / "3" / "venv" / "lib" / "python3.12" / "site-packages"
+    raw_dist(site, "y-41.0.7.egg-info", b"Metadata-Version: 2.1\nName: y\nVersion: 41.0.7\n")
+    row = check(tmp_path / "3", "a==1.0\n", ("a", "a", "1.0"), ("y", "y", "41.0.7"))
+    assert len(list(site.glob("y-41.0.7.*-info"))) == 2
     assert row["ok"] is True and row["broken"] == []
 
 
@@ -464,19 +490,32 @@ def test_a_name_taken_from_a_folder_ends_at_the_last_dash_before_a_digit(tmp_pat
         assert row["ok"] is False
 
 
+# Doctor's pcbnew row runs the Python hostos.kicad_python() names and imports pcbnew in it. On macOS
+# and Windows that Python is found apart from KICAD_CLI (/Applications/KiCad, the per-user install), so
+# a doctor with KICAD_CLI pointed at an absent path still imported pcbnew there (run 46067841222, macOS:
+# "started pcbnew and has no engine marker"). A doctor run by a test that starts no engine finds none.
+NO_KICAD_PYTHON = (
+    "import sys\n"
+    f"sys.path.insert(0, {str(ROOT / 'tools')!r})\n"
+    "import hostos\n"
+    "hostos.kicad_python = lambda: None\n"
+)
+
+
 def doctor_with_a_check_that_raises(tmp_path: Path, *argv: str) -> subprocess.CompletedProcess:
     """The whole `doctor` in a subprocess, on a made-up root, with importlib.metadata.distributions
     replaced by a stand-in that raises: the check fails inside, where only cmd_doctor's guard holds it.
-    kicad-cli, ngspice and java point at an absent path, so no engine starts."""
+    kicad-cli, ngspice and java point at an absent path and no KiCad Python is found, so no engine
+    starts."""
     base = tmp_path / "root"
     site = base / "venv" / "lib" / "python3.12" / "site-packages"
     if not site.is_dir():
         dist(site, "kikit", "KiKit", "1.8.1")
-    fake_venv(base, f"cat <<'EOF'\n{json.dumps({'path': [str(site)], 'env': ENV})}\nEOF")
+    fake_venv(base, says({"path": [str(site)], "env": ENV}))
     absent = str(tmp_path / "absent")
     env = {**os.environ, "WORKCENTER_ROOT": str(base), "HOME": str(tmp_path)}
     env.update(KICAD_CLI=absent, NGSPICE=absent, JAVA=absent)
-    stand_in = (
+    stand_in = NO_KICAD_PYTHON + (
         "import importlib.metadata, runpy, sys\n"
         "def boom(*a, **k):\n"
         "    raise RuntimeError('a stand-in raised inside the check')\n"
@@ -496,6 +535,7 @@ def doctor_with_a_check_that_raises(tmp_path: Path, *argv: str) -> subprocess.Co
     )
 
 
+@fake_venv_posix
 def test_doctor_takes_the_requirements_row_through_its_guard_and_says_it_was_not_checked(tmp_path):
     """cmd_doctor must call the guarded row: called directly, the stand-in's error is a traceback.
     A row not checked is said on the status line and in --json, so nobody reads a plain `ok`."""
@@ -633,6 +673,7 @@ def test_any_exception_in_the_requirements_check_is_an_advisory_line(monkeypatch
     assert wc.doctor_checks_degraded({"requirements": row}) == []
 
 
+@fake_venv_posix
 def test_doctor_with_unreadable_metadata_on_the_venv_path_prints_its_row(tmp_path):
     """The checker's reproducer: a made-up WORKCENTER_ROOT whose venv Python reports a folder holding
     a METADATA that is not UTF-8. Doctor exits as it does without that folder, with no traceback."""
@@ -645,17 +686,22 @@ def test_doctor_with_unreadable_metadata_on_the_venv_path_prints_its_row(tmp_pat
         if with_bad:
             raw_dist(base / "badsite", "oldpkg-0.1.dist-info", b"Name: oldpkg\nAuthor: Jos\xe9\n")
             paths.append(str(base / "badsite"))
-        fake_venv(base, f"cat <<'EOF'\n{json.dumps({'path': paths, 'env': ENV})}\nEOF")
+        fake_venv(base, says({"path": paths, "env": ENV}))
         return base
 
     def doctor(base: Path) -> subprocess.CompletedProcess:
-        # No engine starts: kicad-cli, ngspice and java are pointed at a path that is not there, so
-        # doctor's exit code is the same `fail` on every machine, with or without the bad folder.
+        # No engine starts: kicad-cli, ngspice and java are pointed at a path that is not there, and
+        # no KiCad Python is found, so doctor's exit code is the same `fail` on every machine, with or
+        # without the bad folder.
         absent = str(tmp_path / "absent")
         env = {**os.environ, "WORKCENTER_ROOT": str(base), "HOME": str(tmp_path)}
         env.update(KICAD_CLI=absent, NGSPICE=absent, JAVA=absent)
+        run = (
+            NO_KICAD_PYTHON
+            + "import runpy\nsys.argv = sys.argv[1:]\nrunpy.run_path(sys.argv[0], run_name='__main__')\n"
+        )
         return subprocess.run(
-            [sys.executable, str(CLI), "doctor"],
+            [sys.executable, "-c", run, str(CLI), "doctor"],
             capture_output=True,
             text=True,
             env=env,

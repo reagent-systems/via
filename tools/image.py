@@ -31,12 +31,18 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hostos  # noqa: E402  (tools/hostos.py: the platform differences, standard library only)
+
 REGISTRY = "ghcr.io"
 NAME = "via"
 # The files that define the toolchain, in the order their sums are written. requirements.txt is 1 of
 # them: an image of a tag holds the Python packages of that tag's requirements.txt and no other.
 TOOLCHAIN_FILES = ("Dockerfile", "install.sh", "requirements.txt")
-RECORD = Path("/opt/workcenters/ee/image.json")
+# In the default root, which is /opt/workcenters/ee on Linux, the image's system. WORKCENTER_ROOT is not
+# read: the image's root is fixed.
+RECORD = hostos.default_root() / "image.json"
 SRC = Path(__file__).resolve().parents[1]
 DISABLE = "CI_FULL_IN_IMAGE"
 

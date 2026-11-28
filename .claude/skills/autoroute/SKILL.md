@@ -267,7 +267,9 @@ The run:
     only above 0) and `-dct 0` (no 20 s dialog wait) are Via's.
 11. The time limit (`--timeout`, default 900 s) stops the router and every
     process it started; nothing is read, since a session is written only
-    at the end (M128). 1 line, exit 1, no board written.
+    at the end (M128). 1 line, exit 1, no board written. On Linux and
+    macOS the router's process group gets SIGKILL; on Windows
+    `taskkill /T /F` ends its tree (held there only by a stand-in so far).
 12. FreeRouting 1.9.0 runs under `xvfb-run` where there is no display.
     FreeRouting 2.5.0 runs with `--gui.enabled=false` and needs none.
 13. The router's output is kept in `build/route/freerouting.log` (a stage's

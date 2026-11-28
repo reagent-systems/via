@@ -31,12 +31,16 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+import hostos  # tools/hostos.py, beside this file: the installer each system runs, its shell's quoting
+
+# The workcenter's checkout, whose installer a hint names: the CLI's SRC_DIR, found the same way.
+SRC_DIR = Path(__file__).resolve().parent.parent
 
 GATES = ".claude/skills/board-gates/SKILL.md"
 DESIGN = ".claude/skills/board-design/SKILL.md"
@@ -403,8 +407,8 @@ HINTS: list[tuple[str, str, str]] = [
     ),
     (
         r"^sim: thermal: which parts of the board carry a thermal figure is not judged: \S+ is not on PATH",
-        "Install the toolchain: kicad-cli reads the schematic's parts (`sudo install.sh` at the "
-        "workcenter's root; `workcenter doctor` prints ok). Then run the gate again.",
+        "Install the toolchain: kicad-cli reads the schematic's parts. Run `{installer}`, then "
+        "`workcenter doctor` prints ok. Then run the gate again.",
         "ee-agent-kit/docs/ENGINES.md",
     ),
     (
@@ -510,10 +514,11 @@ class Step:
 
 
 def hint(gate: str, line: str) -> tuple[str, str]:
-    """What to do about a failure or warning line of a gate, and what to read."""
+    """What to do about a failure or warning line of a gate, and what to read. `{installer}` in a hint
+    is this computer's install line (tools/hostos.py), as `next`'s install step prints it."""
     for pattern, do, read in HINTS:
         if re.search(pattern, f"{gate}: {line}"):
-            return do, read
+            return do.replace("{installer}", hostos.installer_command(SRC_DIR)), read
     raise AssertionError("the last hint matches every line")
 
 
@@ -724,22 +729,44 @@ DECK_STEPS = {  # a template of templates/project/sim/ -> what to do once it is 
 
 def copy_deck(cli, project, quoted: str, stem: str, line: str, gates: str) -> Step:
     """The step for a circuit the SIM gate found no deck for: copy the template's deck and its bounds
-    under a name sim/ does not hold yet (tools/simneeds.py), then write the board's values into them."""
+    under a name sim/ does not hold yet (tools/simneeds.py), then write the board's values into them.
+    `new --deck` copies on every system; `mkdir -p` and `cp` run in a POSIX shell alone."""
     import simneeds
 
     name = simneeds.free_name(project.dir / "sim", stem)
-    src = cli.SRC_DIR / "templates" / "project" / "sim"
-    copies = " && ".join(
-        f"cp {shlex.quote(str(src / f'{stem}{ext}'))} {quoted}/sim/{name}{ext}"
-        for ext in (".cir", ".expect.json")
-    )
+    named = "" if name == stem else f" --as {name}"
     return Step(
         DECK_STEPS[stem],
-        f"mkdir -p {quoted}/sim && {copies}",
+        f"workcenter new {quoted} --deck {stem}{named}",
         f"SIM: {line}",
         f'{SIMULATE}, "Decks a board asks for"',
         f"sim/{name}.cir holds no `* fill:` line, and `{gates} --strict` runs it and asks for no deck "
         "it answers",
+    )
+
+
+def kicad_python_step(cli, project) -> Step | None:
+    """The step for a generated board with a pour where KiCad's own Python is not found: `design
+    --route` stitches the pours with KiCad's pcbnew, run in that Python (tools/kicadchild.py), and
+    without it leaves the islands to the DRC. On Linux the venv's Python stands in, so this never
+    comes; on macOS and Windows the installer puts KiCad in."""
+    pcb = project.pcb
+    if not ((project.dir / "design.py").is_file() and pcb and pcb.is_file()):
+        return None
+    if "(zone" not in pcb.read_text(encoding="utf-8", errors="replace"):
+        return None
+    import hostos
+    import kicadchild
+
+    if kicadchild.python() is not None:
+        return None
+    return Step(
+        "Install KiCad 10 with its own Python: none is found. `design --route` stitches the pours with "
+        "KiCad's pcbnew, run in that Python.",
+        hostos.installer_command(cli.SRC_DIR),
+        f"{pcb.name} has a pour, and {kicadchild.NOT_FOUND}",
+        "ee-agent-kit/docs/ENGINES.md",
+        "`workcenter doctor` shows the pcbnew row ok",
     )
 
 
@@ -748,7 +775,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
     design file (a few seconds); without it the design file is trusted to match."""
     wc = "workcenter"
     path = Path(target).resolve()
-    quoted = shlex.quote(target)
+    quoted = hostos.shell_word(target)
     # A folder that holds a chip.json is a chip project: its steps are the chip gates' (chipguide.py).
     import chipguide
 
@@ -759,7 +786,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
         """A file is no project: the answer names its folder, the one above sim/ for a deck. Taken
         for a project, a deck gets its build/ inside sim/ and its next steps under its own name."""
         folder = file.parent.parent if file.parent.name == "sim" else file.parent
-        again = f"{wc} next {shlex.quote(str(folder))}"
+        again = f"{wc} next {hostos.shell_word(str(folder))}"
         return Step(
             "Name the project's folder: the path leads to a file, and a project is a folder.",
             again,
@@ -782,14 +809,14 @@ def next_step(cli, target: str, run_check=True) -> Step:
                 return to_folder(path, f"{why}; a project is named by its folder")
             return Step(
                 "Create the project's folder: it does not exist yet.",
-                f"mkdir -p {quoted}",
+                f"{wc} new {quoted} --empty",
                 why,
                 done_when=again,
             )
         pros = sorted(path.glob("*.kicad_pro")) if path.is_dir() else []
         if len(pros) > 1:
             # Before the design file: generated again, the folder holds as many project files.
-            one = f"{wc} next {shlex.quote(str(Path(target) / pros[0].name))}"
+            one = f"{wc} next {hostos.shell_word(str(Path(target) / pros[0].name))}"
             return Step(
                 f"Name one of the folder's {len(pros)} project files: {', '.join(p.name for p in pros)}. "
                 "The RUN line names the first.",
@@ -800,7 +827,9 @@ def next_step(cli, target: str, run_check=True) -> Step:
         if (path / "design.py").is_file():
             return Step(
                 "Generate the KiCad project from its design file.",
-                f"{wc} design {quoted}/design.py --route",
+                # The whole path is 1 quoted word, by the system's separator, as the route step names it
+                # (run 46089464718, Windows: `{board}/design.py` here, `{board}\design.py` there).
+                f"{wc} design {hostos.shell_word(str(Path(target) / 'design.py'))} --route",
                 "the folder holds a design file and no KiCad project",
                 f'{DESIGN}, "Steps"',
                 ROUTED,
@@ -820,7 +849,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
         )
     # A command takes the project as it was named, a KiCad file too. A path inside the project starts
     # at its folder.
-    folder = quoted if path.is_dir() else shlex.quote(str(project.dir))
+    folder = quoted if path.is_dir() else hostos.shell_word(str(project.dir))
     has_kicad = bool(project.sch or project.pcb)
     decks = sorted((project.dir / "sim").glob("*.cir")) if (project.dir / "sim").is_dir() else []
     absent = [
@@ -831,11 +860,15 @@ def next_step(cli, target: str, run_check=True) -> Step:
     if absent:
         return Step(
             "Install the toolchain: a gate cannot run without its engine.",
-            f"sudo {cli.SRC_DIR / 'install.sh'}",
+            hostos.installer_command(cli.SRC_DIR),
             f"{', '.join(absent)} is not on PATH",
             "ee-agent-kit/docs/ENGINES.md",
             f"`{wc} doctor` prints ok or degraded",
         )
+
+    stitch = kicad_python_step(cli, project)
+    if stitch is not None:
+        return stitch
     design = project.dir / "design.py"
     if design.is_file() and run_check:
         # The check imports the design file. Bytecode beside it would be a file `next` wrote.
@@ -848,7 +881,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
         )
         if proc.returncode != 0:
             said = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip()]
-            regenerate = f"{wc} design {shlex.quote(str(design))} --route"
+            regenerate = f"{wc} design {hostos.shell_word(str(design))} --route"
             # The design step's own refusal comes before any comparison: regenerating a design file
             # that is refused gives the same refusal. Its red line names the kinds; the first printed
             # line of a kind it names is the problem to answer.
@@ -872,14 +905,14 @@ def next_step(cli, target: str, run_check=True) -> Step:
                     regenerate,
                     f"the design file is refused: {first}",
                     read,
-                    f"`{wc} design {shlex.quote(str(design))} --check` exits 0",
+                    f"`{wc} design {hostos.shell_word(str(design))} --check` exits 0",
                 )
             return Step(
                 "Regenerate the KiCad project: it no longer matches its design file.",
                 regenerate,
                 said[-1] if said else "design --check exited 1",
                 f'{DESIGN}, "Steps"',
-                f"`{wc} design {shlex.quote(str(design))} --check` exits 0",
+                f"`{wc} design {hostos.shell_word(str(design))} --check` exits 0",
             )
     # A project with a ratings.json is held to its parts' ratings. A failure there comes before the
     # board's gates: a part that changes takes its routes with it. What is left not judged comes after.
@@ -912,7 +945,7 @@ def next_step(cli, target: str, run_check=True) -> Step:
             shown = ", ".join(loose[:3]) + (f" and {len(loose) - 3} more" if len(loose) > 3 else "")
             return Step(
                 "Route the board before the gates: nets on it have no copper yet.",
-                f"{wc} design {shlex.quote(str(design))} --route",
+                f"{wc} design {hostos.shell_word(str(design))} --route",
                 # A net of k pads and no copper is k - 1 connections: KiCad DRC's count, which
                 # `design --route` prints on its `route: N unconnected` line.
                 f"{pads} pads on {len(loose)} nets have no track, via or pour, "

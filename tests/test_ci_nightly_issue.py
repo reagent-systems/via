@@ -318,6 +318,8 @@ new AsyncFunction('github', 'context', 'core', 'require', fs.readFileSync(script
             (work / "build" / "nightly-verify.log").write_text(log, encoding="utf-8")
         (self.tmp / "open.json").write_text(json.dumps(open_issues), encoding="utf-8")
         env = {"PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin", "JOB_STATUS": status}
+        # The Windows and macOS legs (needs.desktop.result) passed, unless the test says otherwise.
+        outcomes = {"desktop": "success", **outcomes}
         for key in self.step["env"]:
             if key != "JOB_STATUS":
                 env[key] = outcomes[key.lower()]
@@ -379,6 +381,22 @@ def test_the_workflow_script_closes_a_duplicate_as_not_planned(tmp_path):
         (c[0], c[1]["issue_number"], c[1].get("state_reason")) for c in calls if c[0] not in ("list", "info")
     ]
     assert made == [("createComment", 12, None), ("createComment", 30, None), ("update", 30, "not_planned")]
+
+
+@needs_node
+def test_a_night_whose_windows_or_macos_leg_failed_is_a_failed_night(tmp_path):
+    """The Linux gate passed, a desktop leg did not: the issue opens and names the step `desktop`; an
+    open issue is not closed. Both legs green on a green Linux night close it as before."""
+    rec = Recorder(tmp_path)
+    linux = {"archive": "success", "install": "success", "verify": "success"}
+    for result in ("failure", "cancelled", "skipped"):
+        calls = rec.run("success", {**linux, "desktop": result}, [], "VERIFY GREEN\n")
+        (made,) = [c for c in calls if c[0] == "create"]
+        assert "the step that failed: desktop" in made[1]["body"] or result != "failure", made[1]["body"]
+        calls = rec.run("success", {**linux, "desktop": result}, [issue(12)], "VERIFY GREEN\n")
+        assert [c[0] for c in calls if c[0] not in ("list", "info")] == ["createComment"]
+    calls = rec.run("success", {**linux, "desktop": "success"}, [issue(12)], "VERIFY GREEN\n")
+    assert [c[0] for c in calls if c[0] not in ("list", "info")] == ["createComment", "update"]
 
 
 @needs_node

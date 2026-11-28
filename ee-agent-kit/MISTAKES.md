@@ -1906,3 +1906,69 @@ Cost: A red `fast` and a red `full` on the pull request, and a fix round.
 Root cause: The landing's test run was chosen by the files it touched. A test that scans the repository (every file under a folder, every workflow, every document) holds files no list of touched test files names, so a new file meets it only in a whole run.
 Process: P14
 
+## M317 — 2026-11-27 — A stand-in for Windows refused only what its own process did, and a check for /proc asked only that the folder exists
+What happened: The engine lock's port (`wip/wlock`, e95acaf) was tested on Linux under a stand-in for Windows. The stand-in refused to remove a file only while its own process held it open, but Windows refuses while any process does; its locks were freed at close at once, but Windows frees a lock closed while held "at a time that depends upon available system resources" (LockFileEx). The independent review found it (F3, F5): its mutant 6 passed the stand-in, and the stricter stand-in then found that every win32 run closed `.seq` while it was locked (9 errors). Separately, `_procfs()` asked only that `/proc` is a folder: the first run in a mount namespace with an empty tmpfs on `/proc` started run B beside run A's engine (`start A, start B`).
+Cost: A review round with 5 medium findings, 2 code fixes (301b4e0) and a stand-in rewritten. None reached main.
+Root cause: The stand-in was written from the rules the code's own process meets, not from the system's documents for every process. A part of the system was checked by its name, not by what the code needs from it.
+Process: P12
+
+## M318 — 2026-11-27 — A Makefile value was tested through the module that computes it, and a parity test compared the new code with itself
+What happened: The paths piece (`wip/wpaths`, 7b89f67) made the Makefile's `VENV_PY` the venv of `hostos.default_root()`. Its test ran hostos, not make, so it missed that make splits a path with a space: on macOS the default root is under `Application Support`, and `$(PY)` would have run `/Users/.../Library/Application`. The review found it (F1, high). The same piece's parity test compared hostos with its callers after the callers had moved to hostos, so both sides were hostos (F8). At 7b89f67 the 22 new tests of the fix failed (`22 failed, 149 passed`).
+Cost: A review round and a fix commit (2fef5ca); none reached main.
+Root cause: A value was tested where it is made, not where it is read; a comparison with the old behaviour read the old side through the new code.
+Process: P12
+
+## M319 — 2026-11-27 — `workcenter next` printed POSIX shell as the line to run
+What happened: `next` printed `mkdir -p <dir>` for a folder that is not there and `mkdir -p .../sim && cp ... && cp ...` for a deck the board asks for, and `sudo <src>/install.sh` as the install step on every system. A reader on Windows could not run them in PowerShell or cmd.exe. The bytes piece (`wip/wbytes`) replaced them with `workcenter new <dir> --empty`, `workcenter new <dir> --deck <template>` and `hostos.installer_command`; 12 tests of test_guide.py and test_new.py failed first (`12 failed, 112 passed`).
+Cost: The 3 RUN lines were wrong for every Windows and macOS reader since `next` was written; a new flag on `new`.
+Root cause: The printed line was written for the shell its author used. Nothing held a printed RUN line to the shells of each system.
+Process: P10
+
+## M320 — 2026-11-27 — A download was checked with curl's user agent, and the installer sends another
+What happened: The Windows installer (`wip/wwin`, f7f6ff7) downloads ngspice-47_64.7z from SourceForge with PowerShell's Invoke-WebRequest. Its author checked the address and SHA256 with curl. The review (F-2) asked SourceForge with Windows PowerShell 5.1's user agent: it answered 200 `text/html`, 131921 bytes, a page; with `-A via-install` it answered the 7z, 13814879 bytes, the pinned SHA256. Fixed in 9f7e7cb: every download passes `-UserAgent 'via-install'`.
+Cost: Every first run of install.ps1 would have stopped at ngspice's checksum; a review finding and a fix.
+Root cause: The check was made with the checker's own request, not the installer's. A server that answers by user agent gives each a different file.
+Process: P2
+
+## M321 — 2026-11-27 — A test's own pytest inherited the shard runner's variables and wrote into the shard's log
+What happened: The first `testshards.py run --only verify/desktop.csv` (`wip/wtests`) was red: tests/test_desktop.py starts a child pytest, which inherited `TESTSHARDS_LOG` and `TESTSHARDS_SHARD`, wrote its records into the shard's log ("1 not collected, 1 run 2 times") and printed no not-judged line. The child's environment now drops `TESTSHARDS_*` (`test_desktop.mini`); the next run gave `TESTS GREEN: 741 tests in 5 shards`.
+Cost: 1 red run and a fix.
+Root cause: A child process was given the parent's whole environment, and the runner's own variables were in it.
+Process: P12
+
+## M322 — 2026-11-27 — 11 pieces built side by side from 1 base each wrote a shared file or name its own way, and only the merge met them
+What happened: The Windows and macOS round built 11 branches on wip/hostos (3c1a1c3). Their textual merges into `wip/winmac` were clean but for `tools/hostos.py` and its tests, where each piece added functions (settled by keeping every side), and `toolchain/desktop.json`, which `wip/wmac` wrote by tool (`kicad.windows_x64`) and `wip/wwin` as 1 `windows` section. What the clean merges hid: `wip/wpaths` imported the module `hostos` at the top of tools/workcenter and `wip/wbytes` defined a function `hostos()` in the same file, so every later call of `hostos.venv_python` would have met a function; tests/test_desktop.py (`wip/wtests`) scans every desktop test file, and the lock's and the router's new tests (`wip/wlock`, `wip/wrouter`) failed it (7 tests with a POSIX name and no mark, 2 hand-written `#!/bin/sh` first lines, 2 `delattr` calls that raise where Python lacks the name: `4 failed, 60 passed` in the child run); `verify/desktop.csv` lacked 7 new test files; `tests/test_bytes.py` (`wip/wbytes`) stubbed `kicadgen.pour_pieces`, which `wip/wpcb` had moved into `tools/kicadchild.py` (`AttributeError` in the merged fast lane); INSTALL.md's test looked for `hostos.kicad_dirs()` in tools/workcenter, which `wip/wpaths` reads as `hostos.kicad_share()`, so the doc would never have offered macOS or Windows; and install-macos.sh deleted the DMG the macOS CI leg's cache keeps. Each was fixed in the merge's own commits.
+Cost: An integration round of fixes in 7 files beyond the merges; a desktop.json shape chosen at the merge, with install.ps1 and both installers' tests changed to it.
+Root cause: The plan named each piece's files but not the files 2 pieces would both write, the names 2 pieces would both add to 1 module, or the rules 1 piece adds that the others' files must keep. Each piece was checked on its own branch, where none of these meet.
+Process: P31
+
+## M323 — 2026-11-27 — Helpers of the round broke the brief's own rules on files and numbers
+What happened: The notes of the round's helpers name these, each in its own words: tests appended to a repository file by a shell heredoc, not the editor (`wip/wrouter`, `wip/wtests`, `wip/wdocs`); 2 lines of install-macos.sh changed by `sed -i` (`wip/wmac`); a `cd` at the start of 2 commands (`wip/wtests`); a baseline taken by `git stash push -u` and `git stash pop`, which wrote a stash ref into the shared clone under /home/user (`wip/wtests`); and 2 commit messages whose counts were not the run's ("14 tests" for 12 in ef212a9; "the 15 new or changed ones" in 42bc45c). Each change was reviewed and run after; nothing was lost.
+Cost: No product change; a shared clone written outside a worktree once, and 2 commit messages that cannot be amended under the rules.
+Root cause: The briefs named the product's rules as binding and the session's rules as advice; a number was written from memory of a run.
+Process: P31
+
+## M324 — 2026-11-27 — A test that starts make passed alone and failed under `make verify-site`
+What happened: 4 tests of `tests/test_doctor_platforms.py` (`wip/wpaths`) run make and compare what it prints. Run by pytest they passed (49 passed). The merged branch's fast lane, `make verify-site`, ran them inside an outer make, whose `MAKELEVEL` and `MAKEFLAGS` made the inner make print `make[1]: Entering directory ...` around its output: `5 failed, 4171 passed, 385 skipped, 450 deselected in 760.49s` (the fifth was M322's stub). GitHub's `fast` job runs `make verify-site` too, so it would have failed there. The helper now passes `--no-print-directory` and an environment without `MAKELEVEL`, `MAKEFLAGS` and `MFLAGS`.
+Cost: A red fast lane on the merged branch and a fix.
+Root cause: The piece's test files were run by pytest alone, not by the command CI runs them with; a child make inherits the outer make's variables.
+Process: P14
+
+## M325 — 2026-11-27 — The first run on a Mac and on Windows failed tests that held Linux's paths, quotes and runner
+What happened: Run 46067841222 of pull request 140 (head 9d75382) was the first of the desktop legs. Both installers and the WSL route finished unattended and the smoke's 7 command steps passed everywhere; step 8, the tests, failed 21 of 940 on macOS, 84 on Windows and 13 on the WSL leg, and `full` failed 2. The causes, each in the commits after 9d75382: the engine guard took a stand-in under pytest's `--basetemp` for an engine, since the smoke puts that folder under the runner's work folder, outside the temporary folder (all 13 on WSL, 11 on macOS, 5 on Windows); tools printed command lines with sh's quotes on Windows (`workcenter new 'D:\a\...'`, 45 tests); tests joined paths with `/`, matched the venv's path with `\S+` though macOS's holds "Application Support", put it unquoted into sh lines, made 2 folders that differ only by case, wrote text in Windows' text mode, set HOME where Windows reads USERPROFILE, and pinned ngspice 42's count of error lines and Linux's installer line; the doctor's pcbnew probe found KiCad in /Applications although the test pointed KICAD_CLI away; Windows' venv launcher, `execv` and SIGTERM differ from POSIX; `design --check` met `%TEMP%` on another drive than the project; `next` stopped on a cp1252 pipe; the smoke ran the checkout's `workcenter.cmd` instead of the installed one; and CI.md's account of GitHub's skips lacked the branch's 2 new reasons, and 1 macOS test ran with no HOME as a user id with no passwd line.
+Cost: 1 GitHub run (the legs took 6 min 32 s to 21 min 19 s), and a round of fixes in 25 files before these documents.
+Root cause: Every test of the round ran on Linux, from /tmp, under a Python whose path holds no space, with stand-ins for the other 2 systems; a stand-in models the rules the code was written for, not the ones the test itself relies on (its separators, quotes, temporary folder and file system).
+Process: P12
+
+## M326 — 2026-11-27 — The second run on Windows failed 12 tests that read or wrote a line by sh's rules
+What happened: Run 46084159219 of pull request 140 (head 1480c04) was green on macos-latest (868 passed, 0 failed of 950) and on the WSL leg (947 passed, 0 failed). Windows native failed 12 of 950 in step 8, 84 in run 46067841222. 4 tests split a RUN line of `next` with shlex.split, sh's rules, which read `D:\a\_temp\...` as `D:a_temp...`, and `new` made a folder of that name; 3 built a line for sh from a path Windows writes with `\` (1 of them failed again in test_desktop's run without the POSIX names); 4 wrote with `/` a path the tools print from the project with the system's separator (`..\library\facts\passives.json`, `sim\d.cir`). M325's fixes made the tools' lines right for cmd.exe; the tests that read those lines back still read them as sh does.
+Cost: 1 GitHub run (the Windows leg 6 min 3 s), and fixes in 5 test files and 1 helper in tools/hostos.py.
+Root cause: M325's step 17 named how a test writes a command for a shell, not how it reads one back, nor which rules a test of another system's line uses on the host that runs it.
+Process: P12
+
+## M327 — 2026-11-28 — next named one design file 2 ways, and only Windows showed it
+What happened: Run 46089464718 of pull request 140 (head dd58999) was green on macos-latest (878 passed, 0 failed of 960) and on the WSL leg (957 passed, 0 failed). Windows native failed 1 of 960 in step 8, where run 46084159219 failed 12: tests\test_new.py:143, `- ensor-node/design.py --route`, `+ ensor-node\design.py --route`. The step of `next` that generates the project wrote the quoted folder and `/design.py` after it (tools/guide.py); the route step wrote `hostos.shell_word` of the whole path, by the system's separator. On Linux both gave `/`, so no test there told them apart, though a folder with a space did: `'/x/my board'/design.py` against `'/x/my board/design.py'`.
+Cost: 1 GitHub run (the Windows leg 5 min 55 s), and a fix of 1 line in tools/guide.py with 1 new test, run by 3 systems' rules.
+Root cause: 2 lines of 1 tool built a path for the same file by 2 hands, and the tests of those lines used folders with no space, where sh's and cmd.exe's rules agree with both.
+Process: P12
+

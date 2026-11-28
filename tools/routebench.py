@@ -15,13 +15,13 @@ import json
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
 import time
 import zipfile
 from pathlib import Path
 
+import hostos
 import kicadgen
 import routers
 
@@ -242,17 +242,17 @@ def folder_of(out: Path, design: Path, router: str) -> Path:
 
 
 def timed_run(cmd: list[str], env: dict, limit: float) -> tuple[int | None, bytes, float]:
-    """Run a command in its own process group; at `limit` seconds the whole group is stopped.
+    """Run a command in its own process group; at `limit` seconds the whole group is stopped (SIGKILL
+    to the group on Linux and macOS, `taskkill /T /F` on Windows: hostos.kill_tree).
     Returns (exit code or None when stopped, stdout, seconds)."""
     t0 = time.monotonic()
-    proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, start_new_session=True
-    )
+    group = hostos.own_group()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, **group)
     try:
         out, _ = proc.communicate(timeout=limit)
         return proc.returncode, out, time.monotonic() - t0
     except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)
+        hostos.kill_tree(proc)
         out, _ = proc.communicate()
         return None, out, time.monotonic() - t0
 

@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
-from conftest import engine
+from conftest import engine, stand_in
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "tools" / "workcenter"
@@ -26,6 +26,7 @@ FIXTURE = ROOT / "tests" / "boards" / "pass-first-design"
 PANEL = ROOT / "tests" / "samples" / "fab" / "panel.json"
 sys.path.insert(0, str(ROOT / "tools"))
 import fabfiles  # noqa: E402
+import hostos  # noqa: E402
 
 needs_kicad = engine(
     pytest.mark.skipif(shutil.which("kicad-cli") is None, reason="kicad-cli is not installed")
@@ -34,7 +35,8 @@ PARTS = {"C1": "top", "J1": "top", "R1": "top", "R2": "top"}
 
 
 def kikit_python() -> str | None:
-    venv = Path(os.environ.get("WORKCENTER_ROOT", "/opt/workcenters/ee")) / "venv" / "bin" / "python"
+    # The venv's Python of the root, by this system's layout (tools/hostos.py).
+    venv = hostos.venv_python(Path(os.environ.get("WORKCENTER_ROOT", hostos.default_root())))
     for py in (os.environ.get("KIKIT_PYTHON"), str(venv)):
         if py and Path(py).exists():
             probe = subprocess.run(
@@ -98,18 +100,20 @@ def test_a_placement_file_that_disagrees_with_the_board_fails_export_on_1_line(t
     """kicad-cli stands behind a script that drops R2's row from the placement file it wrote: the gate
     reads the file back and names R2, the 1 part the file lost."""
     real = shutil.which("kicad-cli")
-    wrapper = tmp_path / "kicad-cli"
-    wrapper.write_text(
-        "#!/bin/sh\n"
-        f'"{real}" "$@" || exit $?\n'
-        'case "$*" in *"export pos"*)\n'
-        '  out=""; prev=""\n'
-        '  for a in "$@"; do [ "$prev" = "--output" ] && out="$a"; prev="$a"; done\n'
-        '  grep -v \'^"R2"\' "$out" > "$out.tmp" && mv "$out.tmp" "$out";;\n'
-        "esac\n",
-        encoding="utf-8",
+    wrapper = stand_in(
+        tmp_path / "kicad-cli",
+        "import subprocess, sys\n"
+        "args = sys.argv[1:]\n"
+        f"code = subprocess.run([{real!r}, *args]).returncode\n"
+        "if code:\n"
+        "    sys.exit(code)\n"
+        "if 'export pos' in ' '.join(args):\n"
+        "    out = [a for p, a in zip(args, args[1:]) if p == '--output'][-1]\n"
+        "    with open(out, encoding='utf-8', newline='') as fh:\n"
+        "        lines = fh.readlines()\n"
+        "    with open(out, 'w', encoding='utf-8', newline='') as fh:\n"
+        "        fh.writelines(x for x in lines if not x.startswith('\"R2\"'))\n",
     )
-    wrapper.chmod(0o755)
     code, result = export(project(tmp_path), tmp_path / "out", {"KICAD_CLI": str(wrapper)})
     assert code == 1 and result["status"] == "fail", result
     assert result["details"]["failures"] == [

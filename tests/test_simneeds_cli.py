@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -157,12 +158,13 @@ def test_next_names_the_copy_of_the_deck_the_board_lacks(tmp_path):
     project = board(tmp_path, "i2c_rise", "load_step")
     step = next_after_gates(project)
     assert step["next"].startswith("Copy the I2C rise-time deck into sim/.")
-    assert step["run"] == (
-        f"mkdir -p {project}/sim && cp {TEMPLATES}/i2c_rise.cir {project}/sim/i2c_rise.cir && "
-        f"cp {TEMPLATES}/i2c_rise.expect.json {project}/sim/i2c_rise.expect.json"
-    )
+    # `mkdir -p` and `cp` once: Windows has neither. `new --deck` copies the same way on every system.
+    assert step["run"] == f"workcenter new {project} --deck i2c_rise"
     assert step["why"] == f"SIM: {I2C_LINE}"
-    subprocess.run(["bash", "-c", step["run"]], check=True)
+    code, text = run(*shlex.split(step["run"])[1:])
+    assert code == 0, text
+    for name in ("i2c_rise.cir", "i2c_rise.expect.json"):
+        assert (project / "sim" / name).read_bytes() == (TEMPLATES / name).read_bytes()
     failures = sim(project)["details"]["failures"]
     assert [f for f in failures if "fill:" in f] == [
         f"i2c_rise.cir:{n}: still says fill: set what it names, then delete the line" for n in (2, 9, 11, 13)
@@ -185,7 +187,7 @@ def test_a_copy_never_replaces_a_file(tmp_path):
     deck.write_text(deck.read_text().replace("* deck: i2c-rise SDA SCL", "* the bus"))
     step = next_after_gates(project)
     assert step["why"] == f"SIM: {I2C_LINE}"
-    assert f"{project}/sim/i2c_rise_2.cir" in step["run"] and f"{project}/sim/i2c_rise.cir" not in step["run"]
+    assert step["run"] == f"workcenter new {project} --deck i2c_rise --as i2c_rise_2"
 
 
 def test_the_templates_run_and_fail_until_they_are_written(tmp_path):

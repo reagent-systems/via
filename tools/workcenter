@@ -37,11 +37,37 @@ from dataclasses import asdict, dataclass, field
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path, PurePosixPath
 
-WC_ROOT = Path(os.environ.get("WORKCENTER_ROOT", "/opt/workcenters/ee"))
 SRC_DIR = Path(__file__).resolve().parent.parent
+# tools/hostos.py holds every difference between Linux, macOS and Windows; on Linux each value is today's.
+sys.path.insert(0, str(SRC_DIR / "tools"))
+import hostos  # noqa: E402
+
+
+def find_program(candidates: list[str]) -> str:
+    """The first of `candidates` that is there, as its whole path: a name on PATH, then each path. The
+    whole path holds on Windows, where shutil.which adds the .exe the name lacks. With none there, the
+    first, which the gates then name as missing. 1 candidate (Linux's, or 1 named by its variable) is
+    kept as written, found or not."""
+    if len(candidates) > 1:
+        for candidate in candidates:
+            found = shutil.which(candidate)
+            if found:
+                return found
+    return candidates[0]
+
+
+def looked_line(candidates: list[str]) -> str:
+    """Where find_program looked, as doctor says it: "looked on PATH for ngspice, then at /opt/..."."""
+    said = [f"at {c}" if os.path.dirname(c) else f"on PATH for {c}" for c in candidates]
+    return "looked " + ", then ".join(said)
+
+
+WC_ROOT = Path(os.environ.get("WORKCENTER_ROOT", hostos.default_root()))
 FREEROUTING_JAR = Path(os.environ.get("FREEROUTING_JAR", WC_ROOT / "freerouting" / "freerouting.jar"))
-KICAD_CLI = os.environ.get("KICAD_CLI", "kicad-cli")
-NGSPICE = os.environ.get("NGSPICE", "ngspice")
+KICAD_CLI_CANDIDATES = hostos.kicad_cli_candidates()
+KICAD_CLI = find_program(KICAD_CLI_CANDIDATES)
+NGSPICE_CANDIDATES = hostos.ngspice_candidates()
+NGSPICE = find_program(NGSPICE_CANDIDATES)
 # The java is decided in 1 place, tools/routers.py's workcenter_java(): JAVA, else the JVM install.sh
 # recorded, else the first java on PATH.
 
@@ -67,7 +93,8 @@ LAYER_IMAGES = (
 LAYER_BACKGROUND = "#001023"  # KiCad's board-editor background: silkscreen and courtyards stay visible
 DRAWN = re.compile(r"<(path|circle|polygon|polyline|rect|line|ellipse|text)\b")
 SPIN_WIDTH = 640  # GIF frames: wider ones make a GIF of tens of megabytes
-DEFAULT_3DMODEL_DIR = "/usr/share/kicad/3dmodels"  # where the PPA's kicad-packages3d puts the library bodies
+# Where the install puts the library bodies (on Linux the PPA's kicad-packages3d), whatever the variables say.
+DEFAULT_3DMODEL_DIR = str(hostos.kicad_share() / "3dmodels")
 
 
 @dataclass
@@ -99,11 +126,14 @@ class Project:
 def run(
     cmd: list[str], cwd: Path | None = None, timeout: int = 900, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess:
+    """Run an engine; its output is read as UTF-8, which kicad-cli and ngspice print, never in the
+    locale's code page (cp1252 on a Western Windows). A byte that is no UTF-8 reads as U+FFFD."""
     return subprocess.run(
         [str(c) for c in cmd],
         cwd=str(cwd) if cwd else None,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         check=False,
         env=env,
@@ -663,17 +693,62 @@ def link_siblings(deck: Path, where: Path) -> None:
     """Make the other files of a deck's folder reachable from a folder the deck is run from: a file
     the deck reads by a statement the gate does not rewrite (`source print.sp` in `.control`, a
     `file="stim.txt"` of a model) is then found, as it is when the deck runs in place. Files are
-    links and folders are real, so a run that writes a new file writes it in its own folder."""
+    links and folders are real, so a run that writes a new file writes it in its own folder.
+
+    A link is a symlink where the system makes one. Windows refuses symlinks to a user without
+    Developer Mode, so the link is then a hard link, and a copy where neither can be made (another
+    drive, a file system without hard links).
+
+    `where` is kept from run to run. A symlink to the deck's own file is kept; anything else that
+    holds a sibling's name is made again (link_entry), so each run reads the siblings as they are."""
     plans = {simcorners().CORNERS_FILE, freqplan().PLAN_FILE, thermal().PLAN_FILE}
     skip = {deck.name, *plans, ".spiceinit", "run"}
     for entry in sorted(deck.parent.iterdir()):
-        target = where / entry.name
-        if entry.name in skip or entry.name.endswith(".expect.json") or target.exists():
+        if entry.name in skip or entry.name.endswith(".expect.json"):
             continue
+        link_entry(entry, where / entry.name)
+
+
+def link_entry(entry: Path, target: Path) -> None:
+    """Make `target` reach `entry`: a file as link_file makes it, a folder real with its files so.
+
+    A hard link or a copy holds the bytes of the run that made it (an editor saves a new file), so it
+    is made again. A symlink that does not reach `entry` (it dangles, or names another folder's file)
+    is removed: link_file would otherwise write through it. A symlink to `entry` is kept, as before.
+    A real folder is gone through, so a file added to it is reached too."""
+    if target.is_symlink():
+        if not entry.is_dir() and target.exists() and os.path.samefile(target, entry):
+            return
+        target.unlink()  # removes the link alone, never what it names
+    elif target.is_dir():
         if entry.is_dir():
-            shutil.copytree(entry, target, copy_function=os.symlink)
-        else:
-            os.symlink(entry, target)
+            for child in sorted(entry.iterdir()):
+                link_entry(child, target / child.name)
+        return  # a folder where the deck's folder holds a file: a run made it, and it is kept
+    elif target.exists():
+        target.unlink()
+    if entry.is_dir():
+        shutil.copytree(entry, target, copy_function=link_file)
+    else:
+        link_file(entry, target)
+
+
+def link_file(src, dst) -> None:
+    """`dst` as a symlink to `src`, else a hard link, else a copy: the first the system allows. A name
+    that is taken raises FileExistsError: a copy would write through a symlink there."""
+    try:
+        os.symlink(src, dst)
+        return
+    except FileExistsError:
+        raise
+    except OSError:
+        pass
+    try:
+        os.link(src, dst)
+    except FileExistsError:
+        raise
+    except OSError:
+        shutil.copy2(src, dst)
 
 
 def run_corners(
@@ -1622,7 +1697,7 @@ def cmd_sim(args) -> int:
         if deck.get("rerun"):
             print(f"rerun {name}: {deck['rerun']}")
         if deck.get("bundle"):
-            print(f"bundle {name}: ngspice -b {shlex.quote(str(Path(deck['bundle']) / BUNDLE_RUN))}")
+            print(f"bundle {name}: ngspice -b {hostos.shell_word(str(Path(deck['bundle']) / BUNDLE_RUN))}")
     for line in thermal().lines(result.details):
         print(line)
     return code
@@ -3855,12 +3930,13 @@ def model_rows(
         problems.append(f"{deck.stem}: its models need different ngspice modes: {', '.join(sorted(modes))}")
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    prepared = replace_includes(text, lambda inc: str(replace[inc]) if inc in replace else None)
-    (run_dir / deck.name).write_text(prepared, encoding="utf-8")
+    # Forward slashes on every system: Windows reads them, and the deck is the same text everywhere.
+    prepared = replace_includes(text, lambda inc: replace[inc].as_posix() if inc in replace else None)
+    hostos.write_text(run_dir / deck.name, prepared)
     init = run_dir / ".spiceinit"
     own_init = deck.parent / ".spiceinit"  # what ngspice reads when the deck runs in place
     if modes:
-        init.write_text(f"set ngbehavior={sorted(modes)[0]}\n", encoding="utf-8")
+        hostos.write_text(init, f"set ngbehavior={sorted(modes)[0]}\n")
     elif not listed and own_init.is_file():
         shutil.copyfile(own_init, init)
     elif init.exists():
@@ -4566,9 +4642,9 @@ def cmd_design(args) -> int:
                     print("  route: unconnected not counted: kicad-cli is not installed")
                 elif first:
                     ends = " to ".join(first["ends"])
-                    net = shlex.quote(first["net"])
+                    net = hostos.shell_word(first["net"])
                     print(f"  route: {r['unconnected']} unconnected; first {first['net']}: {ends}")
-                    print(f"  inspect: workcenter inspect net {shlex.quote(r['board'])} {net}")
+                    print(f"  inspect: workcenter inspect net {hostos.shell_word(r['board'])} {net}")
                 else:
                     print("  route: 0 unconnected")
         s = summary.get("seed")
@@ -5205,6 +5281,9 @@ def check_design(args) -> int:
             entry = {"file": f.name, "state": "same"}
             if not mine.is_file():
                 entry["state"] = "missing"
+            elif mine.read_bytes() != written and mine.read_bytes().replace(b"\r\n", b"\n") == written:
+                # A Git checkout with core.autocrlf=true (Git for Windows' default) and no `* -text`.
+                entry.update(state="differs", cause="line ends")
             elif mine.read_bytes() != written:
                 old, new = mine.read_bytes().splitlines(), written.splitlines()
                 pairs = enumerate(zip(old, new, strict=False))
@@ -5224,7 +5303,10 @@ def check_design(args) -> int:
         return verdict
     for f in files:
         print(f"check: {f['state']:8} {f['file']}")
-        if f["state"] == "differs":
+        if f.get("cause") == "line ends":
+            print("         line ends: CRLF where design.py writes LF; Git converted them (core.autocrlf)")
+            print("         write `* -text` in the project's .gitattributes, as `new` does; check out again")
+        elif f["state"] == "differs":
             print(f"         line {f['line']}: project {f['project']!r}")
             print(f"         line {f['line']}: design  {f['design']!r}")
         elif f["state"] == "missing":
@@ -5261,8 +5343,15 @@ KICAD_NOISE = re.compile(r"Debug: Adding duplicate image handler|property\.h\(\d
 
 def venv_python() -> str:
     """Via's venv's Python (KiCad's pcbnew module, shapely), else this one."""
-    py = WC_ROOT / "venv" / "bin" / "python"
+    py = hostos.venv_python(WC_ROOT)
     return str(py) if py.exists() else sys.executable
+
+
+def venv_program(venv: Path, name: str) -> Path:
+    """A program of the venv folder `venv`: bin/<name> on Linux and macOS, Scripts\\<name>.exe on
+    Windows, where hostos.venv_python puts its Python."""
+    py = hostos.venv_python(Path("root"))
+    return Path(venv) / py.parent.name / (name + py.suffix)
 
 
 def cmd_placement(args) -> int:
@@ -5713,8 +5802,11 @@ def installed(
 
 
 def requirements_fix(venv: Path, src: Path) -> str:
-    """The 1 command that puts the venv right: install.sh's own (its venv step), never run here."""
-    return f"{venv}/bin/pip install -q -r {src}/requirements.txt"
+    """The 1 command that puts the venv right: install.sh's own (its venv step), never run here. Each path
+    is quoted for the system's shell where it needs it (macOS's root holds a space); on Linux it is as
+    before."""
+    pip = hostos.shell_word(str(venv_program(venv, "pip")))
+    return f"{pip} install -q -r {hostos.shell_word(f'{src}/requirements.txt')}"
 
 
 def requirements_row(req_file: Path, paths: list[Path], own: list[Path], env: dict, fix: str) -> dict:
@@ -5952,7 +6044,7 @@ def venv_site(venv: Path) -> tuple[list[Path], list[Path], dict]:
     """Where the venv's Python finds packages, which of those are the venv's own, and its marker
     environment. Its Python is asked (no pip). ValueError, with the reason, where it does not answer:
     no guess stands in for its path, since a guess calls the system's packages missing."""
-    py = venv / "bin" / "python"
+    py = venv_program(venv, "python")
     try:
         proc = subprocess.run([str(py), "-c", VENV_SITE_PROBE], capture_output=True, text=True, timeout=60)
     except subprocess.TimeoutExpired:
@@ -5976,7 +6068,7 @@ def requirements_doctor_row(venv: Path | None = None, src: Path | None = None) -
     venv = venv or WC_ROOT / "venv"
     src = src or SRC_DIR
     req = src / "requirements.txt"
-    if not (venv / "bin" / "python").exists():
+    if not venv_program(venv, "python").exists():
         # The `venv` row says the venv is absent and degrades Via; this row repeats nothing.
         return {"required": False, "advisory": True, "ok": False, "path": str(req), "lines": []}
     try:
@@ -6029,7 +6121,10 @@ def doctor_status_words(status: str, named: list[str], not_checked: list[str]) -
 
 def doctor_row_text(name: str, c: dict) -> list[str]:
     """1 row of doctor's text output, and the row's lines under it."""
-    mark = "ok " if c["ok"] else ("MISSING" if c["required"] else "absent ")
+    if c.get("applicable") is False:
+        mark = "n/a"
+    else:
+        mark = "ok " if c["ok"] else ("MISSING" if c["required"] else "absent ")
     extra = c.get("line") or c.get("version") or c.get("path") or ""
     if c.get("for"):
         extra = f"{extra}  ({c['for']})" if extra else f"({c['for']})"
@@ -6041,16 +6136,112 @@ def doctor_checks_degraded(checks: dict) -> list[str]:
     return [k for k, v in checks.items() if not v["required"] and not v.get("advisory") and not v["ok"]]
 
 
+# Asked of KiCad's Python as a child: its version, and pcbnew's or why it did not import. `-c` puts the
+# folder it runs in first on sys.path; the probe takes it off, as VENV_SITE_PROBE does.
+PCBNEW_PROBE = (
+    "import sys\n"
+    "if sys.path[:1] == ['']:\n"
+    "    del sys.path[0]\n"
+    "import json, platform\n"
+    "said = {'python': platform.python_version()}\n"
+    "try:\n"
+    "    import pcbnew\n"
+    "    said['pcbnew'] = str(pcbnew.Version())\n"
+    "except Exception as exc:\n"
+    "    said['error'] = f'{type(exc).__name__}: {exc}'\n"
+    "print(json.dumps(said))\n"
+)
+
+
+def kicad_python_rows() -> dict[str, dict]:
+    """The `kicad-python` row (the Python hostos names for KiCad's pcbnew) and the `pcbnew` row (that
+    Python imports it, run as a child). Both are advisory, so Linux's verdict is as before the rows were
+    added: without pcbnew `design --route` leaves out stitching and pours, and the row says why. A probe
+    that does not answer is said under the row, never a traceback."""
+    py = hostos.kicad_python()
+    if py is None:
+        why = "no KiCad install found: set KICAD_CLI to the whole path of its kicad-cli"
+        return {
+            "kicad-python": {"required": False, "advisory": True, "ok": False, "path": None, "lines": [why]},
+            "pcbnew": {
+                "required": False,
+                "advisory": True,
+                "ok": False,
+                "path": None,
+                "lines": ["no KiCad Python to ask"],
+            },
+        }
+    said: dict = {}
+    try:
+        proc = subprocess.run([py, "-c", PCBNEW_PROBE], capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        why = f"{py} did not answer in 60 s"
+    except OSError as exc:
+        why = f"{py} did not run: {exc}"
+    else:
+        lines = proc.stdout.strip().splitlines()
+        try:
+            said = json.loads(lines[-1]) if lines else {}
+        except ValueError:
+            said = {}
+        said = said if isinstance(said, dict) else {}
+        tail = (proc.stderr or proc.stdout).strip().splitlines()[-1:] or [f"{py} exited {proc.returncode}"]
+        why = str(said.get("error") or tail[0])[:200]
+    version = said.get("python") if isinstance(said.get("python"), str) else None
+    pcbnew = said.get("pcbnew") if isinstance(said.get("pcbnew"), str) else None
+    rows = {
+        "kicad-python": {"required": False, "advisory": True, "ok": version is not None, "path": py},
+        "pcbnew": {
+            "required": False,
+            "advisory": True,
+            "ok": pcbnew is not None,
+            "version": pcbnew,
+            "path": py,
+        },
+    }
+    rows["kicad-python"]["version"] = version
+    if version is None:
+        rows["kicad-python"]["lines"] = [why]
+    if pcbnew is None:
+        rows["pcbnew"]["lines"] = [why]
+    return rows
+
+
+def engine_row(version: str | None, ok: bool, program: str, candidates: list[str]) -> dict:
+    """kicad-cli's or ngspice's row. Where more than 1 place was searched (macOS and Windows with the
+    variable unset), `path` is the whole path of the program found, on PATH or in an install. With 1
+    candidate (Linux, or the variable set) the row is as before. Where none answered, where doctor looked."""
+    row = {"required": True, "ok": ok, "version": version}
+    if len(candidates) > 1 and os.path.dirname(program) and version is not None:
+        row["path"] = program
+    if version is None:
+        row["lines"] = [looked_line(candidates)]
+    return row
+
+
+def xvfb_row() -> dict:
+    """Xvfb draws renders headless on Linux and in the image. Off Linux the row does not apply: it is
+    advisory and degrades nothing."""
+    if not sys.platform.startswith("linux"):
+        line = f"not applicable on {sys.platform}: renders through Xvfb run on Linux and in the image"
+        return {"required": False, "advisory": True, "ok": False, "applicable": False, "line": line}
+    return {"required": False, "ok": shutil.which("Xvfb") is not None}
+
+
 def cmd_doctor(args) -> int:
     kicad = tool_version([KICAD_CLI, "version"])
     ngspice = tool_version([NGSPICE, "--version"], r"(?<=ngspice-)\d+")
     py = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     openems = fields().OpenEMS.version()
     node = tool_version(["node", "--version"], r"(?<=v)\d+(\.\d+)+")
+    # The install's own library, whatever KICAD_SYMBOL_DIR says: /usr/share/kicad/symbols on Linux, as before.
+    symbols = hostos.kicad_share() / "symbols"
+    kicad_ok = bool(kicad and kicad.startswith("10."))
     checks = {
-        "kicad-cli": {"required": True, "ok": bool(kicad and kicad.startswith("10.")), "version": kicad},
-        "ngspice": {"required": True, "ok": bool(ngspice), "version": ngspice},
+        "kicad-cli": engine_row(kicad, kicad_ok, KICAD_CLI, KICAD_CLI_CANDIDATES),
+        "ngspice": engine_row(ngspice, bool(ngspice), NGSPICE, NGSPICE_CANDIDATES),
         "python": {"required": True, "ok": sys.version_info >= (3, 12), "version": py},
+        **kicad_python_rows(),
         "java": java_row(),
         "freerouting": {"required": False, "ok": FREEROUTING_JAR.is_file(), "path": str(FREEROUTING_JAR)},
         # The second router installs on request (install.sh --freerouting2): where it never was, its row
@@ -6058,13 +6249,13 @@ def cmd_doctor(args) -> int:
         "freerouting2": freerouting2_row(),
         "venv": {
             "required": False,
-            "ok": (WC_ROOT / "venv" / "bin" / "python").exists(),
+            "ok": hostos.venv_python(WC_ROOT).exists(),
             "path": str(WC_ROOT / "venv"),
         },
         # The venv held to requirements.txt: a pin missing or at another version degrades; a package
         # nothing there accounts for is a note under the row.
         "requirements": requirements_doctor_row_checked(),
-        "xvfb": {"required": False, "ok": shutil.which("Xvfb") is not None},
+        "xvfb": xvfb_row(),
         "rsvg-convert": {"required": False, "ok": shutil.which("rsvg-convert") is not None},
         "ffmpeg": {"required": False, "ok": shutil.which("ffmpeg") is not None},
         # The field solver of `fields`: absent, that command skips and nothing else needs it.
@@ -6076,8 +6267,8 @@ def cmd_doctor(args) -> int:
         },
         "symbols": {
             "required": False,
-            "ok": Path("/usr/share/kicad/symbols/Device.kicad_sym").is_file(),
-            "path": "/usr/share/kicad/symbols",
+            "ok": (symbols / "Device.kicad_sym").is_file(),
+            "path": str(symbols),
         },
         "manifest": {
             "required": True,
@@ -6234,7 +6425,7 @@ def cmd_gates(args) -> int:
     # The gates do not run `ratings`; they read its record, as `next` does.
     rated = guide().ratings_state(sys.modules[__name__], project)
     said, code = gates_verdict(results, rated.asked and not rated.held, args.strict)
-    named = shlex.quote(str(args.project))
+    named = hostos.shell_word(str(args.project))
     emit(results, args, out)
     if not args.json:
         # Each part's junction, as `sim` prints it: what a part was held on is read where done is decided.
@@ -6358,6 +6549,7 @@ def render_views(value: str) -> tuple[str, ...]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    hostos.console_streams()
     # The command's 1 reading of the clock: every day it writes in this run is this one, after midnight too.
     with clock().run():
         return command(argv)

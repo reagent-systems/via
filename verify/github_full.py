@@ -15,14 +15,14 @@ the line only takes it away, as this file does below). As pytest is configured,
 before any test file is imported (a mark's condition is often evaluated as its file is imported), this
 process's user id reads 1001 (os.geteuid, os.getuid), its user name reads `runner` (USER and LOGNAME,
 which getpass.getuser reads first), WORKCENTER_CHIP_TOOLS and FREEROUTING2_JAR name paths that are not
-there, and shutil.which finds no chip engine, by name or by path.
+there, and shutil.which finds no chip engine and no python3.11, by name or by path.
 
 Only those conditions are faked. Everything else is this machine's: it must have what `full` installs
 (KiCad, its libraries, ngspice, FreeRouting 1.9.0 and its Java). A skipif on any other condition is
 evaluated as on this machine, and the count it gives may be wrong for GitHub: a fixed path such as
 /opt/workcenters/ee/chip named without WORKCENTER_CHIP_TOOLS, os.access on a file root owns,
-pwd.getpwuid, the real user id read some other way. tests/ holds none today. Importing the module changes
-nothing.
+pwd.getpwuid, the real user id read some other way. tests/ holds none today; `sys.platform` is the same
+on every Linux machine. Importing the module changes nothing.
 """
 
 from __future__ import annotations
@@ -33,6 +33,9 @@ import shutil
 UID, USER = 1001, "runner"
 # The chip engines, as tools/chipflow.py ENGINES names them.
 CHIP_ENGINES = ("verilator", "iverilog", "vvp", "yosys", "klayout", "openroad", "sta", "magic", "netgen")
+# Programs the runner lacks beside them: Ubuntu 24.04 has no python3.11 (tests/test_kicadchild.py asks
+# for it; run 46067841222's full job skipped that test).
+ABSENT = (*CHIP_ENGINES, "python3.11")
 NOWHERE = "/nonexistent/github-full"
 
 
@@ -45,7 +48,7 @@ def look_like_full() -> None:
     found = shutil.which
 
     def which(cmd, mode=os.F_OK | os.X_OK, path=None):
-        if os.path.basename(os.fspath(cmd)) in CHIP_ENGINES:
+        if os.path.basename(os.fspath(cmd)) in ABSENT:
             return None
         return found(cmd, mode, path)
 

@@ -15,6 +15,7 @@ the minute the roadmap asks for.
 | `apt_archive.sh` | On CI's install path, before install.sh: apt asks Ubuntu's own archive, not the runner's regional mirror. |
 | `changes.py` | A change's changelog line in a file of its own under `ee-agent-kit/changes/`: `check` (in the kit checks), `show`, and `fold <X.Y.Z> <date>` for a release. |
 | `kept_logs.py` | After a gate step that failed: copies the logs of the folder the gate kept (`.log`, `.jsonl`, `.txt`, `.rpt`; each file's last 2 MB, 50 MB in all, `KEPT.txt` names what it left out) for ci.yml's artifact, kept 7 days. |
+| `desktop_smoke.py` | The Windows and macOS legs' proof: doctor, the gates GREEN on pass-first-design and RED on fail-drc-clearance and fail-sim-spec, design --check, next, an autoroute, then the tests of `verify/desktop.csv` (at least 1 passed); 1 line per step. |
 | `nightly_issue.py` | The nightly run's last step: reads the night's outcome, the gate's log and the open `ci-failure` issues, and prints what to do (open, comment, close or nothing) with the text. |
 
 ## The rules of `scope.py`
@@ -33,6 +34,9 @@ the minute the roadmap asks for.
    run is full, and so is a document that is absent from the working tree.
 7. A path whose name is not UTF-8 is judged by its rules; its line shows
    each such byte as `\xe9`.
+8. A path of install or platform code (scope.py's `DESKTOP_FILES` and
+   `DESKTOP_FOLDERS`) also asks the Windows and macOS legs: desktop=yes.
+   So do no base, a diff git cannot read, and `--desktop` (a push to main).
 
 ## Before a push
 
@@ -87,13 +91,18 @@ program under the temporary folder is a test's stand-in, not an engine.
 
 ## The workflow
 
-`.github/workflows/ci.yml` has 4 jobs. `scope` runs `scope.py` and is the
-only job that decides fast or full. `fast` runs `make verify-site` with no
-toolchain, on every change: for a full change it runs beside `full`. `full`
-gets the toolchain and runs `make verify`. `verdict` always runs and passes
-only when `fast` passed and, for a full change, `full` passed too: make
-`verdict` the required check. The nightly run (`nightly.yml`) stays the full
-gate.
+`.github/workflows/ci.yml` has 6 jobs. `scope` runs `scope.py` and is the
+only job that decides fast or full, and whether the Windows and macOS legs
+run. `fast` runs `make verify-site` with no toolchain, on every change: for
+a full change it runs beside `full`. `full` gets the toolchain and runs
+`make verify`. `desktop` runs on macos-latest and windows-latest when the
+scope says desktop=yes: the installer a person runs, then
+`desktop_smoke.py`. `desktop-wsl` is the experimental WSL leg; it reports
+its own state and nothing waits for it. `verdict` always runs and needs
+`scope`, `fast`, `full` and `desktop`: it passes only when `fast` passed
+and, when asked, `full` and `desktop` passed too: make `verdict` the
+required check. The nightly run (`nightly.yml`) stays the full gate, with
+the same desktop legs.
 
 `fast` runs on full changes because only its runner lacks KiCad. A test that
 loads KiCad's symbol or footprint libraries without a skip mark passes in

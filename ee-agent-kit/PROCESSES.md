@@ -130,6 +130,10 @@ or any step that downloads, installs, or runs for more than a minute.
     program hands a list to another (a hook, a command named in a
     variable), 1 test runs the real callee on the caller's real list and
     checks what it did, not the arguments it got (M308).
+16. A download is checked with the request the installer sends: its
+    user agent and its headers. A server can answer a browser's or a
+    shell's agent with a page, so a check with curl's own says nothing of
+    PowerShell's (M320).
 
 Done when: the run is green, its log shows progress lines in every long
 step, no step used more than half its limit, and no step depended on a
@@ -565,6 +569,13 @@ When: touching `tools/workcenter` or `tools/kicadgen.py`'s command line.
     with no HOME and a user id /etc/passwd does not name
     (`tests/conftest.py`'s `no_home`) and holds that it does its work
     with no traceback (M299).
+12. A command line a command prints for a person to run (`next`'s RUN
+    lines, a hint, an install line) runs as printed in each shell its
+    systems offer: a POSIX shell, and on Windows PowerShell and Git Bash.
+    It holds no `mkdir -p`, `cp`, `&&` or `sudo` where a `workcenter`
+    command or the system's own installer line does the job
+    (`hostos.installer_command`), and a test reads every printed line for
+    them (M319).
 
 Done when: `make verify` is green, the configuration table names the
 flag, and every document that writes the command writes one the parser
@@ -682,6 +693,45 @@ that may be absent.
     does not skip, behind the engine lock, whenever the touched code is
     what it holds; the landing's report names that run. GitHub's green
     says nothing about it (M307).
+14. A stand-in for another system (Windows, macOS on Linux) models every
+    rule the code relies on as that system keeps it, across processes
+    too: a rule of the form "an open file cannot be removed" holds for a
+    handle any process opened, so the stand-in marks opens where every
+    process sees them. A part of the system the code asks for is asked
+    for by what it must do: `/proc/self/stat`, not that `/proc` is a
+    folder (a container can mount an empty one). A test of each case
+    runs against the stand-in and is seen to fail on the code before the
+    fix (M317).
+15. A test of a value another program reads runs that program: a
+    Makefile's variable through real `make`, a script's line through
+    the shell that reads it. A test that holds new code to old values
+    writes the old side as literal values, never through the new code
+    (M318).
+16. A test that starts its own pytest, or any program that reads the
+    runner's variables, gives it an environment without the outer run's
+    own (`TESTSHARDS_*`), so its records go to its own log (M321).
+17. A test that runs on macOS or Windows (`verify/desktop.csv` names its
+    file `desktop`) holds what the tool writes on that system: a path
+    joined with Path and matched whole (a home folder or "Application
+    Support" holds a space), a command quoted with `hostos.shell_word`
+    or `shlex` before a shell reads it, file names that differ by more
+    than case, text written with `newline="\n"` where the bytes are
+    compared, `USERPROFILE` beside `HOME`, and an engine's own count or
+    wording read as that engine gives it. Before it lands it runs once
+    under a venv linked at a path with a space and with `--basetemp`
+    outside the temporary folder, as the desktop legs run it (M325).
+18. A test that runs a line a tool printed for a person splits it with
+    `hostos.split_line`, the system's own rules, never `shlex.split`
+    alone; a test of another system's line (a platform set by the test)
+    builds the path it expects for that system (`PurePosixPath` for
+    Linux and macOS), and a path a tool prints relative to a folder is
+    expected with the host's separator (`Path(...)`) (M326).
+19. A line a tool prints for a person names a path as 1 word:
+    `hostos.shell_word` of the whole path joined with Path, never a
+    quoted folder with `/name` after it, so every line that names a
+    file names it the same way. A test of such a line names a folder
+    with a space: on Linux it shows the split that Windows shows with
+    `\` (M327).
 
 Done when: the summary shows no unexpected skips, the engine test is
 green on the runner, and a run with an engine taken away is not GREEN.
@@ -822,6 +872,10 @@ When: a change is about to be called done.
     the tests for the variable or the name), in every branch about to
     meet it, and runs them all after the merge, not only the files the
     pick touched (M305).
+12. A new test file runs once the way CI runs it, `make verify-site`,
+    before it lands, not by pytest alone: a test that starts make, or
+    reads a variable an outer program sets, meets that program only
+    there (M324).
 
 Done when: the remote has the commit, its CI run is green, and the report
 has been sent. For a gate's method: the attack's cases are tests; after 2
@@ -1620,6 +1674,19 @@ a task.
     a test file whose tests start an engine runs whole only behind the
     lock, or with `-m "not engine"` without it, and that the helper reads
     the file's marks before it runs the file (M311).
+18. Pieces built side by side from 1 base name, in the plan, each file
+    more than 1 of them writes (its shape, its keys), each name more than
+    1 of them adds to a shared module, and each rule 1 of them adds that
+    the others' files must keep (a scan of every test file, a list of
+    paths, a mark of readiness). The merge of the round runs the whole
+    fast lane and every scanning test, not the files the merges touched:
+    a clean textual merge says nothing of 2 names for 1 thing (M322).
+19. A helper keeps the brief's own rules as it keeps the product's:
+    repository files through the editor, no `cd`, nothing written under
+    the shared clone but through its own worktree's git (no stash, which
+    writes a ref there), and every number in a commit message or a note
+    counted from the run. A break is written in the helper's notes, and
+    the lead names it in the round's MISTAKES entry (M323).
 
 Done when: every report is read, each helper's changes are merged or
 removed, and `git worktree list` shows only what is still in use.

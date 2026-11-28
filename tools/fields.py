@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from itertools import pairwise
 from pathlib import Path
 
+import hostos
 from kicadgen import Q, parse
 
 # The documents this file cites, by their ids in rules/references/index.json (`workcenter references rules`).
@@ -1439,7 +1440,7 @@ class OpenEMS:
         stated = os.environ.get("OPENEMS")
         if stated:
             return stated if Path(stated).is_file() and os.access(stated, os.X_OK) else None
-        root = Path(os.environ.get("WORKCENTER_ROOT", "/opt/workcenters/ee"))
+        root = Path(os.environ.get("WORKCENTER_ROOT", hostos.default_root()))
         pinned = root / "openems" / "bin" / "openEMS"
         if pinned.is_file():
             return str(pinned)
